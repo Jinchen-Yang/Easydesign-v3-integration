@@ -243,7 +243,9 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             candidate_citation_diagnostic + "\n" + str(error),
             question_indices=error.question_indices,
             citation_findings=error.citation_findings,
+            citation_repair_keys=error.citation_repair_keys,
             citation_unkeyed=True,
+            citation_copy_blocks=error.citation_copy_blocks,
         ) from error
     except EvidenceCitationMismatch as error:
         if candidate_citation_diagnostic is None:
@@ -254,7 +256,10 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         # unkeyed citation correction so the single retry must fix the whole handoff.
         raise EvidenceCitationMismatch(
             candidate_citation_diagnostic + "\n" + str(error),
+            repair_keys=error.repair_keys,
             citation_findings=error.citation_findings,
+            citation_unkeyed=True,
+            citation_copy_blocks=error.citation_copy_blocks,
         ) from error
     if candidate_citation_diagnostic is not None:
         # A known acquisition receipt is source material, but it is not a focused passage that
@@ -262,7 +267,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         # independent one-shot citation slot instead of consuming a schema/shape repair. Truly
         # foreign identifiers remain bounded by that unkeyed one-shot; no model-supplied key is
         # trusted or minted here.
-        raise EvidenceCitationMismatch(candidate_citation_diagnostic)
+        raise EvidenceCitationMismatch(candidate_citation_diagnostic, citation_unkeyed=True)
     memberships = [
         tuple(sorted(candidate.hotspot_label_seq_ids)) for candidate in handoff.candidates
     ]
@@ -392,9 +397,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         }
         from .site_decision import verified_location_conflict
 
-        conflict = verified_location_conflict(
-            runtime_candidate["location"], required_compartment
-        )
+        conflict = verified_location_conflict(runtime_candidate["location"], required_compartment)
         runtime_candidate["runtime_eligibility"] = {
             "status": "BLOCKED" if conflict else "ELIGIBLE",
             "cause": conflict,

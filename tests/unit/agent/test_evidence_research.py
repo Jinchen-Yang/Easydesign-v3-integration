@@ -1,5 +1,6 @@
 """Synthetic source responses exercise real transport/cache/artifact and opinion boundaries."""
 
+import hashlib
 from types import SimpleNamespace
 from typing import Any
 
@@ -219,9 +220,7 @@ def test_pdb_complex_interface_uses_exact_approved_source_chain(tmp_path: Any) -
     assert analysis["target_chains"] == ["A"]
     interface = analysis["interfaces"][0]
     assert interface["target_resolution"] == "approved-source-auth-chain"
-    assert interface["current_design_correspondence_status"] == (
-        "complete-source-correspondence"
-    )
+    assert interface["current_design_correspondence_status"] == ("complete-source-correspondence")
     assert interface["target_contact_residues"][0]["canonical_positions"] == [50]
     assert interface["current_design_correspondence"][0] == {
         "reference_auth_asym_id": "A",
@@ -605,16 +604,15 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
     assert "question[0]: Conflict requires both supporting" in diagnostic
     assert "question[1]: Scientific support/conflict requires" in diagnostic
     assert "CITATION_MISMATCH" in diagnostic
-    assert card["passage"] in diagnostic
+    assert card["passage"] not in diagnostic
+    assert "Runtime-owned evidence data" in diagnostic
     assert result["query_id"] in diagnostic
     assert before == [item.model_dump(mode="json") for item in [invalid, unsupported]]
     mixed = conclusion.model_copy(
         update={
             "query_ids": [],
             "evidence": [
-                conclusion.evidence[0].model_copy(
-                    update={"excerpt": "did not inhibit activity"}
-                )
+                conclusion.evidence[0].model_copy(update={"excerpt": "did not inhibit activity"})
             ],
         }
     )
@@ -624,10 +622,17 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
     assert "CITATION_MISMATCH" in str(mixed_error.value)
     assert mixed_error.value.question_indices == (0,)
     assert mixed_error.value.citation_findings == ((0, card["card_id"], False),)
-    assert mixed_error.value.citation_repair_keys == (
-        "known-source:" + card["card_id"],
-    )
+    assert mixed_error.value.citation_repair_keys == ("known-source:" + card["card_id"],)
     assert mixed_error.value.citation_unkeyed is False
+    assert mixed_error.value.citation_copy_blocks == (
+        {
+            "card_id": card["card_id"],
+            "passage": card["passage"],
+            "passage_sha256": hashlib.sha256(card["passage"].encode("utf-8")).hexdigest(),
+            "passage_chars": len(card["passage"]),
+            "locations": [{"kind": "decision-question", "question_index": 0}],
+        },
+    )
     assert mixed_error.value.repair_findings()["citation"] == [
         {
             "question_index": 0,
@@ -785,9 +790,7 @@ def test_zero_query_registry_preserves_bounded_unsearched_assessment(
     assert verified["source_refs"] == []
     for invalid_status in ("VERIFIED", "SEARCHED_NO_EVIDENCE", "CONFLICTING_EVIDENCE"):
         with pytest.raises(AgentBoundaryError, match="NOT_SEARCHED"):
-            research.validate_questions(
-                [conclusion.model_copy(update={"status": invalid_status})]
-            )
+            research.validate_questions([conclusion.model_copy(update={"status": invalid_status})])
     with pytest.raises(AgentBoundaryError, match="not retrieved in this thread"):
         research.validate_questions(
             [
@@ -1056,9 +1059,7 @@ def test_reference_interface_mapping_uses_sifts_then_current_target_mapping() ->
                 "provenance_source": "SIFTS",
                 "reference_database_name": "UniProt",
                 "reference_database_accession": "QTARGET-2",
-                "aligned_regions": [
-                    {"entity_beg_seq_id": 1, "ref_beg_seq_id": 18, "length": 3}
-                ],
+                "aligned_regions": [{"entity_beg_seq_id": 1, "ref_beg_seq_id": 18, "length": 3}],
             }
         ]
     }
@@ -1159,9 +1160,7 @@ async def test_site_structure_complex_atomically_reads_mapped_interface(
                     "card_id": "source-complex",
                     "provider": "RCSB",
                     "identifier": "1ABC",
-                    "evidence_level": (
-                        "deposition-polymer-entities-and-coordinate-contacts"
-                    ),
+                    "evidence_level": ("deposition-polymer-entities-and-coordinate-contacts"),
                     "chunk_count": 4,
                     "source_refs": [],
                 }

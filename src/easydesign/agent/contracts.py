@@ -368,28 +368,25 @@ class ResearchQuestionCitationMismatch(ResearchConclusionMismatch):
         message: str,
         *,
         question_indices: list[int] | tuple[int, ...],
-        citation_findings: list[tuple[int, str, bool]]
-        | tuple[tuple[int, str, bool], ...],
+        citation_findings: list[tuple[int, str, bool]] | tuple[tuple[int, str, bool], ...],
         citation_repair_keys: list[str] | tuple[str, ...] = (),
         citation_unkeyed: bool = False,
+        citation_copy_blocks: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
     ) -> None:
         self.question_indices = tuple(sorted(set(question_indices)))
         self.citation_findings = tuple(sorted(set(citation_findings)))
         self.citation_repair_keys = tuple(sorted(set(citation_repair_keys)))
         self.citation_unkeyed = citation_unkeyed
+        self.citation_copy_blocks = tuple(citation_copy_blocks)
         if not self.question_indices or not self.citation_findings:
             raise ValueError("Mixed handoff mismatch requires both typed finding classes")
-        if citation_unkeyed and self.citation_repair_keys:
-            raise ValueError("Unkeyed citation repair cannot carry focused passage keys")
         if not citation_unkeyed and not self.citation_repair_keys:
             raise ValueError("Focused citation repair requires Runtime-owned passage keys")
         super().__init__(message)
 
     def repair_findings(self) -> dict[str, Any]:
-        return {
-            "question_binding": [
-                {"question_index": index} for index in self.question_indices
-            ],
+        result: dict[str, Any] = {
+            "question_binding": [{"question_index": index} for index in self.question_indices],
             "citation": [
                 {
                     "question_index": index,
@@ -399,6 +396,9 @@ class ResearchQuestionCitationMismatch(ResearchConclusionMismatch):
                 for index, card_id, receipt in self.citation_findings
             ],
         }
+        if self.citation_copy_blocks:
+            result["citation_copy_blocks"] = list(self.citation_copy_blocks)
+        return result
 
 
 class TargetRecommendationMismatch(AgentBoundaryError):
@@ -427,17 +427,20 @@ class EvidenceCitationMismatch(AgentBoundaryError):
         message: str,
         *,
         repair_keys: list[str] | tuple[str, ...] = (),
-        citation_findings: list[tuple[int, str, bool]]
-        | tuple[tuple[int, str, bool], ...] = (),
+        citation_findings: list[tuple[int, str, bool]] | tuple[tuple[int, str, bool], ...] = (),
+        citation_unkeyed: bool = False,
+        citation_copy_blocks: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
     ) -> None:
         self.repair_keys = tuple(sorted(set(repair_keys)))
         self.citation_findings = tuple(sorted(set(citation_findings)))
+        self.citation_unkeyed = citation_unkeyed
+        self.citation_copy_blocks = tuple(citation_copy_blocks)
         super().__init__(message)
 
     def repair_findings(self) -> dict[str, Any] | None:
         if not self.citation_findings:
             return None
-        return {
+        result: dict[str, Any] = {
             "citation": [
                 {
                     "question_index": index,
@@ -447,6 +450,9 @@ class EvidenceCitationMismatch(AgentBoundaryError):
                 for index, card_id, receipt in self.citation_findings
             ]
         }
+        if self.citation_copy_blocks:
+            result["citation_copy_blocks"] = list(self.citation_copy_blocks)
+        return result
 
 
 class CanonicalReferenceMismatch(RuntimeError):

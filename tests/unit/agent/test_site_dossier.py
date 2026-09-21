@@ -1,5 +1,6 @@
 """Dossier authority and framework memory tests; all evidence here is synthetic."""
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -410,10 +411,20 @@ def test_dossier_reports_candidate_and_question_citation_defects_atomically(
         with pytest.raises(EvidenceCitationMismatch) as captured:
             site_dossier(b, selection)
         error = captured.value
-        assert error.repair_keys == ()
+        assert error.repair_keys == ("known-source:" + focused["card_id"],)
+        assert error.citation_unkeyed is True
         assert error.citation_findings == ((0, focused["card_id"], False),)
         assert receipt["card_id"] in str(error)
-        assert "Exact already-read passage" in str(error)
+        assert focused["passage"] not in str(error)
+        assert error.citation_copy_blocks == (
+            {
+                "card_id": focused["card_id"],
+                "passage": focused["passage"],
+                "passage_sha256": hashlib.sha256(focused["passage"].encode("utf-8")).hexdigest(),
+                "passage_chars": len(focused["passage"]),
+                "locations": [{"kind": "decision-question", "question_index": 0}],
+            },
+        )
 
         corrected = selection.model_copy(
             update={
@@ -576,9 +587,9 @@ def test_research_handoff_accepts_sufficient_evidence_without_mandatory_contradi
         without_contradiction = site_dossier(
             b, selection.model_copy(update={"contradiction_search_query_ids": []})
         )
-        assert without_contradiction["evidence_selection"][
-            "contradiction_search_performed"
-        ] is False
+        assert (
+            without_contradiction["evidence_selection"]["contradiction_search_performed"] is False
+        )
         with pytest.raises(ResearchConclusionMismatch, match="actual literature-search"):
             site_dossier(
                 b, selection.model_copy(update={"contradiction_search_query_ids": ["invented-id"]})
@@ -644,9 +655,7 @@ def test_acquisition_only_research_retains_questions_without_inventing_search_id
         assert result["decision_questions"][0]["query_ids"] == [acquisition["query_id"]]
         assert result["evidence_selection"]["literature_searches_available"] == 0
         assert result["evidence_selection"]["contradiction_search_performed"] is False
-        assert "unresolved evidence gap" in result["evidence_selection"][
-            "contradiction_search_gap"
-        ]
+        assert "unresolved evidence gap" in result["evidence_selection"]["contradiction_search_gap"]
     finally:
         SITE_EVIDENCE.reset(token)
 

@@ -6,6 +6,7 @@ hotspots, run compute, browse arbitrary URLs, or change canonical target identit
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Sequence
@@ -320,9 +321,7 @@ def uniprot_reference_status(record: dict[str, Any]) -> dict[str, Any]:
         else []
     )
     valid_replacements = [
-        value
-        for value in replacements
-        if re.fullmatch(r"[A-Z][0-9][A-Z0-9]{3,7}[0-9]", value)
+        value for value in replacements if re.fullmatch(r"[A-Z][0-9][A-Z0-9]{3,7}[0-9]", value)
     ]
     result["identifier_resolution"] = {
         "status": "inactive",
@@ -517,9 +516,7 @@ def _polymer_canonical_positions(
             if entity_start < 1 or reference_start < 1 or length < 1:
                 continue
             for offset in range(length):
-                positions.setdefault(entity_start + offset, set()).add(
-                    reference_start + offset
-                )
+                positions.setdefault(entity_start + offset, set()).add(reference_start + offset)
     return {key: sorted(value) for key, value in positions.items()}
 
 
@@ -563,23 +560,30 @@ def _approved_design_correspondence(
                 )
             ]
         rows = source_rows if reference_is_approved_source else canonical_rows
-        if reference_is_approved_source and len(
-            {
-                int(row["label_seq_id"])
-                for row in source_rows
-                if isinstance(row.get("label_seq_id"), int)
-            }
-        ) > 1:
+        if (
+            reference_is_approved_source
+            and len(
+                {
+                    int(row["label_seq_id"])
+                    for row in source_rows
+                    if isinstance(row.get("label_seq_id"), int)
+                }
+            )
+            > 1
+        ):
             raise AgentBoundaryError(
                 "Approved source residue maps to conflicting current design labels"
             )
-        resolved_canonical_positions = sorted(
-            {
-                int(position)
-                for row in source_rows
-                if isinstance((position := row.get("canonical_position")), int)
-            }
-        ) or canonical_positions
+        resolved_canonical_positions = (
+            sorted(
+                {
+                    int(position)
+                    for row in source_rows
+                    if isinstance((position := row.get("canonical_position")), int)
+                }
+            )
+            or canonical_positions
+        )
         result.append(
             {
                 "reference_auth_asym_id": residue.get("auth_asym_id"),
@@ -820,15 +824,11 @@ def _pdb_complex_interface_view(
             "canonical_positions_by_label", {}
         )
         for residue in target_residues:
-            residue["canonical_positions"] = canonical_by_label.get(
-                residue.get("label_seq_id"), []
-            )
+            residue["canonical_positions"] = canonical_by_label.get(residue.get("label_seq_id"), [])
         interface = {
             "target_chain": target_chain,
             "target_entity_id": chain_entities.get(target_chain, {}).get("entity_id"),
-            "target_resolution": chain_entities.get(target_chain, {}).get(
-                "target_resolution"
-            ),
+            "target_resolution": chain_entities.get(target_chain, {}).get("target_resolution"),
             "partner_chain": partner_chain,
             "partner_entity_id": partner.get("entity_id"),
             "partner_description": partner.get("description"),
@@ -938,9 +938,7 @@ def _pdb_interface_sections(analysis: dict[str, Any]) -> list[dict[str, str]]:
                         "correspondence_status": interface.get(
                             "current_design_correspondence_status"
                         ),
-                        "mapped_target_contact_count": interface.get(
-                            "mapped_target_contact_count"
-                        ),
+                        "mapped_target_contact_count": interface.get("mapped_target_contact_count"),
                         "unmapped_target_contact_count": interface.get(
                             "unmapped_target_contact_count"
                         ),
@@ -1109,9 +1107,7 @@ class EvidenceResearch:
                 # Other records/full text still require an explicit scientific selection.
                 try:
                     target, _, _ = self.bridge.site_facts()
-                    approved_accession = target["evidence"]["hard_facts"].get(
-                        "canonical_accession"
-                    )
+                    approved_accession = target["evidence"]["hard_facts"].get("canonical_accession")
                 except (AttributeError, AgentBoundaryError, KeyError, TypeError):
                     approved_accession = None
                 if isinstance(approved_accession, str) and approved_accession:
@@ -1430,8 +1426,7 @@ class EvidenceResearch:
                     continue
                 candidates = self.bridge.document(analysis_ref)
                 if (
-                    candidates.get("identity", {}).get("receptor_chain")
-                    != request.auth_chain
+                    candidates.get("identity", {}).get("receptor_chain") != request.auth_chain
                     or candidates.get("approved_design_mapping", {}).get("target_binding")
                     != target["binding"]
                 ):
@@ -1732,9 +1727,7 @@ class EvidenceResearch:
                 if isinstance(value, str) and value:
                     approved_accession = value
                 approved_source_path = self.bridge.validate_project().source_path
-                approved_source_pdb_id = _verified_deposited_structure_id(
-                    approved_source_path
-                )
+                approved_source_pdb_id = _verified_deposited_structure_id(approved_source_path)
                 selected_chain = hard_facts.get("selected_chain")
                 if isinstance(selected_chain, str) and selected_chain:
                     approved_source_auth_chain = selected_chain
@@ -1880,6 +1873,7 @@ class EvidenceResearch:
         citation_errors = []
         citation_findings = []
         citation_repair_keys = []
+        citation_copy_blocks: dict[str, dict[str, Any]] = {}
         has_unkeyed_citation_error = False
         role_errors = []
         if unknown:
@@ -1952,13 +1946,30 @@ class EvidenceResearch:
                         + (
                             " This is an acquisition receipt, not a focused passage."
                             if card.get("corpus_ref")
-                            else " Exact already-read passage: " + compact(card["passage"])
+                            else " The exact already-read passage remains in Runtime-owned "
+                            "evidence data."
                         )
                     )
                     if card.get("corpus_ref"):
                         has_unkeyed_citation_error = True
                     else:
                         citation_repair_keys.append("known-source:" + use.card_id)
+                        passage = _text(card["passage"])
+                        block = citation_copy_blocks.setdefault(
+                            use.card_id,
+                            {
+                                "card_id": use.card_id,
+                                "passage": passage,
+                                "passage_sha256": hashlib.sha256(
+                                    passage.encode("utf-8")
+                                ).hexdigest(),
+                                "passage_chars": len(passage),
+                                "locations": [],
+                            },
+                        )
+                        location = {"kind": "decision-question", "question_index": index}
+                        if location not in block["locations"]:
+                            block["locations"].append(location)
                 if use.strength in {"E1", "E2"} and not card["primary_eligible"]:
                     role_errors.append(
                         scope
@@ -1994,22 +2005,25 @@ class EvidenceResearch:
                     diagnostic,
                     question_indices=question_binding_indices,
                     citation_findings=citation_findings,
-                    citation_repair_keys=(
-                        []
-                        if has_unkeyed_citation_error
-                        else sorted(set(citation_repair_keys))
-                    ),
+                    citation_repair_keys=(sorted(set(citation_repair_keys))),
                     citation_unkeyed=has_unkeyed_citation_error,
+                    citation_copy_blocks=[
+                        citation_copy_blocks[key] for key in sorted(citation_copy_blocks)
+                    ],
                 )
             if question_binding_errors and not errors and not citation_errors:
                 raise ResearchQuestionBindingMismatch(diagnostic)
             if errors or question_binding_errors:
                 raise ResearchConclusionMismatch(diagnostic)
-            repair_keys = [] if has_unkeyed_citation_error else sorted(set(citation_repair_keys))
+            repair_keys = sorted(set(citation_repair_keys))
             raise EvidenceCitationMismatch(
                 diagnostic,
                 repair_keys=repair_keys,
                 citation_findings=citation_findings,
+                citation_unkeyed=has_unkeyed_citation_error,
+                citation_copy_blocks=[
+                    citation_copy_blocks[key] for key in sorted(citation_copy_blocks)
+                ],
             )
         return {
             "source_snapshot": snapshot,

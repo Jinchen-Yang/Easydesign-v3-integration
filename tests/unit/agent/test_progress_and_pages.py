@@ -1,5 +1,6 @@
 """No absent-job polling and lossless size-aware passage delivery; synthetic sources."""
 
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -7,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
 
 from easydesign.agent.contracts import (
@@ -284,9 +285,7 @@ async def test_stage1_structure_decision_packet_remains_inline(
     )
     monkeypatch.setattr(bridge, "read_evidence", lambda _run_id=None: packet)
     reader = next(
-        tool
-        for tool in build_tools(bridge, "target")
-        if tool.name == "read_target_evidence"
+        tool for tool in build_tools(bridge, "target") if tool.name == "read_target_evidence"
     )
 
     result = json.loads(await reader.ainvoke({}))
@@ -637,9 +636,7 @@ async def test_inactive_canonical_reference_has_one_target_tool_correction(
     )
 
     async def handler(_request: Any) -> Any:
-        raise CanonicalReferenceMismatch(
-            "P02928", "DEMERGED", ["P0AEX9", "P0AEY0"]
-        )
+        raise CanonicalReferenceMismatch("P02928", "DEMERGED", ["P0AEX9", "P0AEY0"])
 
     request = SimpleNamespace(
         tool_call={
@@ -663,9 +660,7 @@ async def test_inactive_canonical_reference_has_one_target_tool_correction(
     with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
         await guard.awrap_tool_call(request, handler)
     repairs = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "contract-repair"
     ]
     assert [repair["contract"] for repair in repairs] == [
         "propose_canonical_identity:inactive-reference"
@@ -1082,11 +1077,19 @@ async def test_known_source_citation_is_repaired_before_site_registration(
         )
         with pytest.raises(EvidenceCitationMismatch) as mixed_error:
             worker.validate_questions([mixed])
-        assert mixed_error.value.repair_keys == ()
+        assert mixed_error.value.repair_keys == (
+            "known-source:" + original_good.evidence[0].card_id,
+        )
+        assert mixed_error.value.citation_unkeyed is True
         with pytest.raises(ResearchQuestionCitationMismatch) as composite_error:
             worker.validate_questions([mixed.model_copy(update={"query_ids": []})])
         assert composite_error.value.citation_unkeyed is True
-        assert composite_error.value.citation_repair_keys == ()
+        assert composite_error.value.citation_repair_keys == (
+            "known-source:" + original_good.evidence[0].card_id,
+        )
+        assert composite_error.value.citation_copy_blocks[0]["card_id"] == (
+            original_good.evidence[0].card_id
+        )
         assert {item[2] for item in composite_error.value.citation_findings} == {
             False,
             True,
@@ -1094,6 +1097,62 @@ async def test_known_source_citation_is_repaired_before_site_registration(
     with pytest.raises(AgentBoundaryError, match="not retrieved"):
         worker.validate_questions([opinion("foreign-source")])
     assert not b._jobs()
+
+
+def test_pending_citation_copy_block_is_exact_unescaped_and_hash_checked(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Deliver exact citation retry data")["execution_id"]
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    passage = 'Quoted "value", slash \\ and newline\nUnicode β remain exact.'
+    block = {
+        "card_id": "passage-exact",
+        "passage": passage,
+        "passage_sha256": hashlib.sha256(passage.encode("utf-8")).hexdigest(),
+        "passage_chars": len(passage),
+        "locations": [{"kind": "decision-question", "question_index": 0}],
+    }
+    b.store.event(
+        b.thread,
+        "rejected-submission",
+        {
+            "role": "site",
+            "execution_id": eid,
+            "diagnostic": "CITATION_MISMATCH",
+            "repair_contracts": ["SiteResearchHandoff:evidence-citation"],
+            "repair_already_counted": True,
+            "repair_findings": {"citation_copy_blocks": [block]},
+        },
+    )
+    message = guard._pending_citation_evidence_message()
+    assert isinstance(message, HumanMessage)
+    assert passage in message.content
+    assert "\\nUnicode" not in message.content
+    assert f"PASSAGE[{len(passage)}]" in message.content
+
+    b.store.event(
+        b.thread,
+        "rejected-submission",
+        {
+            "role": "site",
+            "execution_id": eid,
+            "diagnostic": "CITATION_MISMATCH",
+            "repair_contracts": ["SiteResearchHandoff:evidence-citation"],
+            "repair_already_counted": True,
+            "repair_findings": {"citation_copy_blocks": [{**block, "passage_sha256": "0" * 64}]},
+        },
+    )
+    with pytest.raises(AgentBoundaryError, match="integrity"):
+        guard._pending_citation_evidence_message()
 
 
 @pytest.mark.asyncio
@@ -1972,7 +2031,6 @@ async def test_acquired_source_for_another_need_is_not_reported_as_empty_evidenc
     assert len(fetches) == 1 and not b._jobs()
 
 
-
 @pytest.mark.asyncio
 async def test_site_question_binding_has_independent_semantic_repair_after_shape_error(
     site_bridge: Any, monkeypatch: Any
@@ -2066,9 +2124,7 @@ async def test_site_question_binding_has_independent_semantic_repair_after_shape
     assert result.structured_response == handoff()
     assert attempts == 3
     repairs = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "contract-repair"
     ]
     assert [repair["contract"] for repair in repairs] == [
         "SiteResearchHandoff",
@@ -2205,8 +2261,7 @@ async def test_site_mixed_question_citation_repair_converges_within_four_submiss
     repairs = [
         event["payload"]
         for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == eid
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == eid
     ]
     assert [repair["contract"] for repair in repairs] == [
         "SiteResearchHandoff",
@@ -2216,14 +2271,16 @@ async def test_site_mixed_question_citation_repair_converges_within_four_submiss
     ]
     assert [repairs[0]["attempt"], repairs[-1]["attempt"]] == [1, 2]
     assert len({repairs[1]["composite_round_id"], repairs[2]["composite_round_id"]}) == 1
-    assert len(
-        [
-            event
-            for event in b.store.events(b.thread)
-            if event["kind"] == "model-call"
-            and event["payload"].get("execution_id") == eid
-        ]
-    ) == SITE_RESEARCH_MODEL_CALL_LIMIT - 1 + 4
+    assert (
+        len(
+            [
+                event
+                for event in b.store.events(b.thread)
+                if event["kind"] == "model-call" and event["payload"].get("execution_id") == eid
+            ]
+        )
+        == SITE_RESEARCH_MODEL_CALL_LIMIT - 1 + 4
+    )
     assert not [
         event
         for event in b.store.events(b.thread)
@@ -2334,9 +2391,7 @@ async def test_site_role_mismatch_has_one_semantic_repair_after_shape_repairs(
 
     b = site_bridge
     cfg = scripted_config()
-    eid = b.store.begin_execution(b.thread, "Repair a known evidence-role mismatch")[
-        "execution_id"
-    ]
+    eid = b.store.begin_execution(b.thread, "Repair a known evidence-role mismatch")["execution_id"]
     for _ in range(SITE_RESEARCH_MODEL_CALL_LIMIT - 1):
         b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
     for index in range(2):
@@ -2420,9 +2475,7 @@ async def test_site_role_mismatch_has_one_semantic_repair_after_shape_repairs(
     assert result.structured_response == handoff()
     assert attempts == 2
     repairs = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "contract-repair"
     ]
     assert [repair["contract"] for repair in repairs] == [
         "SiteResearchHandoff",
@@ -2509,9 +2562,7 @@ async def test_site_citation_repair_slot_is_durable_and_exhausts_fatally(
 
     assert attempts == 2
     repairs = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "contract-repair"
     ]
     assert [repair["contract"] for repair in repairs] == [
         "SiteResearchHandoff",
@@ -2541,9 +2592,7 @@ async def test_site_distinct_focused_citation_cards_converge_within_two_rounds(
     from tests.unit.agent.test_site_dossier import handoff
 
     b = site_bridge
-    eid = b.store.begin_execution(b.thread, "Repair two distinct focused citations")[
-        "execution_id"
-    ]
+    eid = b.store.begin_execution(b.thread, "Repair two distinct focused citations")["execution_id"]
     for index in range(2):
         b.store.reserve_contract_repair(
             b.thread,
@@ -2619,9 +2668,7 @@ async def test_site_distinct_focused_citation_cards_converge_within_two_rounds(
     assert result.structured_response == handoff()
     assert attempts == validations == 3
     repairs = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "contract-repair"
     ]
     assert [repair["contract"] for repair in repairs] == [
         "SiteResearchHandoff",
@@ -2635,14 +2682,16 @@ async def test_site_distinct_focused_citation_cards_converge_within_two_rounds(
         ["known-source:passage-distinct-2"],
     ]
     assert all(repair["repair_limit"] == 2 for repair in repairs[-2:])
-    assert len(
-        [
-            event
-            for event in b.store.events(b.thread)
-            if event["kind"] == "model-call"
-            and event["payload"]["execution_id"] == eid
-        ]
-    ) == 3
+    assert (
+        len(
+            [
+                event
+                for event in b.store.events(b.thread)
+                if event["kind"] == "model-call" and event["payload"]["execution_id"] == eid
+            ]
+        )
+        == 3
+    )
 
 
 @pytest.mark.asyncio
@@ -2739,9 +2788,7 @@ async def test_site_shape_and_acquisition_citation_repairs_use_independent_slots
     assert result.structured_response == handoff()
     assert attempts == 4 and validations == 2
     repairs = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "contract-repair"
     ]
     assert [repair["contract"] for repair in repairs] == [
         "SiteResearchHandoff",
@@ -2756,9 +2803,7 @@ def test_keyed_citation_repair_is_per_card_bounded_and_restart_durable(
     site_bridge: Any,
 ) -> None:
     b = site_bridge
-    eid = b.store.begin_execution(b.thread, "Persist focused citation repair keys")[
-        "execution_id"
-    ]
+    eid = b.store.begin_execution(b.thread, "Persist focused citation repair keys")["execution_id"]
     contract = "SiteResearchHandoff:evidence-citation"
     assert (
         b.store.reserve_keyed_contract_repair(
@@ -2806,6 +2851,45 @@ def test_keyed_citation_repair_is_per_card_bounded_and_restart_durable(
         reopened.close()
 
 
+def test_keyed_citation_same_card_allows_one_new_attempt_and_replay_is_idempotent(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Retry one mechanical citation copy")["execution_id"]
+    contract = "SiteResearchHandoff:evidence-citation"
+    arguments = {
+        "thread": b.thread,
+        "role": "site",
+        "execution_id": eid,
+        "diagnostic": "same focused passage copy mismatch",
+        "contract": contract,
+        "repair_keys": ("known-source:passage-a",),
+    }
+    assert (
+        b.store.reserve_keyed_contract_repair(**arguments, submission_attempt_id="submission-1")
+        == 1
+    )
+    assert (
+        b.store.reserve_keyed_contract_repair(**arguments, submission_attempt_id="submission-1")
+        == 1
+    )
+    assert (
+        b.store.reserve_keyed_contract_repair(**arguments, submission_attempt_id="submission-2")
+        == 2
+    )
+    with pytest.raises(AgentBoundaryError, match="2 rounds"):
+        b.store.reserve_keyed_contract_repair(**arguments, submission_attempt_id="submission-3")
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == eid
+    ]
+    assert [item["submission_attempt_id"] for item in repairs] == [
+        "submission-1",
+        "submission-2",
+    ]
+
+
 def test_keyed_citation_batch_consumes_each_card_and_legacy_is_fail_closed(
     site_bridge: Any,
 ) -> None:
@@ -2824,9 +2908,7 @@ def test_keyed_citation_batch_consumes_each_card_and_legacy_is_fail_closed(
         == 1
     )
     event = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "contract-repair"
     ][-1]
     assert event["repair_keys"] == [
         "known-source:passage-a",
@@ -2851,14 +2933,14 @@ def test_keyed_citation_batch_consumes_each_card_and_legacy_is_fail_closed(
             repair_keys=("known-source:passage-c",),
         )
 
-    too_many_eid = b.store.begin_execution(b.thread, "Reject three citation cards at once")[
+    wide_eid = b.store.begin_execution(b.thread, "Repair three citation cards at once")[
         "execution_id"
     ]
-    with pytest.raises(AgentBoundaryError, match="2 distinct evidence cards"):
+    assert (
         b.store.reserve_keyed_contract_repair(
             b.thread,
             "site",
-            too_many_eid,
+            wide_eid,
             "three cards in one rejected submission",
             contract=contract,
             repair_keys=(
@@ -2866,10 +2948,44 @@ def test_keyed_citation_batch_consumes_each_card_and_legacy_is_fail_closed(
                 "known-source:passage-b",
                 "known-source:passage-c",
             ),
+            submission_attempt_id="wide-attempt-1",
+        )
+        == 1
+    )
+    wide_event = next(
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == wide_eid
+    )
+    assert wide_event["wide_batch"] is True
+    assert wide_event["citation_contract_exhausted"] is True
+    with pytest.raises(AgentBoundaryError, match="earlier wide batch"):
+        b.store.reserve_contract_repair(
+            b.thread,
+            "site",
+            wide_eid,
+            "later unkeyed citation mismatch",
+            contract=contract,
+            max_repairs=1,
+            submission_attempt_id="wide-attempt-2",
+        )
+
+    too_many_eid = b.store.begin_execution(b.thread, "Reject seven citation cards at once")[
+        "execution_id"
+    ]
+    with pytest.raises(AgentBoundaryError, match="more than 6"):
+        b.store.reserve_keyed_contract_repair(
+            b.thread,
+            "site",
+            too_many_eid,
+            "seven cards in one rejected submission",
+            contract=contract,
+            repair_keys=tuple(f"known-source:passage-{index}" for index in range(7)),
+            citation_unkeyed=True,
+            submission_attempt_id="too-wide-attempt",
         )
     assert not any(
-        event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == too_many_eid
+        event["kind"] == "contract-repair" and event["payload"].get("execution_id") == too_many_eid
         for event in b.store.events(b.thread)
     )
 
@@ -2951,8 +3067,7 @@ def test_mixed_question_citation_reservation_is_atomic_and_restart_durable(
             citation_repair_keys=("known-source:passage-a",),
         )
     assert not any(
-        event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == eid
+        event["kind"] == "contract-repair" and event["payload"].get("execution_id") == eid
         for event in b.store.events(b.thread)
     )
     assert b.store.reserve_question_citation_contract_repair(
@@ -2967,8 +3082,7 @@ def test_mixed_question_citation_reservation_is_atomic_and_restart_durable(
     repairs = [
         event["payload"]
         for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == eid
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == eid
     ]
     assert [repair["contract"] for repair in repairs] == [
         question_contract,
@@ -2990,14 +3104,17 @@ def test_mixed_question_citation_reservation_is_atomic_and_restart_durable(
             )
     finally:
         reopened.close()
-    assert len(
-        [
-            event
-            for event in b.store.events(b.thread)
-            if event["kind"] == "contract-repair"
-            and event["payload"].get("execution_id") == eid
-        ]
-    ) == 2
+    assert (
+        len(
+            [
+                event
+                for event in b.store.events(b.thread)
+                if event["kind"] == "contract-repair"
+                and event["payload"].get("execution_id") == eid
+            ]
+        )
+        == 2
+    )
 
     failed_eid = b.store.begin_execution(b.thread, "Reject one failed mixed component")[
         "execution_id"
@@ -3013,8 +3130,7 @@ def test_mixed_question_citation_reservation_is_atomic_and_restart_durable(
     before = [
         event["payload"]
         for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == failed_eid
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == failed_eid
     ]
     with pytest.raises(AgentBoundaryError, match="same evidence card"):
         b.store.reserve_question_citation_contract_repair(
@@ -3029,11 +3145,62 @@ def test_mixed_question_citation_reservation_is_atomic_and_restart_durable(
     after = [
         event["payload"]
         for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == failed_eid
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == failed_eid
     ]
     assert after == before
     assert not any(item.get("contract") == question_contract for item in after)
+
+
+def test_mixed_wide_citation_batch_is_atomic_idempotent_and_exhausting(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    question_contract = "SiteResearchHandoff:research-question-binding"
+    citation_contract = "SiteResearchHandoff:evidence-citation"
+    eid = b.store.begin_execution(b.thread, "Repair one mixed wide citation batch")["execution_id"]
+    keys = tuple(f"known-source:passage-{index}" for index in range(3))
+    arguments = {
+        "thread": b.thread,
+        "role": "site",
+        "execution_id": eid,
+        "diagnostic": "question binding plus three citation mismatches",
+        "question_contract": question_contract,
+        "citation_contract": citation_contract,
+        "citation_repair_keys": keys,
+        "submission_attempt_id": "mixed-wide-1",
+    }
+    assert b.store.reserve_question_citation_contract_repair(**arguments) == {
+        "question_attempt": 1,
+        "citation_attempt": 1,
+    }
+    assert b.store.reserve_question_citation_contract_repair(**arguments) == {
+        "question_attempt": 1,
+        "citation_attempt": 1,
+    }
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == eid
+    ]
+    assert len(repairs) == 2
+    citation = next(item for item in repairs if item["contract"] == citation_contract)
+    assert citation["wide_batch"] is True
+    assert citation["citation_contract_exhausted"] is True
+    with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
+        b.store.reserve_question_citation_contract_repair(
+            **{**arguments, "submission_attempt_id": "mixed-wide-2"}
+        )
+    assert (
+        len(
+            [
+                event
+                for event in b.store.events(b.thread)
+                if event["kind"] == "contract-repair"
+                and event["payload"].get("execution_id") == eid
+            ]
+        )
+        == 2
+    )
 
 
 def test_concurrent_mixed_question_citation_reservation_is_one_round(
@@ -3071,8 +3238,7 @@ def test_concurrent_mixed_question_citation_reservation_is_one_round(
     repairs = [
         event["payload"]
         for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == eid
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == eid
     ]
     assert len(repairs) == 2
     assert {repair["contract"] for repair in repairs} == {
@@ -3086,9 +3252,7 @@ def test_unpaired_rejected_submission_is_terminal_across_restart(
     site_bridge: Any,
 ) -> None:
     b = site_bridge
-    eid = b.store.begin_execution(b.thread, "Reject an exhausted mixed repair")[
-        "execution_id"
-    ]
+    eid = b.store.begin_execution(b.thread, "Reject an exhausted mixed repair")["execution_id"]
     question_contract = "SiteResearchHandoff:research-question-binding"
     citation_contract = "SiteResearchHandoff:evidence-citation"
     guard = RoleBoundary(
@@ -3177,11 +3341,7 @@ def test_mixed_reservation_races_isolated_reservation_without_duplicate_slot(
         store = SessionStore(b.project)
         try:
             barrier.wait()
-            contract = (
-                question_contract
-                if isolated_component == "question"
-                else citation_contract
-            )
+            contract = question_contract if isolated_component == "question" else citation_contract
             return store.reserve_contract_repair(
                 b.thread,
                 "site",
@@ -3203,12 +3363,7 @@ def test_mixed_reservation_races_isolated_reservation_without_duplicate_slot(
     repairs = [
         event["payload"]
         for event in b.store.events(b.thread)
-        if event["kind"] == "contract-repair"
-        and event["payload"].get("execution_id") == eid
+        if event["kind"] == "contract-repair" and event["payload"].get("execution_id") == eid
     ]
-    raced_contract = (
-        question_contract if isolated_component == "question" else citation_contract
-    )
-    assert len(
-        [repair for repair in repairs if repair.get("contract") == raced_contract]
-    ) == 1
+    raced_contract = question_contract if isolated_component == "question" else citation_contract
+    assert len([repair for repair in repairs if repair.get("contract") == raced_contract]) == 1

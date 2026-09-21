@@ -205,7 +205,7 @@ class SessionStore:
                     return event
         return None
 
-    def reserve_model_call(self, thread: str, role: str, maximum: int, execution_id: str) -> None:
+    def reserve_model_call(self, thread: str, role: str, maximum: int, execution_id: str) -> str:
         """Reserve one scientific provider call under scientific and total safeguards."""
         execution = self.latest_execution(thread)
         if execution is None or execution["execution_id"] != execution_id:
@@ -235,6 +235,15 @@ class SessionStore:
                 "AND kind IN ('model-call','auxiliary-model-call')",
                 (thread,),
             ).fetchone()[0]
+            submission_attempt_id = identity(
+                {
+                    "thread": thread,
+                    "execution_id": execution_id,
+                    "role": role,
+                    "scientific_call": count + 1,
+                    "provider_call": provider_count + 1,
+                }
+            )
             self.db.execute(
                 "INSERT INTO events(thread,kind,payload) VALUES(?, 'model-call', ?)",
                 (
@@ -247,10 +256,12 @@ class SessionStore:
                             "execution_id": execution_id,
                             "lifetime_call": lifetime + 1,
                             "call_category": "scientific",
+                            "submission_attempt_id": submission_attempt_id,
                         }
                     ),
                 ),
             )
+        return submission_attempt_id
 
     def reserve_auxiliary_model_call(
         self, thread: str, role: str, maximum: int, execution_id: str
@@ -371,17 +382,14 @@ class SessionStore:
                     break
                 continue
             prior_scope = prior.get("scope")
-            if prior_scope is None or (
-                prior.get("role") == role and prior_scope == scope
-            ):
+            if prior_scope is None or (prior.get("role") == role and prior_scope == scope):
                 outstanding = True
                 break
         if not outstanding:
             return
         with self.db:
             self.db.execute(
-                "INSERT INTO events(thread,kind,payload) "
-                "VALUES(?, 'tool-repair-success', ?)",
+                "INSERT INTO events(thread,kind,payload) VALUES(?, 'tool-repair-success', ?)",
                 (
                     thread,
                     compact(
@@ -404,6 +412,7 @@ class SessionStore:
         *,
         contract: str | None = None,
         max_repairs: int = 2,
+        submission_attempt_id: str | None = None,
     ) -> int:
         """Bounded corrections per typed contract/execution, durable across replay.
 
@@ -421,13 +430,32 @@ class SessionStore:
             if execution is None or execution["execution_id"] != execution_id:
                 raise AgentBoundaryError("Contract repair is outside the current execution")
             with self.db:
-                count = self.db.execute(
-                    "SELECT count(*) FROM events WHERE thread=? AND kind='contract-repair' "
+                rows = self.db.execute(
+                    "SELECT payload FROM events WHERE thread=? AND kind='contract-repair' "
                     "AND json_extract(payload,'$.execution_id')=? "
                     "AND (? IS NULL OR json_extract(payload,'$.contract') IS NULL "
-                    "OR json_extract(payload,'$.contract')=?)",
+                    "OR json_extract(payload,'$.contract')=?) ORDER BY seq",
                     (thread, execution_id, contract, contract),
-                ).fetchone()[0]
+                ).fetchall()
+                prior = [json.loads(row["payload"]) for row in rows]
+                if submission_attempt_id is not None:
+                    replay = [
+                        item
+                        for item in prior
+                        if item.get("submission_attempt_id") == submission_attempt_id
+                        and (item.get("contract") is None or item.get("contract") == contract)
+                    ]
+                    if replay:
+                        return int(replay[-1]["attempt"])
+                if (
+                    contract is not None
+                    and contract.endswith(":evidence-citation")
+                    and any(item.get("citation_contract_exhausted") for item in prior)
+                ):
+                    raise AgentBoundaryError(
+                        "Structured citation repair budget exhausted by an earlier wide batch"
+                    )
+                count = len(prior)
                 if count >= max_repairs:
                     raise AgentBoundaryError(
                         "Structured contract repair budget exhausted "
@@ -445,6 +473,11 @@ class SessionStore:
                                 "attempt": count + 1,
                                 "repair_limit": max_repairs,
                                 "diagnostic": diagnostic[:6000],
+                                **(
+                                    {"submission_attempt_id": submission_attempt_id}
+                                    if submission_attempt_id is not None
+                                    else {}
+                                ),
                             }
                         ),
                     ),
@@ -462,6 +495,7 @@ class SessionStore:
         citation_contract: str,
         citation_repair_keys: list[str] | tuple[str, ...] = (),
         citation_unkeyed: bool = False,
+        submission_attempt_id: str | None = None,
     ) -> dict[str, int]:
         """Atomically consume the existing question and citation repair allowances.
 
@@ -472,10 +506,13 @@ class SessionStore:
         keys = tuple(sorted(set(citation_repair_keys)))
         if question_contract == citation_contract:
             raise AgentBoundaryError("Mixed repair component contracts must be distinct")
-        if citation_unkeyed and keys:
-            raise AgentBoundaryError("Unkeyed citation repair cannot carry focused passage keys")
         if not citation_unkeyed and not keys:
             raise AgentBoundaryError("Keyed contract repair requires Runtime-owned repair keys")
+        if len(keys) > 6:
+            raise AgentBoundaryError(
+                "Structured citation repair budget exhausted "
+                "(more than 6 distinct evidence cards in one submission)"
+            )
         with self.writer():
             execution = self.latest_execution(thread)
             if execution is None or execution["execution_id"] != execution_id:
@@ -492,21 +529,51 @@ class SessionStore:
                 question_prior = [
                     item
                     for item in prior
-                    if item.get("contract") is None
-                    or item.get("contract") == question_contract
+                    if item.get("contract") is None or item.get("contract") == question_contract
                 ]
-                if question_prior:
-                    raise AgentBoundaryError(
-                        "Structured contract repair budget exhausted "
-                        "(1 per contract per execution)"
-                    )
                 citation_prior = [
                     item
                     for item in prior
-                    if item.get("contract") is None
-                    or item.get("contract") == citation_contract
+                    if item.get("contract") is None or item.get("contract") == citation_contract
                 ]
+                if submission_attempt_id is not None:
+                    question_replay = [
+                        item
+                        for item in question_prior
+                        if item.get("submission_attempt_id") == submission_attempt_id
+                    ]
+                    citation_replay = [
+                        item
+                        for item in citation_prior
+                        if item.get("submission_attempt_id") == submission_attempt_id
+                    ]
+                    if question_replay or citation_replay:
+                        if len(question_replay) != 1 or len(citation_replay) != 1:
+                            raise AgentBoundaryError(
+                                "Replayed mixed repair has a partial prior reservation"
+                            )
+                        citation_item = citation_replay[0]
+                        if (
+                            tuple(sorted(citation_item.get("repair_keys", []))) != keys
+                            or bool(citation_item.get("citation_unkeyed")) != citation_unkeyed
+                        ):
+                            raise AgentBoundaryError(
+                                "Replayed mixed citation reservation changed its Runtime-owned "
+                                "scope"
+                            )
+                        return {
+                            "question_attempt": int(question_replay[0]["attempt"]),
+                            "citation_attempt": int(citation_item["attempt"]),
+                        }
+                if question_prior:
+                    raise AgentBoundaryError(
+                        "Structured contract repair budget exhausted (1 per contract per execution)"
+                    )
                 if citation_unkeyed:
+                    if any(item.get("citation_contract_exhausted") for item in citation_prior):
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted by an earlier wide batch"
+                        )
                     if citation_prior:
                         raise AgentBoundaryError(
                             "Structured contract repair budget exhausted "
@@ -515,9 +582,18 @@ class SessionStore:
                     citation_attempt = 1
                     citation_payload: dict[str, Any] = {
                         "repair_limit": 1,
+                        "repair_keys": list(keys),
+                        "citation_unkeyed": True,
                     }
                 else:
-                    if any(not item.get("repair_keys") for item in citation_prior):
+                    if any(item.get("citation_contract_exhausted") for item in citation_prior):
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted by an earlier wide batch"
+                        )
+                    if any(
+                        not item.get("repair_keys") or item.get("citation_unkeyed")
+                        for item in citation_prior
+                    ):
                         raise AgentBoundaryError(
                             "Structured citation repair budget exhausted: an earlier unkeyed "
                             "repair cannot safely be attributed to a different evidence card"
@@ -528,29 +604,50 @@ class SessionStore:
                         for key in item.get("repair_keys", [])
                         if isinstance(key, str)
                     }
-                    repeated = sorted(used.intersection(keys))
-                    if repeated:
-                        raise AgentBoundaryError(
-                            "Structured citation repair already used for the same evidence card: "
-                            + compact(repeated)
-                        )
-                    if len(citation_prior) >= 2:
-                        raise AgentBoundaryError(
-                            "Structured citation repair budget exhausted "
-                            "(2 rounds per contract per execution)"
-                        )
-                    if len(used.union(keys)) > 2:
-                        raise AgentBoundaryError(
-                            "Structured citation repair budget exhausted "
-                            "(2 distinct evidence cards per contract per execution)"
-                        )
-                    citation_attempt = len(citation_prior) + 1
-                    citation_payload = {
-                        "repair_limit": 2,
-                        "repair_key_limit": 1,
-                        "repair_distinct_key_limit": 2,
-                        "repair_keys": list(keys),
-                    }
+                    if not citation_prior and len(keys) >= 3:
+                        citation_attempt = 1
+                        citation_payload = {
+                            "repair_limit": 2,
+                            "repair_key_limit": 6,
+                            "repair_distinct_key_limit": 6,
+                            "repair_keys": list(keys),
+                            "wide_batch": True,
+                            "citation_contract_exhausted": True,
+                        }
+                    else:
+                        if len(keys) > 2:
+                            raise AgentBoundaryError(
+                                "Structured citation repair budget exhausted: a later round "
+                                "cannot expand into a wide citation batch"
+                            )
+                        repeated = sorted(used.intersection(keys))
+                        if repeated and (
+                            submission_attempt_id is None
+                            or any(
+                                item.get("submission_attempt_id") is None for item in citation_prior
+                            )
+                        ):
+                            raise AgentBoundaryError(
+                                "Structured citation repair for the same evidence card cannot be "
+                                "distinguished from a replay without stable attempt identity"
+                            )
+                        if len(citation_prior) >= 2:
+                            raise AgentBoundaryError(
+                                "Structured citation repair budget exhausted "
+                                "(2 rounds per contract per execution)"
+                            )
+                        if len(used.union(keys)) > 2:
+                            raise AgentBoundaryError(
+                                "Structured citation repair budget exhausted "
+                                "(2 distinct evidence cards per contract per execution)"
+                            )
+                        citation_attempt = len(citation_prior) + 1
+                        citation_payload = {
+                            "repair_limit": 2,
+                            "repair_key_limit": 1,
+                            "repair_distinct_key_limit": 2,
+                            "repair_keys": list(keys),
+                        }
                 round_id = identity(
                     {
                         "execution_id": execution_id,
@@ -566,10 +663,14 @@ class SessionStore:
                     "execution_id": execution_id,
                     "composite_round_id": round_id,
                     "diagnostic": diagnostic[:6000],
+                    **(
+                        {"submission_attempt_id": submission_attempt_id}
+                        if submission_attempt_id is not None
+                        else {}
+                    ),
                 }
                 self.db.executemany(
-                    "INSERT INTO events(thread,kind,payload) "
-                    "VALUES(?, 'contract-repair', ?)",
+                    "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
                     [
                         (
                             thread,
@@ -608,6 +709,8 @@ class SessionStore:
         repair_keys: list[str] | tuple[str, ...],
         max_repairs: int = 2,
         max_distinct_keys: int = 2,
+        citation_unkeyed: bool = False,
+        submission_attempt_id: str | None = None,
     ) -> int:
         """Reserve a bounded semantic correction without letting one source retry twice.
 
@@ -622,6 +725,11 @@ class SessionStore:
             raise AgentBoundaryError("Keyed contract repair requires Runtime-owned repair keys")
         if max_repairs not in {1, 2} or max_distinct_keys not in {1, 2}:
             raise AgentBoundaryError("Contract repair limit must be one or two")
+        if len(keys) > 6:
+            raise AgentBoundaryError(
+                "Structured citation repair budget exhausted "
+                "(more than 6 distinct evidence cards in one submission)"
+            )
         # The CLI session lock prevents normal concurrent turns. Keep the narrower project writer
         # lock here as well so two direct/restarted SessionStore connections cannot both pass the
         # read-before-insert checks for the same card.
@@ -638,34 +746,94 @@ class SessionStore:
                     (thread, execution_id, contract),
                 ).fetchall()
                 prior = [json.loads(row["payload"]) for row in rows]
-                if any(not item.get("repair_keys") for item in prior):
+                if submission_attempt_id is not None:
+                    replay = [
+                        item
+                        for item in prior
+                        if item.get("submission_attempt_id") == submission_attempt_id
+                    ]
+                    if replay:
+                        item = replay[-1]
+                        if (
+                            tuple(sorted(item.get("repair_keys", []))) != keys
+                            or bool(item.get("citation_unkeyed")) != citation_unkeyed
+                        ):
+                            raise AgentBoundaryError(
+                                "Replayed citation reservation changed its Runtime-owned scope"
+                            )
+                        return int(item["attempt"])
+                if any(item.get("citation_contract_exhausted") for item in prior):
+                    raise AgentBoundaryError(
+                        "Structured citation repair budget exhausted by an earlier wide batch"
+                    )
+                if citation_unkeyed:
+                    if prior:
+                        raise AgentBoundaryError(
+                            "Structured contract repair budget exhausted "
+                            "(1 unkeyed citation round per contract per execution)"
+                        )
+                    attempt = 1
+                    payload: dict[str, Any] = {
+                        "repair_limit": 1,
+                        "repair_keys": list(keys),
+                        "citation_unkeyed": True,
+                    }
+                elif any(
+                    not item.get("repair_keys") or item.get("citation_unkeyed") for item in prior
+                ):
                     raise AgentBoundaryError(
                         "Structured citation repair budget exhausted: an earlier unkeyed repair "
                         "cannot safely be attributed to a different evidence card"
                     )
-                used = {
-                    key
-                    for item in prior
-                    for key in item.get("repair_keys", [])
-                    if isinstance(key, str)
-                }
-                repeated = sorted(used.intersection(keys))
-                if repeated:
-                    raise AgentBoundaryError(
-                        "Structured citation repair already used for the same evidence card: "
-                        + compact(repeated)
-                    )
-                if len(prior) >= max_repairs:
-                    raise AgentBoundaryError(
-                        "Structured citation repair budget exhausted "
-                        f"({max_repairs} rounds per contract per execution)"
-                    )
-                if len(used.union(keys)) > max_distinct_keys:
-                    raise AgentBoundaryError(
-                        "Structured citation repair budget exhausted "
-                        f"({max_distinct_keys} distinct evidence cards per contract per execution)"
-                    )
-                attempt = len(prior) + 1
+                elif not prior and len(keys) >= 3:
+                    attempt = 1
+                    payload = {
+                        "repair_limit": max_repairs,
+                        "repair_key_limit": 6,
+                        "repair_distinct_key_limit": 6,
+                        "repair_keys": list(keys),
+                        "wide_batch": True,
+                        "citation_contract_exhausted": True,
+                    }
+                else:
+                    if len(keys) > max_distinct_keys:
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted: a later round cannot "
+                            "expand into a wide citation batch"
+                        )
+                    used = {
+                        key
+                        for item in prior
+                        for key in item.get("repair_keys", [])
+                        if isinstance(key, str)
+                    }
+                    repeated = sorted(used.intersection(keys))
+                    if repeated and (
+                        submission_attempt_id is None
+                        or any(item.get("submission_attempt_id") is None for item in prior)
+                    ):
+                        raise AgentBoundaryError(
+                            "Structured citation repair for the same evidence card cannot be "
+                            "distinguished from a replay without stable attempt identity"
+                        )
+                    if len(prior) >= max_repairs:
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted "
+                            f"({max_repairs} rounds per contract per execution)"
+                        )
+                    if len(used.union(keys)) > max_distinct_keys:
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted "
+                            f"({max_distinct_keys} distinct evidence cards per contract per "
+                            "execution)"
+                        )
+                    attempt = len(prior) + 1
+                    payload = {
+                        "repair_limit": max_repairs,
+                        "repair_key_limit": 1,
+                        "repair_distinct_key_limit": max_distinct_keys,
+                        "repair_keys": list(keys),
+                    }
                 self.db.execute(
                     "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
                     (
@@ -676,11 +844,13 @@ class SessionStore:
                                 "execution_id": execution_id,
                                 "contract": contract,
                                 "attempt": attempt,
-                                "repair_limit": max_repairs,
-                                "repair_key_limit": 1,
-                                "repair_distinct_key_limit": max_distinct_keys,
-                                "repair_keys": list(keys),
+                                **payload,
                                 "diagnostic": diagnostic[:6000],
+                                **(
+                                    {"submission_attempt_id": submission_attempt_id}
+                                    if submission_attempt_id is not None
+                                    else {}
+                                ),
                             }
                         ),
                     ),
@@ -724,10 +894,7 @@ class SessionStore:
                         if (
                             prior.get("role") == role
                             and prior.get("scope") == scope
-                            and (
-                                current_round is None
-                                or prior.get("round_id") != current_round
-                            )
+                            and (current_round is None or prior.get("round_id") != current_round)
                         ):
                             rounds = {}
                         continue
@@ -742,9 +909,7 @@ class SessionStore:
                         else ("legacy-event", str(seq))
                     )
                     rounds.setdefault(key, len(rounds) + 1)
-                current_key = (
-                    (role, current_round) if current_round is not None else None
-                )
+                current_key = (role, current_round) if current_round is not None else None
                 attempt = rounds.get(current_key) if current_key is not None else None
                 limit_label = f"{TOOL_REPAIR_LIMIT} consecutive rounds for {scope}"
             else:
@@ -763,9 +928,7 @@ class SessionStore:
                         else ("legacy-event", str(seq))
                     )
                     rounds.setdefault(key, int(prior["attempt"]))
-                current_key = (
-                    (role, details["round_id"]) if details.get("round_id") else None
-                )
+                current_key = (role, details["round_id"]) if details.get("round_id") else None
                 attempt = rounds.get(current_key) if current_key is not None else None
                 limit_label = f"{TOOL_REPAIR_LIMIT} shared correction rounds per execution"
             if attempt is None:

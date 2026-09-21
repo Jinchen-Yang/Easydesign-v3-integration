@@ -1593,6 +1593,8 @@ class EvidenceResearch:
         unknown = {key for c in conclusions for key in c.query_ids if key not in query_by_id}
         errors = []
         citation_errors = []
+        citation_repair_keys = []
+        has_unkeyed_citation_error = False
         role_errors = []
         if unknown:
             errors.append(
@@ -1662,6 +1664,10 @@ class EvidenceResearch:
                             else " Exact already-read passage: " + compact(card["passage"])
                         )
                     )
+                    if card.get("corpus_ref"):
+                        has_unkeyed_citation_error = True
+                    else:
+                        citation_repair_keys.append("known-source:" + use.card_id)
                 if use.strength in {"E1", "E2"} and not card["primary_eligible"]:
                     role_errors.append(
                         scope
@@ -1692,8 +1698,10 @@ class EvidenceResearch:
             diagnostic = "\n".join(errors + citation_errors)
             if unknown:
                 diagnostic += "\nAvailable complete query_ids: " + compact(sorted(query_by_id))
-            error_type = ResearchConclusionMismatch if errors else EvidenceCitationMismatch
-            raise error_type(diagnostic)
+            if errors:
+                raise ResearchConclusionMismatch(diagnostic)
+            repair_keys = [] if has_unkeyed_citation_error else sorted(set(citation_repair_keys))
+            raise EvidenceCitationMismatch(diagnostic, repair_keys=repair_keys)
         return {
             "source_snapshot": snapshot,
             "source_refs": used_refs,

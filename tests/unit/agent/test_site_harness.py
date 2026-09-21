@@ -616,7 +616,9 @@ async def test_known_citation_repair_is_independent_after_two_shape_repairs(
         "SiteResearchHandoff",
         "SiteResearchHandoff:evidence-citation",
     ]
-    assert repairs[-1]["repair_limit"] == 1
+    assert repairs[-1]["repair_limit"] == 2
+    assert repairs[-1]["repair_key_limit"] == 1
+    assert repairs[-1]["repair_keys"] == ["known-source:passage-citation-repair"]
     assert len([e for e in events if e["kind"] == "site-evidence-dossier"]) == 1
     assert len([e for e in events if e["kind"] == "site-proposal"]) == 1
     assert len([e for e in events if e["kind"] == "evidence-research"]) == research_before

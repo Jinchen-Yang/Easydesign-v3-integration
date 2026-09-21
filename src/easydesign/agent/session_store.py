@@ -447,6 +447,88 @@ class SessionStore:
             )
         return int(count) + 1
 
+    def reserve_keyed_contract_repair(
+        self,
+        thread: str,
+        role: str,
+        execution_id: str,
+        diagnostic: str,
+        *,
+        contract: str,
+        repair_keys: list[str] | tuple[str, ...],
+        max_repairs: int = 2,
+    ) -> int:
+        """Reserve a bounded semantic correction without letting one source retry twice.
+
+        One rejected submission is one repair round even when validation reports multiple cards.
+        Every card key in that batch is nevertheless consumed. Legacy/unkeyed events are a
+        fail-closed wildcard because their source identity cannot be reconstructed safely from
+        diagnostic prose.
+        """
+        keys = tuple(sorted(set(repair_keys)))
+        if not keys:
+            raise AgentBoundaryError("Keyed contract repair requires Runtime-owned repair keys")
+        if max_repairs not in {1, 2}:
+            raise AgentBoundaryError("Contract repair limit must be one or two")
+        # The CLI session lock prevents normal concurrent turns. Keep the narrower project writer
+        # lock here as well so two direct/restarted SessionStore connections cannot both pass the
+        # read-before-insert checks for the same card.
+        with self.writer():
+            execution = self.latest_execution(thread)
+            if execution is None or execution["execution_id"] != execution_id:
+                raise AgentBoundaryError("Contract repair is outside the current execution")
+            with self.db:
+                rows = self.db.execute(
+                    "SELECT payload FROM events WHERE thread=? AND kind='contract-repair' "
+                    "AND json_extract(payload,'$.execution_id')=? "
+                    "AND (json_extract(payload,'$.contract') IS NULL "
+                    "OR json_extract(payload,'$.contract')=?) ORDER BY seq",
+                    (thread, execution_id, contract),
+                ).fetchall()
+                prior = [json.loads(row["payload"]) for row in rows]
+                if any(not item.get("repair_keys") for item in prior):
+                    raise AgentBoundaryError(
+                        "Structured citation repair budget exhausted: an earlier unkeyed repair "
+                        "cannot safely be attributed to a different evidence card"
+                    )
+                used = {
+                    key
+                    for item in prior
+                    for key in item.get("repair_keys", [])
+                    if isinstance(key, str)
+                }
+                repeated = sorted(used.intersection(keys))
+                if repeated:
+                    raise AgentBoundaryError(
+                        "Structured citation repair already used for the same evidence card: "
+                        + compact(repeated)
+                    )
+                if len(prior) >= max_repairs:
+                    raise AgentBoundaryError(
+                        "Structured citation repair budget exhausted "
+                        f"({max_repairs} rounds per contract per execution)"
+                    )
+                attempt = len(prior) + 1
+                self.db.execute(
+                    "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
+                    (
+                        thread,
+                        compact(
+                            {
+                                "role": role,
+                                "execution_id": execution_id,
+                                "contract": contract,
+                                "attempt": attempt,
+                                "repair_limit": max_repairs,
+                                "repair_key_limit": 1,
+                                "repair_keys": list(keys),
+                                "diagnostic": diagnostic[:6000],
+                            }
+                        ),
+                    ),
+                )
+        return attempt
+
     def _reserve_repair(
         self,
         thread: str,

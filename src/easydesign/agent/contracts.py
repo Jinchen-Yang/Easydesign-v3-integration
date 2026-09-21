@@ -360,7 +360,17 @@ class JudgeStageMismatch(AgentBoundaryError):
 
 
 class EvidenceCitationMismatch(AgentBoundaryError):
-    """A known owned source was cited with the wrong passage or excerpt; no authority granted."""
+    """A known owned source was cited with the wrong passage or excerpt; no authority granted.
+
+    ``repair_keys`` are Runtime-created identities for focused, already-read passage cards. They
+    are deliberately independent of the model's bad excerpt so changing a typo cannot evade the
+    one-repair-per-card boundary. Other citation failures remain unkeyed and retain the legacy
+    single repair slot.
+    """
+
+    def __init__(self, message: str, *, repair_keys: list[str] | tuple[str, ...] = ()) -> None:
+        self.repair_keys = tuple(sorted(set(repair_keys)))
+        super().__init__(message)
 
 
 class SourceSelectionRequired(RuntimeError):

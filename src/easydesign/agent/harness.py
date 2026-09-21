@@ -1046,6 +1046,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             repair_already_counted = False
             evidence_role_repair = False
             evidence_citation_repair = False
+            evidence_citation_repair_keys: tuple[str, ...] = ()
             if submission_only and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
                     (
@@ -1127,6 +1128,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     except EvidenceCitationMismatch as error:
                         diagnostic = str(error)
                         evidence_citation_repair = True
+                        evidence_citation_repair_keys = error.repair_keys
                     except (ResearchConclusionMismatch, JudgeStageMismatch) as error:
                         diagnostic = str(error)
                     except HardFactContradiction as error:
@@ -1212,14 +1214,26 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                 elif evidence_citation_repair:
                     assert self.execution_id is not None
-                    self.bridge.store.reserve_contract_repair(
-                        self.bridge.thread,
-                        self.role,
-                        self.execution_id,
-                        diagnostic,
-                        contract=f"{schema.__name__}:evidence-citation",
-                        max_repairs=1,
-                    )
+                    citation_contract = f"{schema.__name__}:evidence-citation"
+                    if evidence_citation_repair_keys:
+                        self.bridge.store.reserve_keyed_contract_repair(
+                            self.bridge.thread,
+                            self.role,
+                            self.execution_id,
+                            diagnostic,
+                            contract=citation_contract,
+                            repair_keys=evidence_citation_repair_keys,
+                            max_repairs=2,
+                        )
+                    else:
+                        self.bridge.store.reserve_contract_repair(
+                            self.bridge.thread,
+                            self.role,
+                            self.execution_id,
+                            diagnostic,
+                            contract=citation_contract,
+                            max_repairs=1,
+                        )
                 else:
                     self.contract_error(diagnostic)
             from langchain_core.messages import SystemMessage

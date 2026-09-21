@@ -343,6 +343,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         return {row[0] for row in rows if isinstance(row[0], str)}
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
+        if self.role in {"coordinator", "target"}:
+            from .contracts import TargetJobTerminalFailure
+
+            failure = self.bridge.target_terminal_failure()
+            if failure is not None:
+                # A persisted worker failure is a one-way runtime transition. Stop before
+                # exposing tools, reserving budget or making another provider request.
+                raise TargetJobTerminalFailure(failure)
         submission_name = self.output_schema.__name__ if self.output_schema else ""
         available = [t for t in request.tools if getattr(t, "name", None) in self.allowed]
         # Fail closed even if a future profile merge adds unexpected middleware tools.

@@ -1713,6 +1713,19 @@ def _local_selection(
     loaded = prepared.loaded_config
     assert isinstance(loaded, LoadedStructureRunConfig)
     inventory = inventory_structure(loaded.source_path)
+    protein_chain_ids = frozenset(inventory.protein_chain_ids)
+    if not protein_chain_ids:
+        raise TargetInputError("local structure 不包含可用的 protein chain")
+    protein_chains = tuple(
+        chain
+        for chain in inventory.chains
+        if chain.author_chain_id in protein_chain_ids
+        and bool(chain.deposited_sequence or chain.sequence)
+    )
+    if {chain.author_chain_id for chain in protein_chains} != protein_chain_ids:
+        raise TargetInputError(
+            "local structure protein chain 缺少非空 canonical amino-acid sequence"
+        )
     source = loaded.config.stage01.target.source
     assert isinstance(source, LocalFileSourceConfig)
     identity = source.identity
@@ -1867,7 +1880,7 @@ def _local_selection(
                 canonical_scope_start=reference_start,
                 canonical_scope_end=reference_end,
             )
-            for chain in inventory.chains
+            for chain in protein_chains
         }
         selectable_chains = tuple(
             chain_id

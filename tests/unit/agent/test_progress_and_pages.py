@@ -660,6 +660,90 @@ async def test_accession_in_source_card_argument_is_bounded_without_exposing_for
     assert not b._jobs()
 
 
+def test_reference_comparison_rejects_nonprotein_auth_chain(
+    bridge: Any,
+    monkeypatch: Any,
+) -> None:
+    from easydesign.agent.evidence_research import ReferenceComparison
+    from easydesign.backends.target_sources.structure import (
+        ChainInventory,
+        StructureInventory,
+    )
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    research = EvidenceResearch(b)
+    record = {
+        "primaryAccession": "P12345",
+        "organism": {"taxonId": 9606},
+        "sequence": {"value": "AGSLVK"},
+    }
+    monkeypatch.setattr(
+        research,
+        "snapshot",
+        lambda: {
+            "queries": [
+                {
+                    "cards": [
+                        {
+                            "card_id": "source-protein",
+                            "provider": "UniProt",
+                            "identifier": "P12345",
+                            "source_refs": ["record-ref"],
+                        }
+                    ]
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(b, "document", lambda _ref: record)
+    protein = ChainInventory(
+        author_chain_id="A",
+        label_chain_id="A",
+        residue_count=6,
+        canonical_residue_count=6,
+        sequence="AGSLVK",
+        deposited_sequence="AGSLVK",
+        coordinate_label_seq_ids=(1, 2, 3, 4, 5, 6),
+        ca_label_seq_ids=(1, 2, 3, 4, 5, 6),
+        model_ids=("1",),
+        ligand_names=(),
+        water_count=0,
+        altloc_atom_count=0,
+    )
+    glycan = ChainInventory(
+        author_chain_id="D",
+        label_chain_id="D",
+        residue_count=1,
+        canonical_residue_count=0,
+        sequence="",
+        deposited_sequence=None,
+        coordinate_label_seq_ids=(),
+        ca_label_seq_ids=(),
+        model_ids=("1",),
+        ligand_names=("NAG",),
+        water_count=0,
+        altloc_atom_count=0,
+    )
+    monkeypatch.setattr(
+        "easydesign.agent.evidence_research.inventory_structure",
+        lambda _path: StructureInventory(
+            model_ids=("1",),
+            chains=(protein, glycan),
+            protein_chain_ids=("A",),
+            ligand_names=("NAG",),
+            water_count=0,
+        ),
+    )
+
+    with pytest.raises(AgentBoundaryError, match="protein auth chain"):
+        research.compare_reference(
+            ReferenceComparison(uniprot_card_id="source-protein", auth_chain="D")
+        )
+    assert not any(
+        event["kind"] == "reference-identity-comparison" for event in b.store.events(b.thread)
+    )
+
+
 @pytest.mark.asyncio
 async def test_file_reader_result_alias_only_indexes_current_authorized_artifact(
     bridge: Any,

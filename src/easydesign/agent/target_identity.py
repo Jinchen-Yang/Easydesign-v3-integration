@@ -348,8 +348,24 @@ def pending_canonical(
     _, start, end, scope = _scope(
         config, reference_sequence=canonical, features=record.get("features")
     )
+    inventory = inventory_structure(source)
+    protein_chain_ids = frozenset(inventory.protein_chain_ids)
+    if not protein_chain_ids:
+        raise AgentBoundaryError(
+            "Canonical identity comparison requires at least one protein chain"
+        )
+    protein_chains = tuple(
+        chain
+        for chain in inventory.chains
+        if chain.author_chain_id in protein_chain_ids
+        and bool(chain.deposited_sequence or chain.sequence)
+    )
+    if {chain.author_chain_id for chain in protein_chains} != protein_chain_ids:
+        raise AgentBoundaryError(
+            "Protein chain inventory lacks a nonempty canonical amino-acid sequence"
+        )
     comparisons = []
-    for chain in inventory_structure(source).chains:
+    for chain in protein_chains:
         report = resolve_target_identity(
             target_id=config.target.target_id,
             canonical_sequence=canonical,

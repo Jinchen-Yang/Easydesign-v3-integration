@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -331,6 +332,19 @@ class AgentBoundaryError(RuntimeError):
     """A rejected action, incompatible session, or evidence boundary violation."""
 
     category = "HARD_BOUNDARY_VIOLATION"
+
+
+class TargetJobTerminalFailure(AgentBoundaryError):
+    """A bound Target worker ended unsuccessfully; its persisted failure is authoritative."""
+
+    category = "TARGET_JOB_TERMINAL_FAILURE"
+
+    def __init__(self, failure: dict[str, Any]) -> None:
+        self.failure = dict(failure)
+        super().__init__(
+            "TARGET_JOB_TERMINAL_FAILURE: "
+            + json.dumps(self.failure, ensure_ascii=False, sort_keys=True)
+        )
 
 
 class ResearchConclusionMismatch(AgentBoundaryError):

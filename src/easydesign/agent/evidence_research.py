@@ -1039,9 +1039,18 @@ class EvidenceResearch:
             raise AgentBoundaryError("Canonical source record is not unique")
         loaded = self.bridge.validate_project()
         inventory = inventory_structure(loaded.source_path)
-        chains = [c for c in inventory.chains if c.author_chain_id == request.auth_chain]
+        protein_chain_ids = frozenset(inventory.protein_chain_ids)
+        chains = [
+            chain
+            for chain in inventory.chains
+            if chain.author_chain_id == request.auth_chain
+            and chain.author_chain_id in protein_chain_ids
+            and bool(chain.deposited_sequence or chain.sequence)
+        ]
         if len(chains) != 1:
-            raise AgentBoundaryError("Reference comparison requires one exact original auth chain")
+            raise AgentBoundaryError(
+                "Reference comparison requires one exact original protein auth chain"
+            )
         chain = chains[0]
         record = canonical[0]
         report = resolve_target_identity(

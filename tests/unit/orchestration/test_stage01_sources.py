@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import yaml
 
 from easydesign.backends.target_sources.structure import (
     build_experimental_target_bundle,
+    inventory_structure,
 )
 from easydesign.core import (
     Attempt,
@@ -77,6 +79,50 @@ def _partial_mmcif(path: Path) -> None:
     structure.add_model(model)
     structure.setup_entities()
     structure.entities[0].full_sequence = ["ALA", "CYS", "ASP", "GLU"]
+    structure.assign_label_seq_id()
+    path.write_text(structure.make_mmcif_document().as_string(), encoding="utf-8")
+
+
+def _protein_with_nonprotein_chain_mmcif(
+    path: Path,
+    *,
+    include_protein: bool = True,
+) -> None:
+    structure = gemmi.Structure()
+    structure.name = "protein-with-nonprotein-chain"
+    model = gemmi.Model(1)
+    if include_protein:
+        chain = gemmi.Chain("A")
+        for label_seq_id, residue_name in enumerate(RESIDUE_NAMES, start=1):
+            residue = gemmi.Residue()
+            residue.name = residue_name
+            residue.seqid = gemmi.SeqId(label_seq_id, " ")
+            residue.subchain = "A"
+            residue.label_seq = label_seq_id
+            atom = gemmi.Atom()
+            atom.name = "CA"
+            atom.element = gemmi.Element("C")
+            atom.pos = gemmi.Position(float(label_seq_id), 0.0, 0.0)
+            residue.add_atom(atom)
+            chain.add_residue(residue)
+        model.add_chain(chain)
+    glycan = gemmi.Chain("D")
+    residue = gemmi.Residue()
+    residue.name = "NAG"
+    residue.seqid = gemmi.SeqId(1, " ")
+    residue.subchain = "D"
+    atom = gemmi.Atom()
+    atom.name = "C1"
+    atom.element = gemmi.Element("C")
+    atom.pos = gemmi.Position(0.0, 5.0, 0.0)
+    residue.add_atom(atom)
+    glycan.add_residue(residue)
+    model.add_chain(glycan)
+    structure.add_model(model)
+    structure.setup_entities()
+    for entity in structure.entities:
+        if entity.entity_type == gemmi.EntityType.Polymer:
+            entity.full_sequence = list(RESIDUE_NAMES)
     structure.assign_label_seq_id()
     path.write_text(structure.make_mmcif_document().as_string(), encoding="utf-8")
 
@@ -448,3 +494,84 @@ def test_structural_only_local_range_is_rejected_as_ambiguous(
     assert stage.status == "failed"
     assert run.status == "failed"
     assert attempt.log_artifacts[0].verify(prepared.workspace.run_root).is_file()
+
+
+def test_canonical_local_structure_ignores_nonprotein_identity_chains(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    structure = tmp_path / "protein-and-glycan.cif"
+    _protein_with_nonprotein_chain_mmcif(structure)
+    initialized = initialize_project(
+        project_root=tmp_path / "canonical-protein-and-glycan",
+        target=structure,
+        identity_uniprot="P00001",
+        taxon_id=9606,
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev2",
+        code_commit="abcdef0",
+        run_id="canonical-protein-and-glycan",
+    )
+
+    class FakeClient:
+        records: list[object] = []
+
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.ScientificHttpClient",
+        FakeClient,
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.uniprot_accession",
+        lambda *_: SimpleNamespace(
+            json=lambda: {
+                "primaryAccession": "P00001",
+                "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                "organism": {"taxonId": 9606},
+                "sequence": {"value": SEQUENCE},
+                "features": [],
+            }
+        ),
+    )
+
+    outcome = execute_stage01_source(prepared)
+
+    assert outcome.status == "succeeded"
+    assert outcome.built_bundle is not None
+    bundle = outcome.built_bundle.bundle
+    identity = json.loads(bundle.identity_report.verify(outcome.run_root).read_text())
+    assert identity["construct"]["auth_chain_id"] == "A"
+    assert bundle.source_context is not None
+    source_inventory = inventory_structure(bundle.source_context.verify(outcome.run_root))
+    assert source_inventory.protein_chain_ids == ("A",)
+    assert [chain.author_chain_id for chain in source_inventory.chains] == ["A", "D"]
+
+
+def test_local_structure_without_protein_chain_fails_closed(tmp_path: Path) -> None:
+    structure = tmp_path / "glycan-only.cif"
+    _protein_with_nonprotein_chain_mmcif(structure, include_protein=False)
+    initialized = initialize_project(
+        project_root=tmp_path / "glycan-only",
+        target=structure,
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev2",
+        code_commit="abcdef0",
+        run_id="glycan-only",
+    )
+
+    with pytest.raises(TargetInputError, match="不包含可用的 protein chain"):
+        execute_stage01_source(prepared)

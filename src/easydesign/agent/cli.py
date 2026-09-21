@@ -18,7 +18,13 @@ from uuid import uuid4
 import yaml  # type: ignore[import-untyped]
 from pydantic import TypeAdapter
 
-from .contracts import AgentBoundaryError, DecisionCard, DecisionOutcome, Identifier
+from .contracts import (
+    AgentBoundaryError,
+    DecisionCard,
+    DecisionOutcome,
+    Identifier,
+    TargetJobTerminalFailure,
+)
 from .models import ModelConfig
 from .session_store import SessionStore, confined
 
@@ -316,12 +322,19 @@ async def run_session(
         if execution is None:
             raise AgentBoundaryError("Checkpoint has no compatible persisted agent execution")
         graph = assemble()
-        async for _update in graph.astream(inputs, execution_config, stream_mode="updates"):
-            if emit is not None:
-                for event in store.events(thread):
-                    if event["seq"] > cursor:
-                        emit(event)
-                        cursor = event["seq"]
+        try:
+            async for _update in graph.astream(inputs, execution_config, stream_mode="updates"):
+                if emit is not None:
+                    for event in store.events(thread):
+                        if event["seq"] > cursor:
+                            emit(event)
+                            cursor = event["seq"]
+        except TargetJobTerminalFailure:
+            result = bridge.terminal_result("")
+            store.event(
+                thread, "agent-terminal", {k: result[k] for k in ("status", "scientific_state")}
+            )
+            return result
         state = await graph.aget_state(execution_config)
         interrupts = [i for task in state.tasks for i in task.interrupts]
         if interrupts:

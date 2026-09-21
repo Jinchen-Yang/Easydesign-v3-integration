@@ -18,6 +18,7 @@ from easydesign.backends.target_sources.structure import inventory_structure
 from easydesign.core import (
     ArtifactRef,
     DecisionRequest,
+    EasyDesignError,
     ExecutionStatus,
     RunManifest,
     StageManifest,
@@ -63,11 +64,13 @@ from .contracts import (
     EvidenceQuery,
     JudgeVerdict,
     ReconciliationRequired,
+    TargetJobTerminalFailure,
     TargetProvenance,
 )
 from .session_store import SessionStore, confined, identity
 
 STAGE = "01-target-preparation"
+TARGET_JOB_FAILURE_STATUSES = {"operational-failed", "scientific-failed"}
 LIMITATIONS = [
     "Canonical biological identity is unconfirmed; "
     "species, isoform and native construct are not established.",
@@ -285,19 +288,197 @@ class TargetBridge:
                 )
             return self._attach(command, self.controller.load(prepared.job_id))
 
-    def get_job_status(self) -> dict[str, Any]:
-        for event in reversed(self.store.events(self.thread)):
-            if event["kind"] == "command-ref":
-                return self._receipt(self.controller.load(event["payload"]["job_id"]))
+    def _target_job_status(self) -> dict[str, Any]:
+        """Read only this thread's bound Stage 01 receipt.
+
+        Downstream runtimes intentionally override ``get_job_status`` for Pilot
+        and Scale.  Target failure propagation must never dispatch through that
+        public polymorphic view.
+        """
+        # Commands are the primary binding because their job_id is persisted
+        # before the best-effort command-ref event.  Reading them first also
+        # prevents an older failed event from masking a newer active command.
         commands = self.store.db.execute(
             "SELECT id FROM commands WHERE thread=? ORDER BY rowid DESC", (self.thread,)
         ).fetchall()
         for row in commands:
             command = self.store.command(row[0])
             assert command is not None
-            if command["payload"].get("job_id"):
-                return self._receipt(self.controller.load(command["payload"]["job_id"]))
+            if (
+                command["operation"] in {"prepare", "decision"}
+                and command["payload"].get("job_id")
+            ):
+                return TargetBridge._receipt(
+                    self, self.controller.load(command["payload"]["job_id"])
+                )
+        for event in reversed(self.store.events(self.thread)):
+            if event["kind"] == "command-ref":
+                command = self.store.command(event["payload"].get("command_id", ""))
+                if command is None or command["operation"] not in {"prepare", "decision"}:
+                    continue
+                job = self.controller.load(event["payload"]["job_id"])
+                return TargetBridge._receipt(self, job)
         return {"status": "no-bound-job", "phase": "prepare"}
+
+    def get_job_status(self) -> dict[str, Any]:
+        return self._target_job_status()
+
+    @staticmethod
+    def _reconciliation_failure(
+        receipt: dict[str, Any],
+        message: str,
+        *,
+        failure_ref: str | None = None,
+        current_run_id: str | None = None,
+        manifest_status: str | None = None,
+        authority_error: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "terminal_state": "recovery-required",
+            "code": "target-job-reconciliation-required",
+            "message": message,
+            "retryable": None,
+            "failure_ref": failure_ref,
+            "attempt_id": None,
+            "job_id": receipt.get("job_id"),
+            "run_id": receipt.get("run_id"),
+            "current_run_id": current_run_id,
+            "manifest_status": manifest_status,
+            "authority_error": authority_error,
+            "job_status": receipt["status"],
+            "job_error": receipt.get("error"),
+        }
+
+    def target_terminal_failure(self) -> dict[str, Any] | None:
+        """Resolve a failed receipt against the exact current run's latest manifest."""
+        receipt = TargetBridge._target_job_status(self)
+        if receipt["status"] not in TARGET_JOB_FAILURE_STATUSES:
+            return None
+        try:
+            current = resolve_project_run(self.project, required=False)
+        except (EasyDesignError, OSError, ValueError) as error:
+            return self._reconciliation_failure(
+                receipt,
+                "The current Target run authority could not be resolved; operator "
+                "reconciliation is required before any retry.",
+                authority_error=f"{type(error).__name__}: {str(error)[:4096]}",
+            )
+        if current is None:
+            return self._reconciliation_failure(
+                receipt,
+                "The failed Target job has no current project run; operator reconciliation "
+                "is required before any retry.",
+            )
+        if getattr(current, "integrity_status", "verified") != "verified":
+            return self._reconciliation_failure(
+                receipt,
+                "The current Target run manifest could not be verified; operator reconciliation "
+                "is required before any retry.",
+                current_run_id=current.run_id,
+                manifest_status=str(current.status),
+                authority_error=getattr(current, "integrity_message", None),
+            )
+        try:
+            root, manifest = self.run(current.run_id)
+            manifest_path = confined(
+                root,
+                root / "manifests" / f"run-manifest.v{manifest.revision:04d}.json",
+            )
+            manifest_ref = (
+                f"{manifest_path.relative_to(root).as_posix()}#sha256={sha256_file(manifest_path)}"
+            )
+        except (EasyDesignError, OSError, ValueError) as error:
+            return self._reconciliation_failure(
+                receipt,
+                "The current Target run manifest could not be read and verified; operator "
+                "reconciliation is required before any retry.",
+                current_run_id=current.run_id,
+                authority_error=f"{type(error).__name__}: {str(error)[:4096]}",
+            )
+        # The run manifest is newer authority than a historical worker receipt. A
+        # successfully completed run or a pending human Gate must continue normally.
+        if manifest.workflow_state is not None or manifest.status is ExecutionStatus.SUCCEEDED:
+            return None
+        if receipt.get("run_id") != current.run_id:
+            return self._reconciliation_failure(
+                receipt,
+                "The failed Target job is not bound to the current project run; operator "
+                "reconciliation is required and the stale receipt cannot override it.",
+                failure_ref=manifest_ref,
+                current_run_id=current.run_id,
+                manifest_status=str(manifest.status),
+            )
+        if manifest.status is not ExecutionStatus.FAILED:
+            return self._reconciliation_failure(
+                receipt,
+                "The bound Target job failed but the current run manifest is not terminal-failed; "
+                "operator reconciliation is required before any retry.",
+                failure_ref=manifest_ref,
+                current_run_id=current.run_id,
+                manifest_status=str(manifest.status),
+            )
+        stage_ref = next(
+            (
+                ref
+                for ref in reversed(manifest.stage_manifest_refs)
+                if str(ref.producer_stage) == STAGE
+            ),
+            None,
+        )
+        if stage_ref is None:
+            return self._reconciliation_failure(
+                receipt,
+                "The failed run has no checksum-bound Stage 01 manifest; operator "
+                "reconciliation is required before any retry.",
+                failure_ref=manifest_ref,
+                current_run_id=current.run_id,
+                manifest_status=str(manifest.status),
+            )
+        try:
+            stage = load_model(stage_ref.verify(root), StageManifest)
+        except (EasyDesignError, OSError, ValueError) as error:
+            return self._reconciliation_failure(
+                receipt,
+                "The current Stage 01 failure authority could not be read and verified; "
+                "operator reconciliation is required before any retry.",
+                failure_ref=manifest_ref,
+                current_run_id=current.run_id,
+                manifest_status=str(manifest.status),
+                authority_error=f"{type(error).__name__}: {str(error)[:4096]}",
+            )
+        failed_attempt = next(
+            (
+                attempt
+                for attempt in reversed(stage.attempts)
+                if attempt.status is ExecutionStatus.FAILED
+            ),
+            None,
+        )
+        if failed_attempt is None or failed_attempt.error is None:
+            return self._reconciliation_failure(
+                receipt,
+                "The failed Stage 01 manifest has no typed attempt error; operator "
+                "reconciliation is required before any retry.",
+                failure_ref=self._ref(stage_ref),
+                current_run_id=current.run_id,
+                manifest_status=str(manifest.status),
+            )
+        return {
+            "terminal_state": "recovery-required"
+            if failed_attempt.error.retryable
+            else "failed",
+            "code": failed_attempt.error.code,
+            "message": failed_attempt.error.message,
+            "retryable": failed_attempt.error.retryable,
+            "failure_ref": self._ref(stage_ref),
+            "attempt_id": failed_attempt.attempt_id,
+            "job_id": receipt.get("job_id"),
+            "run_id": receipt.get("run_id"),
+            "current_run_id": current.run_id,
+            "manifest_status": str(manifest.status),
+            "job_status": receipt["status"],
+            "job_error": receipt.get("error"),
+        }
 
     def run(self, run_id: str | None = None) -> tuple[Path, RunManifest]:
         summary = resolve_project_run(self.project, run_id=run_id, required=True)
@@ -318,6 +499,17 @@ class TargetBridge:
     def terminal_result(self, message: str) -> dict[str, Any]:
         """Graph completion is not scientific completion; inspect authoritative state afresh."""
         self.validate_project()
+        failure = self.target_terminal_failure()
+        if failure is not None:
+            state = failure["terminal_state"]
+            return {
+                "thread": self.thread,
+                "status": state,
+                "scientific_state": state,
+                "reason": f"target-preparation-{state}",
+                "failure": failure,
+                "message": f"{failure['code']}: {failure['message']}",
+            }
         jobs = self._jobs()  # Original controller returns registered receipts newest first.
         for candidate in jobs:
             self._job_valid(candidate)
@@ -656,6 +848,9 @@ class TargetBridge:
     def target_submission_evidence(self) -> dict[str, Any]:
         from .contracts import TargetFacts
 
+        failure = self.target_terminal_failure()
+        if failure is not None:
+            raise TargetJobTerminalFailure(failure)
         # Source research can legitimately finish before a scientific job exists.
         # Such a submission has no inferred sequence/mapping facts and cannot open a Gate.
         if not self._jobs():

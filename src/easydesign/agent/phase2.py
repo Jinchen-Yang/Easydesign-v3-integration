@@ -931,6 +931,14 @@ class Phase2Bridge(TargetBridge):
         }
 
     def scientific_state(self) -> dict[str, Any]:
+        failure = self.target_terminal_failure()
+        if failure is not None:
+            return {
+                "scientific_state": failure["terminal_state"],
+                "gate_type": "target-structure",
+                "next_specialist": "none",
+                "failure": failure,
+            }
         if any(j.status in ACTIVE_JOB_STATUSES for j in self._jobs()):
             return {
                 "scientific_state": "running",
@@ -974,6 +982,8 @@ class Phase2Bridge(TargetBridge):
             _, manifest = super().run(latest_run.run_id)
             pending = manifest.workflow_state is not None
         state = self.scientific_state()
+        if state["scientific_state"] in {"failed", "recovery-required"}:
+            return super().terminal_result(message)
         if active or (pending and state["scientific_state"] == "hotspot-approved"):
             return {
                 "thread": self.thread,

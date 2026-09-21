@@ -44,12 +44,25 @@ def test_canonical_identity_reuses_existing_decision_and_bundle(
     config = old.validate_project().config.model_dump(mode="json")
     # A clean canonical match also needs deposited sequence/coordinate labels.
     # The generic PDB fixture intentionally has neither; use a complete mmCIF.
+    # Keep an independent non-protein chain to exercise the identity boundary.
     if complete_coordinates:
         source = old.validate_project().config.target.source.path
         structure = gemmi.read_structure(str(old.project / source))
+        glycan = gemmi.Chain("Z")
+        glycan_residue = gemmi.Residue()
+        glycan_residue.name = "NAG"
+        glycan_residue.seqid = gemmi.SeqId(1, " ")
+        glycan_residue.subchain = "Z"
+        glycan_atom = gemmi.Atom()
+        glycan_atom.name = "C1"
+        glycan_atom.element = gemmi.Element("C")
+        glycan_residue.add_atom(glycan_atom)
+        glycan.add_residue(glycan_residue)
+        structure[0].add_chain(glycan)
         structure.setup_entities()
         for entity in structure.entities:
-            entity.full_sequence = ["ALA", "GLY", "SER", "LEU", "VAL", "LYS"]
+            if entity.entity_type == gemmi.EntityType.Polymer:
+                entity.full_sequence = ["ALA", "GLY", "SER", "LEU", "VAL", "LYS"]
         structure.assign_label_seq_id()
         complete = old.project / "canonical-input.cif"
         complete.write_text(structure.make_mmcif_document().as_string())
@@ -124,6 +137,9 @@ def test_canonical_identity_reuses_existing_decision_and_bundle(
             assert evidence["decision_kind"] == expected_gate
             assert evidence["identity_evidence"]["canonical"]["accession"] == "P12345"
             assert evidence["identity_evidence"]["construct_comparisons"]
+            assert {
+                row["auth_chain"] for row in evidence["identity_evidence"]["construct_comparisons"]
+            } == set(chains)
             card = judge_card(bridge)
             assert (
                 "Canonical biological identity is unconfirmed; "

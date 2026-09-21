@@ -43,6 +43,7 @@ from .contracts import (
     EvidenceCitationMismatch,
     EvidenceRoleMismatch,
     ResearchConclusionMismatch,
+    ResearchQuestionBindingMismatch,
     ShortText,
     SourceCardArgumentMismatch,
     StrictDTO,
@@ -1592,6 +1593,7 @@ class EvidenceResearch:
         query_by_id = {q["query_id"]: q for q in queries}
         unknown = {key for c in conclusions for key in c.query_ids if key not in query_by_id}
         errors = []
+        question_binding_errors = []
         citation_errors = []
         citation_repair_keys = []
         has_unkeyed_citation_error = False
@@ -1615,12 +1617,14 @@ class EvidenceResearch:
             if not bounded_without_queries and (
                 conclusion.status == "NOT_SEARCHED" or not relevant
             ):
-                errors.append(
+                question_binding_errors.append(
                     scope
-                    + "Decision question was NOT_SEARCHED. Bind the actual relevant query_ids, "
-                    "including cross-topic evidence, "
-                    "or perform one consequential missing inquiry. Do not traverse unrelated "
-                    "taxonomy topics or relabel an unperformed inquiry as completed."
+                    + "Decision question has status NOT_SEARCHED or no relevant issued query. "
+                    "Bind only actual relevant Runtime-issued query_ids and use an honest searched "
+                    "status. If no issued query is relevant, remove this item from "
+                    "decision_questions and preserve the material gap in stopping_reason and "
+                    "unresolved_questions. Do not invent an ID, relabel an unperformed inquiry, "
+                    "or issue new research during finalization."
                 )
             if conclusion.status == "SEARCHED_NO_EVIDENCE" and (
                 conclusion.evidence
@@ -1690,15 +1694,17 @@ class EvidenceResearch:
                 + compact(eligible)
                 + ". Do not change source identity or invent support."
             )
-        if errors or citation_errors:
+        if errors or question_binding_errors or citation_errors:
             # Validate the whole opinion in one pass. Serial first-error feedback spent
             # the unchanged two corrections on independent mistakes in the same DTO.
             # Integrity/source-identity failures above remain fatal; nothing is accepted,
             # normalized, inferred or rewritten on the model's behalf.
-            diagnostic = "\n".join(errors + citation_errors)
+            diagnostic = "\n".join(errors + question_binding_errors + citation_errors)
             if unknown:
                 diagnostic += "\nAvailable complete query_ids: " + compact(sorted(query_by_id))
-            if errors:
+            if question_binding_errors and not errors and not citation_errors:
+                raise ResearchQuestionBindingMismatch(diagnostic)
+            if errors or question_binding_errors:
                 raise ResearchConclusionMismatch(diagnostic)
             repair_keys = [] if has_unkeyed_citation_error else sorted(set(citation_repair_keys))
             raise EvidenceCitationMismatch(diagnostic, repair_keys=repair_keys)

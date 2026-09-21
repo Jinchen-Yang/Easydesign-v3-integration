@@ -37,6 +37,7 @@ from .contracts import (
     JudgeVerdict,
     ResearchConclusionMismatch,
     ResearchQueryMismatch,
+    ResearchQuestionBindingMismatch,
     SiteResidueQueryMismatch,
     SourceCardArgumentMismatch,
     SourceSelectionRequired,
@@ -1047,6 +1048,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             repair_already_counted = False
             evidence_role_repair = False
             evidence_citation_repair = False
+            research_question_binding_repair = False
             evidence_citation_repair_keys: tuple[str, ...] = ()
             if submission_only and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
@@ -1123,6 +1125,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     response.structured_response.model_dump(mode="json"),
                                     {**snapshot, "hard_facts": facts},
                                 )
+                    except ResearchQuestionBindingMismatch as error:
+                        if self.role != "site" or self.site_stage != "research":
+                            raise
+                        diagnostic = str(error)
+                        research_question_binding_repair = True
                     except EvidenceRoleMismatch as error:
                         diagnostic = str(error)
                         evidence_role_repair = True
@@ -1207,7 +1214,17 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 },
             )
             if not repair_already_counted:
-                if evidence_role_repair:
+                if research_question_binding_repair:
+                    assert self.execution_id is not None
+                    self.bridge.store.reserve_contract_repair(
+                        self.bridge.thread,
+                        self.role,
+                        self.execution_id,
+                        diagnostic,
+                        contract=f"{schema.__name__}:research-question-binding",
+                        max_repairs=1,
+                    )
+                elif evidence_role_repair:
                     assert self.execution_id is not None
                     self.bridge.store.reserve_contract_repair(
                         self.bridge.thread,

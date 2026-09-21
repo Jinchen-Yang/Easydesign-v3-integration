@@ -548,8 +548,15 @@ def site_handoff_repair_outline(value: Any) -> dict[str, Any] | None:
             "contradiction_search_query_ids", []
         ),
         "unresolved_questions": value.get("unresolved_questions", []),
-        "instruction": "Preserve these exact choices and identifiers. Rebuild concise prose and "
-        "exact excerpts from the Runtime finalization packet; do not copy rejected wording.",
+        "instruction": (
+            "Preserve valid candidate choices, unaffected questions and Runtime-issued "
+            "identifiers. Correct the diagnosed question only by binding genuinely relevant "
+            "issued query IDs with an honest searched status, or remove it from "
+            "decision_questions and preserve the material gap in stopping_reason and "
+            "unresolved_questions. Never invent an ID, relabel an unperformed inquiry or issue "
+            "new research. Rebuild concise prose and exact excerpts from the Runtime "
+            "finalization packet; do not copy rejected wording."
+        ),
     }
 
 

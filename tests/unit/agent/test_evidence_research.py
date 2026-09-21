@@ -6,7 +6,12 @@ from typing import Any
 import httpx
 import pytest
 
-from easydesign.agent.contracts import AgentBoundaryError, EvidenceRoleMismatch
+from easydesign.agent.contracts import (
+    AgentBoundaryError,
+    EvidenceRoleMismatch,
+    ResearchConclusionMismatch,
+    ResearchQuestionBindingMismatch,
+)
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_research import (
     EvidenceResearch,
@@ -754,11 +759,12 @@ async def test_explicit_query_binding_reuses_cross_topic_evidence_without_taxono
     assert verified["source_snapshot"]["topics"]["epitope"] == "NOT_SEARCHED"
     assert verified["source_snapshot"]["queries"][0]["query_id"] == result["query_id"]
     assert "conclusions" not in verified
-    with pytest.raises(AgentBoundaryError, match="Unknown evidence query"):
+    with pytest.raises(ResearchConclusionMismatch, match="Unknown evidence query") as caught:
         research.validate_questions(
             [conclusion.model_copy(update={"query_ids": ["foreign-query"]})]
         )
-    with pytest.raises(AgentBoundaryError, match="NOT_SEARCHED"):
+    assert type(caught.value) is ResearchConclusionMismatch
+    with pytest.raises(ResearchQuestionBindingMismatch, match="no relevant issued query"):
         research.validate_questions([conclusion.model_copy(update={"query_ids": []})])
 
 

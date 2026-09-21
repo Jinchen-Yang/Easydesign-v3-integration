@@ -115,6 +115,10 @@ def test_site_handoff_repair_outline_preserves_choices_without_rejected_prose() 
     assert outline["decision_questions"][0]["evidence_refs"] == [
         {"card_id": "passage-1", "relation": "supports", "strength": "E2"}
     ]
+    assert "Preserve valid candidate choices, unaffected questions" in outline["instruction"]
+    assert "genuinely relevant issued query IDs" in outline["instruction"]
+    assert "Never invent an ID" in outline["instruction"]
+    assert "Preserve these exact choices" not in outline["instruction"]
     assert "unsupported prose" not in compact(outline)
     assert len(compact(outline)) < 2000
 

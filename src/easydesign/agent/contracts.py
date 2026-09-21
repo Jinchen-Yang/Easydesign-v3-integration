@@ -351,6 +351,10 @@ class ResearchConclusionMismatch(AgentBoundaryError):
     """A proposed evidence status conflicts with actual research state, not authority."""
 
 
+class ResearchQuestionBindingMismatch(ResearchConclusionMismatch):
+    """A question status is inconsistent with its Runtime-issued query bindings."""
+
+
 class TargetRecommendationMismatch(AgentBoundaryError):
     """A typed Target opinion omitted or misnamed a Runtime-offered eligible option."""
 

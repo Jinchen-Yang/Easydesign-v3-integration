@@ -14,6 +14,7 @@ from easydesign.agent.contracts import (
     AgentBoundaryError,
     EvidenceCitationMismatch,
     EvidenceRoleMismatch,
+    ResearchQuestionBindingMismatch,
 )
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_output import output_message, scientific_projection
@@ -1901,6 +1902,207 @@ async def test_acquired_source_for_another_need_is_not_reported_as_empty_evidenc
     assert result.status == "success" and json.loads(result.content)["cards"]
     assert len(fetches) == 1 and not b._jobs()
 
+
+
+@pytest.mark.asyncio
+async def test_site_question_binding_has_independent_semantic_repair_after_shape_error(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from tests.unit.agent.test_site_dossier import bind, handoff
+
+    b = site_bridge
+    cfg = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Repair question/query binding")["execution_id"]
+    guard = RoleBoundary(
+        b,
+        "site",
+        cfg,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    attempts = 0
+    validations = 0
+
+    def validate(*_args: Any) -> dict[str, Any]:
+        nonlocal validations
+        validations += 1
+        if validations == 1:
+            raise ResearchQuestionBindingMismatch(
+                "question[2]: Decision question has status NOT_SEARCHED or no relevant "
+                "issued query."
+            )
+        return {}
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", validate)
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_research_packet_message",
+        lambda *args, **kwargs: HumanMessage(
+            content='{"runtime_site_research_packet":"binding-repair"}'
+        ),
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(current: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return SimpleNamespace(
+                result=[AIMessage(content="SYNTHETIC prose without a typed handoff")],
+                structured_response=None,
+            )
+        if attempts == 2:
+            assert "MISSING_TYPED_SUBMISSION" in current.system_message.text
+        if attempts == 3:
+            assert "no relevant issued query" in current.system_message.text
+        value = handoff()
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": f"handoff-{attempts}",
+                        }
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    request = Request(
+        tools=phase2_tools(b, "site"),
+        messages=[],
+        model_settings={},
+        system_message=SystemMessage(content="Finalize Site research"),
+    )
+    token = bind(b)
+    try:
+        result = await guard.awrap_model_call(request, handler)
+    finally:
+        from easydesign.agent.phase2 import SITE_EVIDENCE
+
+        SITE_EVIDENCE.reset(token)
+
+    assert result.structured_response == handoff()
+    assert attempts == 3
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+    ]
+    assert [repair["contract"] for repair in repairs] == [
+        "SiteResearchHandoff",
+        "SiteResearchHandoff:research-question-binding",
+    ]
+    assert [repair["repair_limit"] for repair in repairs] == [2, 1]
+    assert not [
+        event
+        for event in b.store.events(b.thread)
+        if event["kind"] in {"research-reservation", "evidence-research"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repeated_site_question_binding_mismatch_is_fatal_without_new_research(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from tests.unit.agent.test_site_dossier import bind, handoff
+
+    b = site_bridge
+    cfg = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Reject repeated question/query mismatch")[
+        "execution_id"
+    ]
+    guard = RoleBoundary(
+        b,
+        "site",
+        cfg,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    attempts = 0
+
+    def validate(*_args: Any) -> dict[str, Any]:
+        raise ResearchQuestionBindingMismatch(
+            "question[2]: Decision question has status NOT_SEARCHED or no relevant issued query."
+        )
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", validate)
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_research_packet_message",
+        lambda *args, **kwargs: HumanMessage(
+            content='{"runtime_site_research_packet":"binding-repair"}'
+        ),
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(_current: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return SimpleNamespace(
+                result=[AIMessage(content="SYNTHETIC prose without a typed handoff")],
+                structured_response=None,
+            )
+        value = handoff()
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": f"handoff-{attempts}",
+                        }
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    request = Request(
+        tools=phase2_tools(b, "site"),
+        messages=[],
+        model_settings={},
+        system_message=SystemMessage(content="Finalize Site research"),
+    )
+    token = bind(b)
+    try:
+        with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
+            await guard.awrap_model_call(request, handler)
+    finally:
+        from easydesign.agent.phase2 import SITE_EVIDENCE
+
+        SITE_EVIDENCE.reset(token)
+
+    assert attempts == 3
+    assert attempts < 5
+    assert not [
+        event
+        for event in b.store.events(b.thread)
+        if event["kind"] in {"research-reservation", "evidence-research"}
+    ]
 
 
 @pytest.mark.asyncio

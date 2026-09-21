@@ -1,5 +1,6 @@
 """Real old Stage 01 jobs against deterministic cached UniProt fixtures."""
 
+import json
 from typing import Any
 
 import gemmi
@@ -13,6 +14,192 @@ from easydesign.agent.target_identity import CanonicalProposal, propose_canonica
 from easydesign.orchestration.config import EasyDesignRunConfig
 from easydesign.orchestration.local_project import publish_config_revision
 from tests.agent_support import judge_card, make_project, terminal
+
+
+def test_inactive_uniprot_record_exposes_successors_without_selecting_one(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.contracts import CanonicalReferenceMismatch
+
+    old = make_project(tmp_path, monkeypatch, chains="A")
+    bridge = Phase2Bridge(old.project, old.thread, old.store)
+    bridge.store.begin_execution(bridge.thread, "Resolve an inactive canonical accession")
+    record = {
+        "primaryAccession": "P02928",
+        "uniProtkbId": "MALE_ECOLI",
+        "entryType": "Inactive",
+        "inactiveReason": {
+            "inactiveReasonType": "DEMERGED",
+            "mergeDemergeTo": ["P0AEX9", "P0AEY0"],
+        },
+    }
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "client",
+        lambda self, directory: ResearchHttpClient(
+            evidence_dir=directory,
+            max_attempts=1,
+            client=httpx.Client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json=record))
+            ),
+        ),
+    )
+    try:
+        EvidenceCorpus(bridge).select(
+            SelectEvidence(
+                provider="UniProt",
+                identifier="P02928",
+                need="TARGET_IDENTITY",
+                selection="SELECTED",
+                reason="Resolve the depositor-supplied legacy accession",
+            )
+        )
+        acquired = EvidenceResearch(bridge).acquire(
+            ResearchQuery(
+                topic="identity",
+                question="Is this accession an active canonical reference?",
+                operation="uniprot-record",
+                identifier="P02928",
+            ),
+            role="target",
+        )
+        card = acquired["cards"][0]
+        assert card["source_verified"] is True
+        assert card["canonical_reference_eligible"] is False
+        assert card["identifier_resolution"] == {
+            "status": "inactive",
+            "type": "DEMERGED",
+            "replacement_accessions": ["P0AEX9", "P0AEY0"],
+        }
+        assert json.loads(card["passage"])["canonical_reference_eligible"] is False
+        focused = EvidenceCorpus(bridge).retrieve(
+            RetrieveEvidence(
+                need="TARGET_IDENTITY",
+                source_id="UniProt:P02928",
+                question="Inactive accession and successor identities",
+            )
+        )
+        assert focused["cards"][0]["identifier_resolution"] == card[
+            "identifier_resolution"
+        ]
+
+        before = bridge.binding()
+        with pytest.raises(CanonicalReferenceMismatch) as caught:
+            propose_canonical(
+                bridge,
+                CanonicalProposal(
+                    uniprot_card_id=card["card_id"],
+                    reason="Resolve the legacy accession without choosing a successor",
+                ),
+            )
+        result = caught.value.result()
+        assert result["error_code"] == "INACTIVE_CANONICAL_REFERENCE"
+        assert result["identifier_resolution"]["replacement_accessions"] == [
+            "P0AEX9",
+            "P0AEY0",
+        ]
+        assert bridge.binding() == before
+        assert bridge.validate_project().config.target.source.identity.uniprot_accession is None
+        assert not bridge._jobs()
+        assert not [
+            event
+            for event in bridge.store.events(bridge.thread)
+            if event["kind"] == "canonical-reference-proposal"
+        ]
+        assert not [
+            document
+            for document in EvidenceCorpus(bridge).documents()
+            if document["identifier"] in {"P0AEX9", "P0AEY0"}
+        ]
+    finally:
+        bridge.store.close()
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {
+            "primaryAccession": "P12345",
+            "entryType": "UniProtKB reviewed (Swiss-Prot)",
+            "organism": {"taxonId": 9606},
+        },
+        {
+            "primaryAccession": "P02928",
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "DEMERGED",
+                "mergeDemergeTo": [],
+            },
+        },
+        {
+            "primaryAccession": "P02928",
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "DEMERGED",
+                "mergeDemergeTo": ["P02928"],
+            },
+        },
+        {
+            "primaryAccession": "P02928",
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "DEMERGED",
+                "mergeDemergeTo": ["P0AEX9", "P0AEX9"],
+            },
+        },
+    ],
+)
+def test_incomplete_or_malformed_uniprot_record_remains_hard_failure(
+    tmp_path: Any, monkeypatch: Any, record: dict[str, Any]
+) -> None:
+    from easydesign.core import TargetInputError
+
+    old = make_project(tmp_path, monkeypatch, chains="A")
+    bridge = Phase2Bridge(old.project, old.thread, old.store)
+    bridge.store.begin_execution(bridge.thread, "Reject an incomplete canonical source")
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "client",
+        lambda self, directory: ResearchHttpClient(
+            evidence_dir=directory,
+            max_attempts=1,
+            client=httpx.Client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json=record))
+            ),
+        ),
+    )
+    try:
+        accession = record["primaryAccession"]
+        EvidenceCorpus(bridge).select(
+            SelectEvidence(
+                provider="UniProt",
+                identifier=accession,
+                need="TARGET_IDENTITY",
+                selection="SELECTED",
+                reason="Validate a supplied canonical source",
+            )
+        )
+        acquired = EvidenceResearch(bridge).acquire(
+            ResearchQuery(
+                topic="identity",
+                question="Is this a complete canonical source?",
+                operation="uniprot-record",
+                identifier=accession,
+            ),
+            role="target",
+        )
+        with pytest.raises(TargetInputError, match="accession/sequence/taxonomy"):
+            propose_canonical(
+                bridge,
+                CanonicalProposal(
+                    uniprot_card_id=acquired["cards"][0]["card_id"],
+                    reason="Reject incomplete identity evidence",
+                ),
+            )
+        assert bridge.validate_project().config.target.source.identity.uniprot_accession is None
+        assert not bridge._jobs()
+    finally:
+        bridge.store.close()
 
 
 @pytest.mark.parametrize(

@@ -24,8 +24,8 @@ from easydesign.orchestration.config import (
 from easydesign.orchestration.local_project import publish_config_revision, resolve_project_run
 from easydesign.orchestration.stage01_sources import _scope, _uniprot_identity
 
-from .contracts import AgentBoundaryError, ShortText, StrictDTO
-from .evidence_research import EvidenceResearch
+from .contracts import AgentBoundaryError, CanonicalReferenceMismatch, ShortText, StrictDTO
+from .evidence_research import EvidenceResearch, uniprot_reference_status
 from .session_store import compact, confined, identity
 
 
@@ -242,6 +242,18 @@ def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]
         records = [r for r in records if r.get("primaryAccession") == card["identifier"]]
         if len(records) != 1:
             raise AgentBoundaryError("Canonical source record is not unique")
+        source_status = uniprot_reference_status(records[0])
+        resolution = source_status.get("identifier_resolution")
+        if (
+            source_status.get("_resolution_complete") is True
+            and isinstance(resolution, dict)
+            and resolution.get("type") in {"MERGED", "DEMERGED"}
+        ):
+            raise CanonicalReferenceMismatch(
+                card["identifier"],
+                resolution["type"],
+                resolution["replacement_accessions"],
+            )
         accession, _, source_identity = _uniprot_identity(records[0])
         current = loaded.config.target.identity
         if current.taxon_id and current.taxon_id != source_identity["taxonomy_id"]:

@@ -283,6 +283,67 @@ def _text(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value)).strip()
 
 
+def uniprot_reference_status(record: dict[str, Any]) -> dict[str, Any]:
+    """Project canonical eligibility without converting an inactive record into a successor."""
+    entry_type = record.get("entryType")
+    inactive = str(entry_type).strip().casefold() == "inactive"
+    accession = record.get("primaryAccession")
+    sequence_record = record.get("sequence")
+    organism = record.get("organism")
+    sequence = sequence_record.get("value") if isinstance(sequence_record, dict) else None
+    taxon_id = organism.get("taxonId") if isinstance(organism, dict) else None
+    eligible = (
+        not inactive
+        and isinstance(accession, str)
+        and bool(accession.strip())
+        and isinstance(sequence, str)
+        and bool(sequence.strip())
+        and isinstance(taxon_id, int)
+        and not isinstance(taxon_id, bool)
+        and taxon_id > 0
+    )
+    result: dict[str, Any] = {
+        "entry_type": entry_type,
+        "canonical_reference_eligible": eligible,
+        "_resolution_complete": False,
+    }
+    if not inactive:
+        return result
+    reason = record.get("inactiveReason")
+    reason_type = reason.get("inactiveReasonType") if isinstance(reason, dict) else None
+    raw_replacements = reason.get("mergeDemergeTo") if isinstance(reason, dict) else None
+    replacements = (
+        [value for value in raw_replacements if isinstance(value, str)]
+        if isinstance(raw_replacements, list)
+        else []
+    )
+    valid_replacements = [
+        value
+        for value in replacements
+        if re.fullmatch(r"[A-Z][0-9][A-Z0-9]{3,7}[0-9]", value)
+    ]
+    result["identifier_resolution"] = {
+        "status": "inactive",
+        "type": reason_type,
+        "replacement_accessions": valid_replacements,
+    }
+    result["_resolution_complete"] = (
+        isinstance(reason_type, str)
+        and bool(reason_type.strip())
+        and isinstance(raw_replacements, list)
+        and bool(raw_replacements)
+        and len(valid_replacements) == len(raw_replacements)
+        and len(set(valid_replacements)) == len(valid_replacements)
+        and accession not in valid_replacements
+    )
+    return result
+
+
+def _uniprot_reference_projection(record: dict[str, Any]) -> dict[str, Any]:
+    status = uniprot_reference_status(record)
+    return {key: value for key, value in status.items() if not key.startswith("_")}
+
+
 def _uniprot_view(record: dict[str, Any], topic: str) -> dict[str, Any]:
     feature_types = {
         "identity": {"Signal", "Propeptide", "Chain", "Domain", "Region"},
@@ -313,6 +374,7 @@ def _uniprot_view(record: dict[str, Any], topic: str) -> dict[str, Any]:
         }
     ]
     return {
+        **_uniprot_reference_projection(record),
         "accession": record["primaryAccession"],
         "entry": record.get("uniProtkbId"),
         "organism": record.get("organism"),
@@ -333,6 +395,7 @@ def _uniprot_sections(record: dict[str, Any]) -> list[dict[str, str]]:
     """Keep related source identity facts together before the complete field index."""
     sequence = record.get("sequence", {}).get("value")
     identity_section = {
+        **_uniprot_reference_projection(record),
         "accession": record["primaryAccession"],
         "organism": record.get("organism"),
         "protein": record.get("proteinDescription"),
@@ -1409,6 +1472,11 @@ class EvidenceResearch:
                 records = [uniprot_accession(client, q.identifier).json()]
             return [
                 {
+                    **(
+                        _uniprot_reference_projection(row)
+                        if q.operation == "uniprot-record"
+                        else {}
+                    ),
                     "provider": "UniProt",
                     "identifier": row["primaryAccession"],
                     "primary_eligible": q.operation == "uniprot-record",
@@ -1816,6 +1884,9 @@ def research_tool(bridge: Any, role: str) -> Any:
                     "pmcid",
                     "evidence_level",
                     "chunk_count",
+                    "entry_type",
+                    "canonical_reference_eligible",
+                    "identifier_resolution",
                 )
                 if k in card
             }

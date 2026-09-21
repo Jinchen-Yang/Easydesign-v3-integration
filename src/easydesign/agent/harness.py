@@ -26,6 +26,7 @@ from easydesign.orchestration.local_jobs import ACTIVE_JOB_STATUSES
 from .context_policy import admit_site_research_request, context_usage, research_memory
 from .contracts import (
     AgentBoundaryError,
+    CanonicalReferenceMismatch,
     DecisionOutcome,
     EvidenceBinding,
     EvidenceCitationMismatch,
@@ -1591,6 +1592,32 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     ) from error
                 result = ToolMessage(
                     content=compact(error.result(role=self.role)),
+                    status="error",
+                    tool_call_id=request.tool_call["id"],
+                    name=name,
+                )
+            except CanonicalReferenceMismatch as error:
+                if (
+                    name != "propose_canonical_identity"
+                    or self.role != "target"
+                    or not isinstance(self.bridge, Phase2Bridge)
+                    or self.execution_id is None
+                ):
+                    raise AgentBoundaryError(
+                        "Canonical-reference recovery is outside this tool and role"
+                    ) from error
+                attempt = self.bridge.store.reserve_contract_repair(
+                    self.bridge.thread,
+                    self.role,
+                    self.execution_id,
+                    str(error),
+                    contract="propose_canonical_identity:inactive-reference",
+                    max_repairs=1,
+                )
+                result = ToolMessage(
+                    content=compact(
+                        {**error.result(), "repair_attempt": attempt, "repair_limit": 1}
+                    ),
                     status="error",
                     tool_call_id=request.tool_call["id"],
                     name=name,

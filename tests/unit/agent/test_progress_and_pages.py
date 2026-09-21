@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from easydesign.agent.contracts import (
     AgentBoundaryError,
+    CanonicalReferenceMismatch,
     EvidenceCitationMismatch,
     EvidenceRoleMismatch,
     ResearchQuestionBindingMismatch,
@@ -615,6 +616,64 @@ def test_site_display_page_cannot_skip_rows_hidden_by_size_limit() -> None:
         assert page["next_offset"] == len(delivered)
         offset = page["next_offset"]
     assert delivered == list(range(24))
+
+
+@pytest.mark.asyncio
+async def test_inactive_canonical_reference_has_one_target_tool_correction(
+    bridge: Any,
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Replace an inactive canonical reference")[
+        "execution_id"
+    ]
+    guard = RoleBoundary(
+        b,
+        "target",
+        scripted_config(),
+        "Resolve target identity",
+        execution_id=eid,
+    )
+
+    async def handler(_request: Any) -> Any:
+        raise CanonicalReferenceMismatch(
+            "P02928", "DEMERGED", ["P0AEX9", "P0AEY0"]
+        )
+
+    request = SimpleNamespace(
+        tool_call={
+            "name": "propose_canonical_identity",
+            "id": "inactive-reference",
+            "args": {
+                "uniprot_card_id": "source-inactive",
+                "reason": "Resolve the depositor-supplied legacy accession",
+            },
+        }
+    )
+    result = await guard.awrap_tool_call(request, handler)
+    value = json.loads(result.content)
+    assert result.status == "error"
+    assert value["error_code"] == "INACTIVE_CANONICAL_REFERENCE"
+    assert value["repair_attempt"] == value["repair_limit"] == 1
+    assert value["identifier_resolution"]["replacement_accessions"] == [
+        "P0AEX9",
+        "P0AEY0",
+    ]
+    with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
+        await guard.awrap_tool_call(request, handler)
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+    ]
+    assert [repair["contract"] for repair in repairs] == [
+        "propose_canonical_identity:inactive-reference"
+    ]
+    assert not [
+        event
+        for event in b.store.events(b.thread)
+        if event["kind"] in {"model-call", "research-reservation", "evidence-research"}
+    ]
+    assert not b._jobs()
 
 
 @pytest.mark.asyncio

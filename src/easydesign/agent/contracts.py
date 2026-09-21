@@ -381,6 +381,47 @@ class EvidenceCitationMismatch(AgentBoundaryError):
         super().__init__(message)
 
 
+class CanonicalReferenceMismatch(RuntimeError):
+    """A verified inactive UniProt record names bounded replacement leads."""
+
+    category = "RECOVERABLE_PREREQUISITE"
+
+    def __init__(
+        self,
+        accession: str,
+        reason_type: str,
+        replacement_accessions: list[str] | tuple[str, ...],
+    ) -> None:
+        self.accession = accession
+        self.reason_type = reason_type
+        self.replacement_accessions = tuple(replacement_accessions)
+        super().__init__(
+            f"UniProt accession {accession} is inactive ({reason_type}) and cannot be used "
+            "as a canonical reference."
+        )
+
+    def result(self) -> dict[str, Any]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "INACTIVE_CANONICAL_REFERENCE",
+            "required_action": "research_evidence",
+            "inactive_accession": self.accession,
+            "identifier_resolution": {
+                "status": "inactive",
+                "type": self.reason_type,
+                "replacement_accessions": list(self.replacement_accessions),
+            },
+            "message": (
+                str(self)
+                + " These replacement accessions are leads, not an automatic identity choice. "
+                "Use deposited structure, species or strain evidence to disambiguate them, then "
+                "select, acquire and read the chosen active UniProt record before proposing its "
+                "exact source card. No configuration was changed and no successor was selected."
+            ),
+        }
+
+
 class SourceSelectionRequired(RuntimeError):
     """One valid acquisition needs an explicit source selection before any I/O."""
 

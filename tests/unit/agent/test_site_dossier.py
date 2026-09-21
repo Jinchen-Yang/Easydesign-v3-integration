@@ -552,6 +552,30 @@ def test_acquisition_only_research_retains_questions_without_inventing_search_id
         SITE_EVIDENCE.reset(token)
 
 
+def test_zero_query_question_remains_typed_without_contradiction_search_gap(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    question = DecisionEvidenceQuestion(
+        query_ids=[],
+        question="SYNTHETIC is the mapped patch externally supported?",
+        status="UNRESOLVED",
+        evidence=[],
+        limitations=["SYNTHETIC reading closed before any research query was issued."],
+        decision_impact="SYNTHETIC treat the patch as structural exploration only.",
+    )
+    selection = handoff().model_copy(update={"decision_questions": [question]})
+    token = bind(b)
+    try:
+        result = site_dossier(b, selection)
+        assert result["decision_questions"] == [question.model_dump(mode="json")]
+        assert result["evidence_selection"]["literature_searches_available"] == 0
+        assert result["evidence_selection"]["contradiction_search_performed"] is False
+        assert result["evidence_selection"]["contradiction_search_gap"] is None
+    finally:
+        SITE_EVIDENCE.reset(token)
+
+
 def test_membrane_facts_use_exact_source_identity_not_design_or_canonical_numbers() -> None:
     from copy import deepcopy
 

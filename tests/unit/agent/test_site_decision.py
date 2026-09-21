@@ -182,6 +182,39 @@ def test_comparison_requires_ids_but_does_not_recommend_avoid_candidates() -> No
     assert intent.alternatives[0].role == "backup"
 
 
+def test_scope_requires_an_actual_query_binding_not_only_a_typed_question() -> None:
+    dossier = {
+        "candidate_comparison": [
+            {
+                "candidate_id": "site-synthetic",
+                "research_hypothesis": {
+                    "name": "SYNTHETIC structural patch",
+                    "hotspot_label_seq_ids": [414],
+                    "rationale": "SYNTHETIC comparison fixture",
+                    "role": "primary",
+                    "origin": "scan-derived",
+                    "evidence_card_ids": [],
+                },
+            }
+        ],
+        "decision_questions": [
+            {
+                "question": "SYNTHETIC is external support available?",
+                "query_ids": [],
+                "status": "UNRESOLVED",
+                "evidence": [],
+                "limitations": ["SYNTHETIC no query was issued."],
+                "decision_impact": "SYNTHETIC retain structural-only scope.",
+            }
+        ],
+        "residue_constraints": [],
+    }
+
+    assert compile_site_decision(dossier, decision()).scope == "structural-exploration"
+    dossier["decision_questions"][0]["query_ids"] = ["synthetic-query"]
+    assert compile_site_decision(dossier, decision()).scope == "mechanistic"
+
+
 def test_distinct_questions_share_a_topic_without_merging_evidence_states(site_bridge: Any) -> None:
     from easydesign.agent.session_store import identity
     from easydesign.agent.site_dossier import SiteResearchHandoff, site_dossier

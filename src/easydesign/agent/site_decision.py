@@ -664,7 +664,11 @@ def compile_site_decision(
             selection(candidate_id, False) for candidate_id in decision.alternative_candidate_ids
         ],
         recommendation=decision.recommendation,
-        scope="mechanistic" if dossier["decision_questions"] else "structural-exploration",
+        scope=(
+            "mechanistic"
+            if any(question.get("query_ids") for question in dossier["decision_questions"])
+            else "structural-exploration"
+        ),
         avoid_label_seq_ids=excluded,
     )
     return intent
@@ -754,6 +758,10 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
         risks=primary.major_risks,
         uncertainty=primary.uncertainty,
         recommendation="SUPPORTED",
-        scope="mechanistic" if dossier["decision_questions"] else "structural-exploration",
+        scope=(
+            "mechanistic"
+            if any(question.get("query_ids") for question in dossier["decision_questions"])
+            else "structural-exploration"
+        ),
         avoid_label_seq_ids=excluded,
     )

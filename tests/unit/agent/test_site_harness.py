@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import Field
 
 from easydesign.agent.cli import run_session
@@ -361,6 +361,115 @@ async def test_site_structured_output_retries_before_any_scientific_submission(
         )
         == 1
     )
+
+
+class ZeroQueryFinalizationSiteModel(SiteModel):
+    handoff_submissions: int = 0
+
+    def answer(self, messages: Any) -> AIMessage:
+        if (
+            self.role != "site"
+            or "SiteResearchHandoff" not in self.offered
+            or "RankedSiteDecision" in self.offered
+        ):
+            return super().answer(messages)
+        system = "\n".join(
+            str(message.content)
+            for message in messages
+            if isinstance(message, SystemMessage)
+        )
+        if "bounded Site reading budget is complete" not in system:
+            return self.call("read_site_evidence")
+        self.handoff_submissions += 1
+        return self.call(
+            "SiteResearchHandoff",
+            candidates=[site_intent([1, 2, 3]).selected_site.model_dump(mode="json")],
+            decision_questions=[
+                {
+                    "query_ids": [],
+                    "question": "Is the mapped patch externally supported and binder-accessible?",
+                    "status": "UNRESOLVED",
+                    "evidence": [],
+                    "limitations": [
+                        "No evidence query or whole-binder clearance calculation was completed."
+                    ],
+                    "decision_impact": (
+                        "Treat the patch as structural exploration; binding and function remain "
+                        "untested."
+                    ),
+                }
+            ],
+            contradiction_search_query_ids=[],
+            stopping_reason=(
+                "The fixed Site reading budget closed before any research query was issued. "
+                "The mapped patch remains an exploratory structural hypothesis, and binding is "
+                "the next discriminating test."
+            ),
+            research_notes=["No evidence query or external source was claimed."],
+            unresolved_questions=[
+                "External support, binding and functional consequence remain untested."
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_zero_query_budget_finalization_preserves_uncertainty_once(
+    site_bridge: Any,
+) -> None:
+    models = {role: ZeroQueryFinalizationSiteModel(role=role) for role in PHASE2_ALLOWED}
+
+    result = await run_session(
+        site_bridge,
+        scripted_config(),
+        models,
+        "Assess one mapped structural patch without generation.",
+    )
+
+    assert result["status"] == "awaiting-human-approval"
+    assert models["site"].handoff_submissions == 1
+    events = site_bridge.store.events(site_bridge.thread)
+    assert not [event for event in events if event["kind"] == "evidence-research"]
+    assert not [event for event in events if event["kind"] == "contract-repair"]
+    dossiers = [event for event in events if event["kind"] == "site-evidence-dossier"]
+    proposals = [event for event in events if event["kind"] == "site-proposal"]
+    assert len(dossiers) == len(proposals) == 1
+    dossier = site_bridge.document(dossiers[0]["payload"]["ref"])
+    assert dossier["decision_questions"] == [
+        {
+            "query_ids": [],
+            "question": "Is the mapped patch externally supported and binder-accessible?",
+            "status": "UNRESOLVED",
+            "evidence": [],
+            "limitations": [
+                "No evidence query or whole-binder clearance calculation was completed."
+            ],
+            "decision_impact": (
+                "Treat the patch as structural exploration; binding and function remain untested."
+            ),
+        }
+    ]
+    assert dossier["research_opinions"]["unresolved_questions"] == [
+        "External support, binding and functional consequence remain untested."
+    ]
+    assert "before any research query was issued" in dossier["research_opinions"][
+        "stopping_reason"
+    ]
+    from easydesign.agent.site_decision import decision_working_set
+
+    finding = decision_working_set(dossier)["research_findings"][0]
+    assert finding == dossier["decision_questions"][0]
+    judge = site_bridge.judge_evidence()
+    assert judge["decision_evidence"]["questions"] == [
+        {"question": "Is the mapped patch externally supported and binder-accessible?"}
+    ]
+    assert site_bridge.current_site()["intent"]["scope"] == "structural-exploration"
+    finalizations = [
+        event
+        for event in events
+        if event["kind"] == "model-context"
+        and event["payload"].get("site_research_finalization_reason") == "model-call-budget"
+    ]
+    assert len(finalizations) == 1
 
 
 class CitationRecoverySiteModel(SiteModel):

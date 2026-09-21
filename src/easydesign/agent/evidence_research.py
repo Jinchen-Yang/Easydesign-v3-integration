@@ -224,13 +224,14 @@ class EvidenceUse(StrictDTO):
 
 class ResearchAssessment(StrictDTO):
     query_ids: list[str] = Field(
-        min_length=1,
         max_length=6,
         description="Exact returned query_id values for the evidence questions actually "
         "investigated. Topics index sources, not mandatory separate research tasks. A "
         "relevant query may inform more than one conclusion; explain transfer in limitations. "
         "Copy the complete issued query_id, including any page suffix. A cursor's internal "
-        "view ID is not a query_id; never decode a cursor to construct one.",
+        "view ID is not a query_id; never decode a cursor to construct one. Empty is allowed "
+        "only when Runtime issued no research query at all, status is NOT_SEARCHED or "
+        "UNRESOLVED, and evidence is empty.",
     )
     status: EvidenceStatus = Field(
         description="VERIFIED requires scoped source-bound evidence, not claims hidden in "
@@ -1603,7 +1604,15 @@ class EvidenceResearch:
         for index, conclusion in enumerate(conclusions):
             scope = f"question[{index}]: "
             relevant = [query_by_id[key] for key in conclusion.query_ids if key in query_by_id]
-            if conclusion.status == "NOT_SEARCHED" or not relevant:
+            bounded_without_queries = (
+                not query_by_id
+                and not conclusion.query_ids
+                and conclusion.status in {"NOT_SEARCHED", "UNRESOLVED"}
+                and not conclusion.evidence
+            )
+            if not bounded_without_queries and (
+                conclusion.status == "NOT_SEARCHED" or not relevant
+            ):
                 errors.append(
                     scope
                     + "Decision question was NOT_SEARCHED. Bind the actual relevant query_ids, "

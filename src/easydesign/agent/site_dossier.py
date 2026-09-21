@@ -78,8 +78,10 @@ class SiteResearchHandoff(StrictDTO):
         max_length=6,
         description="Usually 3-6 questions derived from the biological objective, approved "
         "Target and Gate 2. Include investigated access, mechanism, candidate differences "
-        "and consequential constraints; not all taxonomy topics. Empty only for purely "
-        "structural exploration with no external research. Bind actual queries and passages.",
+        "and consequential constraints; not all taxonomy topics. When Runtime issued no "
+        "research query, consequential questions may remain typed with query_ids=[], status "
+        "NOT_SEARCHED or UNRESOLVED, and evidence=[]; that remains structural exploration. "
+        "Otherwise bind actual queries and passages.",
     )
     contradiction_search_query_ids: list[str] = Field(
         default_factory=list,
@@ -426,7 +428,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "contradiction_search_gap": (
                 "No targeted contradiction/alternative literature search was completed; "
                 "the specialist retained this as an unresolved evidence gap."
-                if handoff.decision_questions and not contradiction_ids
+                if research["queries"] and not contradiction_ids
                 else None
             ),
             "policy": "Decision-cited official evidence plus read primary publication passages, "

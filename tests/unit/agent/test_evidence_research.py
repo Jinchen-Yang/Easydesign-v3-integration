@@ -605,6 +605,48 @@ def test_material_not_searched_question_requires_acquisition(research: Any) -> N
         )
 
 
+@pytest.mark.parametrize("status", ["NOT_SEARCHED", "UNRESOLVED"])
+def test_zero_query_registry_preserves_bounded_unsearched_assessment(
+    research: Any, status: str
+) -> None:
+    conclusion = ResearchAssessment(
+        query_ids=[],
+        status=status,
+        evidence=[],
+        limitations=["SYNTHETIC reading closed before any research query was issued."],
+    )
+
+    verified = research.validate_questions([conclusion])
+
+    assert verified["source_snapshot"]["queries"] == []
+    assert verified["source_refs"] == []
+    for invalid_status in ("VERIFIED", "SEARCHED_NO_EVIDENCE", "CONFLICTING_EVIDENCE"):
+        with pytest.raises(AgentBoundaryError, match="NOT_SEARCHED"):
+            research.validate_questions(
+                [conclusion.model_copy(update={"status": invalid_status})]
+            )
+    with pytest.raises(AgentBoundaryError, match="not retrieved in this thread"):
+        research.validate_questions(
+            [
+                ResearchAssessment.model_validate(
+                    {
+                        **conclusion.model_dump(mode="json"),
+                        "evidence": [
+                            {
+                                "card_id": "invented-passage",
+                                "excerpt": "SYNTHETIC invented passage text.",
+                                "claim": "SYNTHETIC unsupported claim.",
+                                "relation": "supports",
+                                "strength": "E4",
+                                "transfer_limit": "SYNTHETIC no transfer is allowed.",
+                            }
+                        ],
+                    }
+                )
+            ]
+        )
+
+
 def test_literature_candidate_alone_remains_visible_and_bound_to_judge(
     site_bridge: Any, monkeypatch: Any
 ) -> None:

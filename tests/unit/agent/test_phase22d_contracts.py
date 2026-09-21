@@ -7,7 +7,12 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import Field, ValidationError
 
-from easydesign.agent.contracts import AgentBoundaryError, TargetFacts, TargetInterpretation
+from easydesign.agent.contracts import (
+    AgentBoundaryError,
+    TargetFacts,
+    TargetInterpretation,
+    TargetRecommendationMismatch,
+)
 from easydesign.agent.harness import create_harness
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.phase2_tools import PHASE2_ALLOWED
@@ -73,6 +78,16 @@ class SubmissionModel(RecoveryModel):
         self.seen_diagnostics.extend(
             m.text for m in messages if "SUBMISSION" in m.text or "CONTRADICTION" in m.text
         )
+        if self.fault == "option-after-prose":
+            if self.submissions == 1:
+                return AIMessage(content="Submit the verified Target conclusion.")
+            if self.submissions == 2:
+                return self.call("TargetInterpretation", **opinion())
+            return self.call(
+                "TargetInterpretation", **opinion(), recommended_option="chain-a"
+            )
+        if self.fault == "option-forever":
+            return self.call("TargetInterpretation", **opinion())
         if self.submissions == 1 or self.forever:
             if self.fault == "prose":
                 return AIMessage(content='Explanation. ```json {"canonical_length":132} ```')
@@ -187,6 +202,92 @@ async def test_repeated_bad_submission_exhausts_durable_budget_without_registeri
         )
     finally:
         reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_target_option_mismatch_uses_remaining_typed_contract_repair(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    evidence = {
+        **runtime_evidence(),
+        "options": [
+            {"option_id": "chain-a", "eligible": True},
+            {"option_id": "chain-b", "eligible": False},
+        ],
+    }
+    monkeypatch.setattr(b, "target_submission_evidence", lambda: evidence)
+    execution = b.store.begin_execution(b.thread, "Choose one eligible target chain")
+    models = {
+        role: SubmissionModel(role=role, fault="option-after-prose") for role in PHASE2_ALLOWED
+    }
+    graph = create_harness(
+        b,
+        models,
+        scripted_config(),
+        MemorySaver(),
+        "Choose one eligible target chain",
+        execution_id=execution["execution_id"],
+    )
+
+    await graph.ainvoke(
+        {"messages": [{"role": "user", "content": "Choose one eligible target chain"}]},
+        {"configurable": {"thread_id": b.thread}},
+    )
+
+    events = b.store.events(b.thread)
+    repairs = [event["payload"] for event in events if event["kind"] == "contract-repair"]
+    assert [repair["contract"] for repair in repairs] == [
+        "TargetInterpretation",
+        "TargetInterpretation",
+    ]
+    assert [repair["attempt"] for repair in repairs] == [1, 2]
+    rejected = [
+        event["payload"]["diagnostic"]
+        for event in events
+        if event["kind"] == "rejected-submission"
+    ]
+    assert any("must name one eligible option" in diagnostic for diagnostic in rejected)
+    assessment = next(
+        event["payload"] for event in events if event["kind"] == "target-assessment"
+    )
+    assert assessment["interpretation"]["recommended_option"] == "chain-a"
+    assert models["target"].submissions == 3
+
+
+@pytest.mark.asyncio
+async def test_repeated_target_option_mismatch_exhausts_without_fourth_submission(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    evidence = {
+        **runtime_evidence(),
+        "options": [{"option_id": "chain-a", "eligible": True}],
+    }
+    monkeypatch.setattr(b, "target_submission_evidence", lambda: evidence)
+    execution = b.store.begin_execution(b.thread, "Keep omitting the eligible target chain")
+    models = {
+        role: SubmissionModel(role=role, fault="option-forever") for role in PHASE2_ALLOWED
+    }
+    graph = create_harness(
+        b,
+        models,
+        scripted_config(),
+        MemorySaver(),
+        "Keep omitting the eligible target chain",
+        execution_id=execution["execution_id"],
+    )
+
+    with pytest.raises(AgentBoundaryError, match="contract repair budget exhausted"):
+        await graph.ainvoke(
+            {"messages": [{"role": "user", "content": "Omit the eligible target chain"}]},
+            {"configurable": {"thread_id": b.thread}},
+        )
+
+    assert models["target"].submissions == 3
+    events = b.store.events(b.thread)
+    assert len([event for event in events if event["kind"] == "contract-repair"]) == 2
+    assert not any(event["kind"] == "target-assessment" for event in events)
 
 
 @pytest.mark.parametrize("stop_reason", ["max_tokens", "end_turn"])
@@ -458,8 +559,16 @@ def test_target_interpretation_requires_an_option_when_runtime_offers_choices() 
             {"option_id": "chain-b", "eligible": True},
         ],
     }
-    with pytest.raises(AgentBoundaryError, match="must name one eligible option"):
+    with pytest.raises(TargetRecommendationMismatch, match="must name one eligible option"):
         check_interpretation(TargetInterpretation.model_validate(opinion()), evidence)
+
+    with pytest.raises(TargetRecommendationMismatch, match="missing/ineligible option"):
+        check_interpretation(
+            TargetInterpretation.model_validate(
+                {**opinion(), "recommended_option": "chain-missing"}
+            ),
+            evidence,
+        )
 
     check_interpretation(
         TargetInterpretation.model_validate({**opinion(), "recommended_option": "chain-a"}),

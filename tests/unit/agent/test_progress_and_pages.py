@@ -2224,6 +2224,113 @@ async def test_site_distinct_focused_citation_cards_converge_within_two_rounds(
     ) == 3
 
 
+@pytest.mark.asyncio
+async def test_site_shape_and_acquisition_citation_repairs_use_independent_slots(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from tests.unit.agent.test_site_dossier import handoff
+
+    b = site_bridge
+    config = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Separate shape and acquisition citation repairs")[
+        "execution_id"
+    ]
+    for _index in range(SITE_RESEARCH_MODEL_CALL_LIMIT - 1):
+        b.store.reserve_model_call(b.thread, "site", config.max_model_calls, eid)
+    guard = RoleBoundary(
+        b,
+        "site",
+        config,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    validations = 0
+
+    def validate_handoff(*_args: Any) -> dict[str, Any]:
+        nonlocal validations
+        validations += 1
+        if validations == 1:
+            raise EvidenceCitationMismatch(
+                "Cite the focused passage, not its known acquisition receipt."
+            )
+        return {}
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", validate_handoff)
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    attempts = 0
+
+    async def handler(_current: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts in {1, 3}:
+            b.store.reserve_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "Synthetic framework shape failure",
+                contract="SiteResearchHandoff",
+            )
+            return SimpleNamespace(
+                result=[
+                    ToolMessage(
+                        content="INVALID_STRUCTURED_SUBMISSION: required handoff fields missing",
+                        name="SiteResearchHandoff",
+                        tool_call_id=f"invalid-{attempts}",
+                    )
+                ],
+                structured_response=None,
+            )
+        value = handoff()
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": f"handoff-{attempts}",
+                        }
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    result = await guard.awrap_model_call(
+        Request(
+            tools=phase2_tools(b, "site"),
+            messages=[],
+            model_settings={},
+            system_message=SystemMessage(content="Finalize Site research"),
+        ),
+        handler,
+    )
+
+    assert result.structured_response == handoff()
+    assert attempts == 4 and validations == 2
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+    ]
+    assert [repair["contract"] for repair in repairs] == [
+        "SiteResearchHandoff",
+        "SiteResearchHandoff:evidence-citation",
+        "SiteResearchHandoff",
+    ]
+    assert [repairs[0]["attempt"], repairs[2]["attempt"]] == [1, 2]
+    assert repairs[1]["attempt"] == repairs[1]["repair_limit"] == 1
+
+
 def test_keyed_citation_repair_is_per_card_bounded_and_restart_durable(
     site_bridge: Any,
 ) -> None:
@@ -2313,6 +2420,37 @@ def test_keyed_citation_batch_consumes_each_card_and_legacy_is_fail_closed(
             contract=contract,
             repair_keys=("known-source:passage-b", "known-source:passage-c"),
         )
+    with pytest.raises(AgentBoundaryError, match="2 distinct evidence cards"):
+        b.store.reserve_keyed_contract_repair(
+            b.thread,
+            "site",
+            eid,
+            "a third card after a two-card batch",
+            contract=contract,
+            repair_keys=("known-source:passage-c",),
+        )
+
+    too_many_eid = b.store.begin_execution(b.thread, "Reject three citation cards at once")[
+        "execution_id"
+    ]
+    with pytest.raises(AgentBoundaryError, match="2 distinct evidence cards"):
+        b.store.reserve_keyed_contract_repair(
+            b.thread,
+            "site",
+            too_many_eid,
+            "three cards in one rejected submission",
+            contract=contract,
+            repair_keys=(
+                "known-source:passage-a",
+                "known-source:passage-b",
+                "known-source:passage-c",
+            ),
+        )
+    assert not any(
+        event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == too_many_eid
+        for event in b.store.events(b.thread)
+    )
 
     legacy_eid = b.store.begin_execution(b.thread, "Conservatively retain a legacy repair")[
         "execution_id"

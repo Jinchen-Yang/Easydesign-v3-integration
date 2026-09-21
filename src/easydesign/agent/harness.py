@@ -42,6 +42,7 @@ from .contracts import (
     SourceSelectionRequired,
     StaleEvidenceCursor,
     TargetInterpretation,
+    TargetRecommendationMismatch,
     TargetTask,
 )
 from .design import BINDER_EVIDENCE, DesignBridge
@@ -1129,7 +1130,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         diagnostic = str(error)
                         evidence_citation_repair = True
                         evidence_citation_repair_keys = error.repair_keys
-                    except (ResearchConclusionMismatch, JudgeStageMismatch) as error:
+                    except (
+                        ResearchConclusionMismatch,
+                        JudgeStageMismatch,
+                        TargetRecommendationMismatch,
+                    ) as error:
                         diagnostic = str(error)
                     except HardFactContradiction as error:
                         diagnostic = str(error)

@@ -251,7 +251,7 @@ def test_handoff_retains_hard_invalid_backup_without_shifting_primary(site_bridg
 def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge: Any) -> None:
     import json
 
-    from easydesign.agent.contracts import EvidenceCitationMismatch, ResearchConclusionMismatch
+    from easydesign.agent.contracts import EvidenceCitationMismatch
     from tests.unit.agent.test_site_runtime import site_intent
 
     b = site_bridge
@@ -322,7 +322,7 @@ def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge
                 ],
             }
         )
-        with pytest.raises(ResearchConclusionMismatch) as error:
+        with pytest.raises(EvidenceCitationMismatch) as error:
             site_dossier(b, selection)
         assert '"actually_queried_topics":["state"]' in str(error.value)
         assert '"unknown_or_acquisition_citations":["source-unread"]' in str(error.value)

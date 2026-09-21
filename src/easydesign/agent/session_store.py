@@ -457,18 +457,20 @@ class SessionStore:
         contract: str,
         repair_keys: list[str] | tuple[str, ...],
         max_repairs: int = 2,
+        max_distinct_keys: int = 2,
     ) -> int:
         """Reserve a bounded semantic correction without letting one source retry twice.
 
         One rejected submission is one repair round even when validation reports multiple cards.
-        Every card key in that batch is nevertheless consumed. Legacy/unkeyed events are a
+        Every card key in that batch is nevertheless consumed, and no execution may spread its
+        corrections across more than ``max_distinct_keys`` cards. Legacy/unkeyed events are a
         fail-closed wildcard because their source identity cannot be reconstructed safely from
         diagnostic prose.
         """
         keys = tuple(sorted(set(repair_keys)))
         if not keys:
             raise AgentBoundaryError("Keyed contract repair requires Runtime-owned repair keys")
-        if max_repairs not in {1, 2}:
+        if max_repairs not in {1, 2} or max_distinct_keys not in {1, 2}:
             raise AgentBoundaryError("Contract repair limit must be one or two")
         # The CLI session lock prevents normal concurrent turns. Keep the narrower project writer
         # lock here as well so two direct/restarted SessionStore connections cannot both pass the
@@ -508,6 +510,11 @@ class SessionStore:
                         "Structured citation repair budget exhausted "
                         f"({max_repairs} rounds per contract per execution)"
                     )
+                if len(used.union(keys)) > max_distinct_keys:
+                    raise AgentBoundaryError(
+                        "Structured citation repair budget exhausted "
+                        f"({max_distinct_keys} distinct evidence cards per contract per execution)"
+                    )
                 attempt = len(prior) + 1
                 self.db.execute(
                     "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
@@ -521,6 +528,7 @@ class SessionStore:
                                 "attempt": attempt,
                                 "repair_limit": max_repairs,
                                 "repair_key_limit": 1,
+                                "repair_distinct_key_limit": max_distinct_keys,
                                 "repair_keys": list(keys),
                                 "diagnostic": diagnostic[:6000],
                             }

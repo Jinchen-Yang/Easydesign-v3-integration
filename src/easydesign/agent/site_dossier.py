@@ -185,7 +185,12 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         key for c in handoff.candidates for key in c.evidence_card_ids if key not in citable_ids
     }
     if unknown_citations:
-        raise ResearchConclusionMismatch(
+        # A known acquisition receipt is source material, but it is not a focused passage that
+        # can support a handoff claim. Route this narrow, correctable citation misuse through the
+        # independent one-shot citation slot instead of consuming a schema/shape repair. Truly
+        # foreign identifiers remain bounded by that unkeyed one-shot; no model-supplied key is
+        # trusted or minted here.
+        raise EvidenceCitationMismatch(
             "Research handoff evidence mismatch: "
             + compact(
                 {

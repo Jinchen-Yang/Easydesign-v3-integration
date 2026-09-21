@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .contracts import AgentBoundaryError, TargetAssessment, TargetFacts, TargetInterpretation
+from .contracts import (
+    TargetAssessment,
+    TargetFacts,
+    TargetInterpretation,
+    TargetRecommendationMismatch,
+)
 from .session_store import compact
 
 
@@ -195,14 +200,16 @@ def check_interpretation(value: TargetInterpretation, evidence: dict[str, Any]) 
     check_fact_claims(value.model_dump(mode="json"), evidence)
     eligible = [option["option_id"] for option in evidence.get("options", []) if option["eligible"]]
     if eligible and value.recommended_option is None:
-        raise AgentBoundaryError(
+        raise TargetRecommendationMismatch(
             "Target recommendation must name one eligible option in recommended_option"
         )
     if value.recommended_option and not any(
         o["option_id"] == value.recommended_option and o["eligible"]
         for o in evidence.get("options", [])
     ):
-        raise AgentBoundaryError("Target recommendation names a missing/ineligible option")
+        raise TargetRecommendationMismatch(
+            "Target recommendation names a missing/ineligible option"
+        )
 
 
 def register_target(bridge: Any, opinion: TargetInterpretation, revision: Any) -> dict[str, Any]:

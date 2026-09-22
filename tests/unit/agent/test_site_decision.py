@@ -257,7 +257,7 @@ def test_distinct_questions_share_a_topic_without_merging_evidence_states(site_b
                 "excerpt": text,
                 "claim": "SYNTHETIC binding support only, not an adverse-effect assessment.",
                 "relation": "supports",
-                "strength": "E3",
+                "strength": "E2",
                 "transfer_limit": "SYNTHETIC fixture, not biological acceptance.",
             }
         ],

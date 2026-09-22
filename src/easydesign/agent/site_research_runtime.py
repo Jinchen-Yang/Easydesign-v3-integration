@@ -473,11 +473,9 @@ def _evidence_card_view(card: dict[str, Any], *, operation: str | None) -> dict[
         "source_verified",
     )
     result = {key: scientific_projection(card[key]) for key in keys if key in card}
-    result["allowed_strengths"] = (
-        ["E1", "E2", "E3", "E4"]
-        if card.get("primary_eligible") is True
-        else ["E3", "E4"]
-    )
+    from .evidence_policy import evidence_strength_policy
+
+    result.update(evidence_strength_policy(card))
     card_id = str(card.get("card_id", ""))
     passage = card.get("passage")
     if card_id.startswith("passage-") and isinstance(passage, str):
@@ -711,9 +709,10 @@ def site_research_working_packet(
             "UNRESOLVED, and evidence=[]; also preserve the evidence gap in stopping_reason "
             "and unresolved_questions. Never invent a sentinel or source ID. This empty-ID "
             "form is invalid once Runtime has issued any query. Each evidence card's "
-            "allowed_strengths is an immutable "
-            "Runtime ceiling: never assign E1/E2 to a primary_eligible=false source. "
-            "Use such sources only as E3/E4 context/scope, or keep the claim unresolved. "
+            "allowed_strengths is an immutable Runtime ceiling; primary_eligible alone does "
+            "not grant E1/E2. VERIFIED requires at least one allowed supporting E1/E2 "
+            "passage. Otherwise use the source only at an allowed contextual strength and "
+            "keep the claim unresolved. "
             "Do not request another action."
             if reading_closed
             else "Continue only work that can change candidate order, a hard constraint or a "

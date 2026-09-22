@@ -25,6 +25,7 @@ from .contracts import (
     StaleEvidenceCursor,
     StrictDTO,
 )
+from .evidence_policy import evidence_strength_policy
 from .session_store import compact, confined, identity
 
 EvidenceNeed = Literal[
@@ -177,7 +178,7 @@ class EvidenceCorpus:
                 self.bridge.project, ArtifactRef.model_validate(ref).verify(self.bridge.project)
             )
         source_id = source_key(card["provider"], card["identifier"])
-        return {
+        view = {
             **card,
             "source_id": source_id,
             "source_status": "VERIFIED"
@@ -199,6 +200,7 @@ class EvidenceCorpus:
                 "relevance": "unresolved; selection is not entailment or target equivalence",
             },
         }
+        return {**view, **evidence_strength_policy(view)}
 
     def selections(self) -> dict[str, Any]:
         binding = identity(self.bridge.binding())

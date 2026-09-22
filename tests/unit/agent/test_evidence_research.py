@@ -705,14 +705,34 @@ def test_wrong_pmid_and_review_never_become_primary_evidence(
     direct = read_primary(research, "56")
     assert direct["primary_eligible"] is True
 
+    question_ids = [
+        item["query_id"]
+        for item in research.snapshot()["queries"]
+        if {direct["card_id"], review["card_id"]}
+        & {card["card_id"] for card in item["cards"]}
+    ]
+    review_use = {
+        "card_id": review["card_id"],
+        "excerpt": "discusses enzyme inhibition mechanisms",
+        "claim": "Synthetic review context",
+        "relation": "supports",
+        "strength": "E3",
+        "transfer_limit": "Unverified review transfer",
+    }
+    review_only = ResearchAssessment.model_validate(
+        {
+            "query_ids": question_ids,
+            "status": "VERIFIED",
+            "limitations": ["Review context is not direct verification"],
+            "evidence": [review_use],
+        }
+    )
+    with pytest.raises(ResearchConclusionMismatch, match="supporting passage assigned E1/E2"):
+        research.validate_questions([review_only])
+
     conclusion = ResearchAssessment.model_validate(
         {
-            "query_ids": [
-                item["query_id"]
-                for item in research.snapshot()["queries"]
-                if {direct["card_id"], review["card_id"]}
-                & {card["card_id"] for card in item["cards"]}
-            ],
+            "query_ids": question_ids,
             "status": "VERIFIED",
             "limitations": ["Review remains background beside a direct experiment"],
             "evidence": [
@@ -724,23 +744,37 @@ def test_wrong_pmid_and_review_never_become_primary_evidence(
                     "strength": "E1",
                     "transfer_limit": "Synthetic direct fixture",
                 },
-                {
-                    "card_id": review["card_id"],
-                    "excerpt": "discusses enzyme inhibition mechanisms",
-                    "claim": "Synthetic review claim",
-                    "relation": "supports",
-                    "strength": "E2",
-                    "transfer_limit": "Unverified review transfer",
-                },
+                review_use,
             ],
         }
     )
+    assert research.validate_questions([conclusion])["source_refs"]
+
+    contradicted_direct = conclusion.model_copy(
+        update={
+            "evidence": [
+                conclusion.evidence[0].model_copy(update={"relation": "contradicts"}),
+                conclusion.evidence[1],
+            ]
+        }
+    )
+    with pytest.raises(ResearchConclusionMismatch, match="supporting passage assigned E1/E2"):
+        research.validate_questions([contradicted_direct])
+
+    invalid_review = conclusion.model_copy(
+        update={
+            "evidence": [
+                conclusion.evidence[0],
+                conclusion.evidence[1].model_copy(update={"strength": "E2"}),
+            ]
+        }
+    )
     with pytest.raises(EvidenceRoleMismatch, match="EVIDENCE_ROLE_MISMATCH") as caught:
-        research.validate_questions([conclusion])
+        research.validate_questions([invalid_review])
     diagnostic = str(caught.value)
     assert review["card_id"] in diagnostic
     assert direct["card_id"] in diagnostic
-    assert "primary_eligible=false" in diagnostic
+    assert "allowed_strengths=['E3', 'E4']" in diagnostic
     with pytest.raises(AgentBoundaryError, match="Only Target or Site"):
         research.acquire(query(), role="coordinator")
     with pytest.raises(ValueError):

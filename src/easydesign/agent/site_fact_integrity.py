@@ -139,6 +139,8 @@ def add_fact_references(packet: dict[str, Any], canonical: dict[str, Any] | None
         "need",
         "partial",
         "primary_eligible",
+        "source_use_class",
+        "allowed_strengths",
         "provider",
         "source_id",
         "source_status",

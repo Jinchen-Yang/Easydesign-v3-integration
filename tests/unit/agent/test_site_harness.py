@@ -519,7 +519,7 @@ class CitationRecoverySiteModel(SiteModel):
                             "excerpt": excerpt,
                             "claim": "The synthetic experiment bears on the intended interface.",
                             "relation": "supports",
-                            "strength": "E3",
+                            "strength": "E2",
                             "transfer_limit": "Synthetic recovery fixture only.",
                         }
                     ],
@@ -562,7 +562,7 @@ async def test_known_citation_repair_is_independent_after_two_shape_repairs(
         "cards": [
             {
                 "card_id": "passage-citation-repair",
-                "provider": "Europe PMC",
+                "provider": "EuropePMC",
                 "identifier": "SYNTHETIC-CITATION",
                 "passage": (
                     "A direct synthetic experiment measured partner engagement at the mapped "

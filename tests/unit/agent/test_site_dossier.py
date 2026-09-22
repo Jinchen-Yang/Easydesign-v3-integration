@@ -91,7 +91,7 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
     cards = [
         {
             "card_id": "passage-" + name,
-            "provider": "Europe PMC",
+            "provider": "EuropePMC",
             "identifier": name,
             "passage": text,
             "source_refs": [source],
@@ -349,7 +349,7 @@ def test_dossier_reports_candidate_and_question_citation_defects_atomically(
     source = b.persist("synthetic-source", {"text": "SYNTHETIC source material"})
     focused = {
         "card_id": "passage-focused",
-        "provider": "Europe PMC",
+        "provider": "EuropePMC",
         "identifier": "SYNTHETIC",
         "passage": "SYNTHETIC exact focused passage for the candidate mechanism.",
         "source_refs": [source],
@@ -360,7 +360,7 @@ def test_dossier_reports_candidate_and_question_citation_defects_atomically(
     }
     receipt = {
         "card_id": "source-acquisition-receipt",
-        "provider": "Europe PMC",
+        "provider": "EuropePMC",
         "identifier": "SYNTHETIC",
         "passage": "SYNTHETIC acquisition metadata, not focused evidence.",
         "source_refs": [source],
@@ -452,10 +452,10 @@ def test_dossier_reports_candidate_and_question_citation_defects_atomically(
 def test_soft_working_target_and_model_aware_hard_guard() -> None:
     config = scripted_config()
     model = SimpleNamespace(profile=None)
-    usage = context_usage(model, config, "site", [HumanMessage(content="x" * 67000)])
-    assert usage["soft_target_exceeded"] and usage["hard_limit_chars"] == 100000
+    usage = context_usage(model, config, "site", [HumanMessage(content="x" * 130000)])
+    assert usage["soft_target_exceeded"] and usage["hard_limit_chars"] == 250000
     with pytest.raises(AgentBoundaryError, match="hard context guard"):
-        context_usage(model, config, "site", [HumanMessage(content="x" * 99000)], 1001)
+        context_usage(model, config, "site", [HumanMessage(content="x" * 249500)], 1001)
     with pytest.raises(AgentBoundaryError, match="hard context guard"):
         context_usage(
             SimpleNamespace(profile={"max_input_tokens": 4096}),

@@ -13,6 +13,7 @@ from easydesign.agent.context_policy import (
     context_usage,
     research_memory,
 )
+from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.evidence_research import EvidenceResearch
 from easydesign.agent.harness import RoleBoundary
 from easydesign.agent.phase2_tools import phase2_tools
@@ -383,7 +384,7 @@ def test_existing_runtime_packet_is_not_reprojected_or_double_counted(
     request = ModelRequest(
         model=model,
         system_message=SystemMessage(content="Synthetic Site research"),
-        messages=[HumanMessage(content="x" * 100500)],
+        messages=[HumanMessage(content="x" * 240500)],
         state={"messages": []},
         tools=[],
     )
@@ -430,7 +431,7 @@ async def test_site_context_admission_builds_runtime_packet_before_summary_guard
         FilesystemBackend(root_dir=tmp_path / "history", virtual_mode=True),
         eid,
     )
-    messages = [HumanMessage(content="x" * 76000)]
+    messages = [HumanMessage(content="x" * 180000)]
     received: list[Any] = []
 
     async def handler(request: Any) -> Any:
@@ -501,7 +502,7 @@ async def test_persisted_summary_cutoff_precedes_site_runtime_projection_without
             tool_call_id="prefix",
         ),
         AIMessage(content="Prefix evidence consumed."),
-        HumanMessage(content="Oversized transient history " + "x" * 70000),
+        HumanMessage(content="Oversized transient history " + "x" * 180000),
     ]
     calls = [
         {"id": f"current-{index}", "name": "retrieve_evidence", "args": {}}
@@ -599,7 +600,7 @@ async def test_site_role_boundary_admits_oversized_first_request_before_hard_gua
         ModelRequest(
             model=model,
             system_message=SystemMessage(content="Synthetic Site research"),
-            messages=[HumanMessage(content="x" * 100500)],
+            messages=[HumanMessage(content="x" * 242000)],
             state={"messages": []},
             tools=phase2_tools(site_bridge, "site"),
         ),
@@ -656,6 +657,8 @@ def test_evidence_card_view_exposes_runtime_owned_strength_ceiling() -> None:
     direct = _evidence_card_view(
         {
             "card_id": "passage-direct",
+            "provider": "RCSB",
+            "evidence_level": "deposition-and-polymer-entities",
             "primary_eligible": True,
             "passage": "Direct deposited coordinate evidence for the synthetic interface.",
         },
@@ -672,3 +675,45 @@ def test_evidence_card_view_exposes_runtime_owned_strength_ceiling() -> None:
 
     assert direct["allowed_strengths"] == ["E1", "E2", "E3", "E4"]
     assert review["allowed_strengths"] == ["E3", "E4"]
+
+
+def test_evidence_card_view_separates_curated_and_historical_source_ceilings() -> None:
+    curated = _evidence_card_view(
+        {
+            "card_id": "passage-curated",
+            "provider": "UniProt",
+            "evidence_level": "official-database",
+            "primary_eligible": True,
+            "passage": "The canonical human protein record carries this annotation.",
+        },
+        operation="uniprot-record",
+    )
+    historical = _evidence_card_view(
+        {
+            "card_id": "passage-historical",
+            "provider": "EuropePMC",
+            "evidence_level": "abstract",
+            "primary_eligible": True,
+            "binding_context": {"relation": "historical-target"},
+            "passage": "A primary experiment reports a historical target observation.",
+        },
+        operation="primary-record",
+    )
+
+    assert curated["source_use_class"] == "curated-context"
+    assert curated["allowed_strengths"] == ["E2", "E3", "E4"]
+    assert historical["source_use_class"] == "historical-near-direct"
+    assert historical["allowed_strengths"] == ["E2", "E3", "E4"]
+
+    with pytest.raises(AgentBoundaryError, match="widens"):
+        _evidence_card_view(
+            {
+                "card_id": "passage-curated-tampered",
+                "provider": "UniProt",
+                "evidence_level": "official-database",
+                "primary_eligible": True,
+                "allowed_strengths": ["E1", "E2", "E3", "E4"],
+                "passage": "A forged ceiling must not promote a curated record.",
+            },
+            operation="uniprot-record",
+        )

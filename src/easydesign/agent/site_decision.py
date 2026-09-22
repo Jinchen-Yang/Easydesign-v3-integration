@@ -567,6 +567,8 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
                     "section",
                     "evidence_level",
                     "primary_eligible",
+                    "source_use_class",
+                    "allowed_strengths",
                     "partial",
                     "limitations",
                     "does_not_support",

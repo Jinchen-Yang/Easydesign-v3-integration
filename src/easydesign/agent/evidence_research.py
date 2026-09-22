@@ -52,6 +52,7 @@ from .contracts import (
     StrictDTO,
 )
 from .evidence_corpus import NEEDS, EvidenceCorpus, RetrieveEvidence, SelectEvidence, source_key
+from .evidence_policy import allowed_evidence_strengths, evidence_strength_policy
 from .session_store import compact, confined, identity
 
 EvidenceStatus = Literal[
@@ -218,10 +219,11 @@ class EvidenceUse(StrictDTO):
     claim: ShortText
     relation: Literal["supports", "contradicts", "scope-limit"]
     strength: Literal["E1", "E2", "E3", "E4"] = Field(
-        description="Claim-specific evidence strength within the Runtime-owned source ceiling. "
-        "E1/E2 require a focused passage whose card says primary_eligible=true. "
-        "A review or other primary_eligible=false source may be used only as E3/E4 context, "
-        "scope or uncertainty and cannot be promoted by the model."
+        description="Claim-specific evidence strength within the card's Runtime-owned "
+        "allowed_strengths. primary_eligible is provenance only, not the complete permission. "
+        "E1 requires a direct-eligible source and an exact in-scope observation; E2 covers "
+        "near-direct transfer or curated identity/context. E3/E4 are context, computation, "
+        "scope or uncertainty. The model may never promote a source above its allowlist."
     )
     transfer_limit: ShortText
 
@@ -238,8 +240,9 @@ class ResearchAssessment(StrictDTO):
         "UNRESOLVED, and evidence is empty.",
     )
     status: EvidenceStatus = Field(
-        description="VERIFIED requires scoped source-bound evidence, not claims hidden in "
-        "limitations. CONFLICTING_EVIDENCE requires both supporting and contradicting "
+        description="VERIFIED requires at least one supporting E1/E2 passage permitted by "
+        "that card's Runtime allowlist, not claims hidden in limitations or E3/E4 context. "
+        "CONFLICTING_EVIDENCE requires both supporting and contradicting "
         "passages with incompatible claims in the same scope. Different source IDs alone "
         "do not prove conflict. Evidence challenging a computational hypothesis "
         "alone is not a source-vs-source conflict: preserve that evidence and use UNRESOLVED "
@@ -1928,6 +1931,7 @@ class EvidenceResearch:
                 errors.append(
                     scope + "Conflict requires both supporting and contradicting source passages"
                 )
+            verified_support = False
             for use in conclusion.evidence:
                 card = cards.get(use.card_id)
                 if card is None:
@@ -1970,25 +1974,38 @@ class EvidenceResearch:
                         location = {"kind": "decision-question", "question_index": index}
                         if location not in block["locations"]:
                             block["locations"].append(location)
-                if use.strength in {"E1", "E2"} and not card["primary_eligible"]:
+                policy = evidence_strength_policy(card)
+                if use.strength not in allowed_evidence_strengths(card):
                     role_errors.append(
                         scope
                         + f"EVIDENCE_ROLE_MISMATCH: {use.card_id} has "
-                        + "primary_eligible=false but was assigned "
-                        + f"strength={use.strength}. Keep this source at E3/E4 for background, "
-                        + "scope or uncertainty, or cite an eligible focused passage. If no "
-                        + "eligible direct support exists, keep the claim unresolved."
+                        + f"source_use_class={policy['source_use_class']} and "
+                        + f"allowed_strengths={policy['allowed_strengths']} but was assigned "
+                        + f"strength={use.strength}. Use an allowed strength without changing "
+                        + "source identity. If no supporting E1/E2 passage is allowed, keep "
+                        + "the claim unresolved."
                     )
+                elif use.relation == "supports" and use.strength in {"E1", "E2"}:
+                    verified_support = True
                 used_refs.extend(card["source_refs"])
+            if conclusion.status == "VERIFIED" and not verified_support:
+                errors.append(
+                    scope
+                    + "VERIFIED requires at least one supporting passage assigned E1/E2 "
+                    + "within that card's Runtime-owned allowed_strengths; contradicting, "
+                    + "scope-limit or E3/E4 context does not satisfy this floor"
+                )
         if role_errors:
             eligible = sorted(
                 card_id
                 for card_id, card in cards.items()
-                if card.get("primary_eligible") and card_id.startswith("passage-")
+                if set(allowed_evidence_strengths(card)) & {"E1", "E2"}
+                and card_id.startswith("passage-")
             )
             raise EvidenceRoleMismatch(
                 "\n".join(role_errors)
-                + "\nRuntime-owned primary-eligible focused passage card_ids: "
+                + ("\n" + "\n".join(errors) if errors else "")
+                + "\nRuntime-owned E1/E2-eligible focused passage card_ids: "
                 + compact(eligible)
                 + ". Do not change source identity or invent support."
             )

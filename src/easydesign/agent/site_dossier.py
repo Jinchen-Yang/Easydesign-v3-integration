@@ -540,6 +540,8 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                     "identifier",
                     "evidence_level",
                     "primary_eligible",
+                    "source_use_class",
+                    "allowed_strengths",
                     "does_not_support",
                 )
                 if key in c

@@ -324,7 +324,8 @@ def test_downstream_gates_are_ledger_enabled_without_phase2_routing(
 def test_budget_and_context_contract_unchanged() -> None:
     config = scripted_config()
     assert config.max_model_calls == 64
-    assert config.hard_input_chars == 100000
+    assert config.max_input_chars == 120000
+    assert config.hard_input_chars == 250000
 
 
 @pytest.mark.parametrize("site_reused", [False, True])

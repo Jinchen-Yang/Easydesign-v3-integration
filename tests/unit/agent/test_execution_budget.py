@@ -31,8 +31,8 @@ def test_phase2_default_and_template_have_one_effective_64_call_budget() -> None
         ModelConfig.model_validate(yaml.safe_load(template.read_text())),
     ):
         assert config.max_model_calls == PHASE2_MODEL_CALL_LIMIT == 64
-        assert config.hard_input_chars == 100000
-        assert config.max_input_chars == 60000
+        assert config.hard_input_chars == 250000
+        assert config.max_input_chars == 120000
     # Keep a single default; the shipped template must not shadow it.
     assert "max_model_calls" not in yaml.safe_load(template.read_text())
 
@@ -142,13 +142,14 @@ def history(rounds: int, total_chars: int) -> list[Any]:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "rounds,chars,summaries",
-    [(2, 60000, 0), (2, 82000, 1), (6, 82000, 1), (2, 94000, 1)],
+    "rounds,chars_over_soft_target,summaries",
+    [(2, 0, 0), (2, 20000, 1), (6, 4000, 1), (2, 40000, 1)],
 )
 async def test_native_summary_preserves_one_large_batch_of_guard_headroom(
-    tmp_path: Path, rounds: int, chars: int, summaries: int
+    tmp_path: Path, rounds: int, chars_over_soft_target: int, summaries: int
 ) -> None:
     config = scripted_config()
+    chars = config.max_input_chars + chars_over_soft_target
     (tmp_path / "project").mkdir(exist_ok=True)
     store = SessionStore(tmp_path / "project")
     b = SimpleNamespace(store=store, thread="synthetic-memory")
@@ -198,7 +199,7 @@ async def test_native_summary_checkpoint_reopen_keeps_cutoff_and_small_tail(tmp_
     eid = store.begin_execution(b.thread, "Synthetic summary restart")["execution_id"]
     model = FakeListChatModel(responses=["Fallible synthetic summary of archived evidence."])
     backend = FilesystemBackend(root_dir=tmp_path / "history", virtual_mode=True)
-    messages = history(6, 82000)
+    messages = history(6, config.max_input_chars + 4000)
     received = []
 
     async def handler(request: Any) -> Any:
@@ -258,7 +259,13 @@ async def test_large_completed_batch_is_summarized_before_guard_without_losing_t
     messages = history(4, 40000)
     batch = [
         AIMessage(
-            content=[{"type": "thinking", "thinking": "synthetic " * 6000, "signature": "test"}],
+            content=[
+                {
+                    "type": "thinking",
+                    "thinking": "synthetic " * (config.hard_input_chars // len("synthetic ") + 1),
+                    "signature": "test",
+                }
+            ],
             tool_calls=[
                 {"name": "read_evidence", "args": {}, "id": f"large-{i}"} for i in range(6)
             ],

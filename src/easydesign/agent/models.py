@@ -51,8 +51,8 @@ class ModelConfig(StrictDTO):
     default: LLMConfig
     roles: dict[Role, LLMConfig] = Field(default_factory=dict)
     max_model_calls: int = Field(default=PHASE2_MODEL_CALL_LIMIT, ge=1, le=100)
-    max_input_chars: int = Field(default=60000, ge=4000, le=120000)
-    hard_input_chars: int = Field(default=100000, ge=4000, le=400000)
+    max_input_chars: int = Field(default=120000, ge=4000, le=120000)
+    hard_input_chars: int = Field(default=250000, ge=4000, le=400000)
 
     @model_validator(mode="after")
     def working_set_below_guard(self) -> ModelConfig:

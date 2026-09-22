@@ -13,7 +13,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import Field, ValidationError
 
-from .context_policy import context_usage
+from .context_policy import ModelContextCapacityError, context_usage
 from .contracts import (
     AgentBoundaryError,
     EvidenceBinding,
@@ -272,14 +272,10 @@ def recovery_review_input(
 
     offered_kinds = {"target", "candidate", "topology", "exclusions", *prior_kinds}
     offered = {
-        kind: value
-        for kind, value in packet["fact_references"].items()
-        if kind in offered_kinds
+        kind: value for kind, value in packet["fact_references"].items() if kind in offered_kinds
     }
     available = [
-        key.split(":", 1)[1]
-        for key, ref in full_paths.items()
-        if ref["kind"] in offered_kinds
+        key.split(":", 1)[1] for key, ref in full_paths.items() if ref["kind"] in offered_kinds
     ]
     available.extend(short for short in prior_facts if short not in available)
     return {
@@ -377,6 +373,10 @@ class SiteJudgeUnavailable(AgentBoundaryError):
     """Only a classified operational failure, never a scientific verdict."""
 
 
+class SiteJudgePreflightUnavailable(AgentBoundaryError):
+    """The full bound Site review cannot fit before any model call is reserved."""
+
+
 class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
     def __init__(self, bridge: Any, config: ModelConfig, execution_id: str):
         self.bridge, self.config, self.execution_id = bridge, config, execution_id
@@ -437,6 +437,8 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
             None,
         )
         substantive = any(p.get("substantive_finding") for p in previous)
+        if substantive:
+            raise AgentBoundaryError("Site Judge review contains unresolved substantive findings")
         # Restart does not reset attempts. Normal and compact schemas share this contract.
         for attempt in range(len(previous), 3):
             if attempt:
@@ -482,9 +484,28 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
             messages = [HumanMessage(content=compact(working))]
             system = SystemMessage(content=review_prompt(recovery=recovery))
             schema_chars = len(compact([convert_to_openai_tool(schema)]))
-            usage = context_usage(
-                request.model, self.config, "judge", [system, *messages], schema_chars
-            )
+            try:
+                usage = context_usage(
+                    request.model, self.config, "judge", [system, *messages], schema_chars
+                )
+            except ModelContextCapacityError as error:
+                # Only the untouched first review can degrade without consuming a call or
+                # repair. A recovery overflow remains a hard failure.
+                if attempt != 0 or previous:
+                    raise
+                self.bridge.store.event(
+                    self.bridge.thread,
+                    "site-judge-context-preflight-failed",
+                    {
+                        "role": "judge",
+                        "execution_id": self.execution_id,
+                        "binding": binding,
+                        "diagnostic": "MODEL_CONTEXT_CAPACITY_EXCEEDED",
+                        "source_role": "verified-runtime",
+                        "usage": error.usage,
+                    },
+                )
+                raise SiteJudgePreflightUnavailable(str(error)) from error
             self.bridge.store.reserve_model_call(
                 self.bridge.thread, "judge", self.config.max_model_calls, self.execution_id
             )
@@ -721,24 +742,28 @@ def create_site_aware_judge(
                 {"messages": [HumanMessage(content="Review the current delegated Site proposal.")]},
                 config,
             )
+        except SiteJudgePreflightUnavailable:
+            from .site_review_availability import record_preflight_unavailable
+
+            failure = record_preflight_unavailable(bridge, execution_id)
         except SiteJudgeUnavailable:
             from .site_review_availability import record_unavailable
 
             failure = record_unavailable(bridge, execution_id)
-            return {
-                "messages": [
-                    AIMessage(
-                        content=compact(
-                            {
-                                "review_availability": "unavailable",
-                                "review_failure_id": failure["record_id"],
-                                "next": "Scientist review required; assessment unavailable",
-                            }
-                        )
+        return {
+            "messages": [
+                AIMessage(
+                    content=compact(
+                        {
+                            "review_availability": "unavailable",
+                            "review_failure_id": failure["record_id"],
+                            "next": "Scientist review required; assessment unavailable",
+                        }
                     )
-                ],
-                "structured_response": None,
-            }
+                )
+            ],
+            "structured_response": None,
+        }
 
     model_config = config
     graph = StateGraph(State)

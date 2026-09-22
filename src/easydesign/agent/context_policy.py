@@ -19,6 +19,14 @@ from .models import ModelConfig, Role, compact_summary_model
 from .session_store import compact
 
 
+class ModelContextCapacityError(AgentBoundaryError):
+    """A deterministic request-capacity rejection before any provider reservation."""
+
+    def __init__(self, usage: dict[str, Any]):
+        self.usage = dict(usage)
+        super().__init__("Model hard context guard exceeded: " + compact(self.usage))
+
+
 def _latest_complete_tool_batch(messages: list[Any]) -> list[Any]:
     """Return a complete, not-yet-consumed tool batch at the transcript tail."""
     index = len(messages) - 1
@@ -98,10 +106,7 @@ def admit_site_research_request(
     token_guard = candidate["model_profile_token_guard"]
     preserve_latest_batch = bool(latest_batch) and (
         candidate["input_chars_with_schemas"] <= config.hard_input_chars
-        and (
-            token_guard is None
-            or candidate["estimated_input_tokens"] <= token_guard
-        )
+        and (token_guard is None or candidate["estimated_input_tokens"] <= token_guard)
     )
     if not preserve_latest_batch:
         projected_messages = [packet]
@@ -129,9 +134,7 @@ def admit_site_research_request(
                 else "runtime-site-research-packet-v1"
             ),
             "preserved_latest_tool_batch_calls": (
-                len(getattr(latest_batch[0], "tool_calls", []))
-                if preserve_latest_batch
-                else 0
+                len(getattr(latest_batch[0], "tool_calls", [])) if preserve_latest_batch else 0
             ),
         },
     )
@@ -182,7 +185,7 @@ def context_usage(
     if enforce and (
         chars > config.hard_input_chars or (token_limit is not None and tokens > token_limit)
     ):
-        raise AgentBoundaryError("Model hard context guard exceeded: " + compact(usage))
+        raise ModelContextCapacityError(usage)
     return usage
 
 
@@ -356,9 +359,7 @@ def research_memory(
     )
     profile_limit = (getattr(model, "profile", None) or {}).get("max_input_tokens")
     # Trigger near the configured working target, leaving room for one complete
-    # multi-tool result batch before the independent hard guard. A high-water mark
-    # near 90k characters let a normal 25-30k Site batch jump past a 100k guard
-    # before the framework could summarize it.
+    # multi-tool result batch before the independent hard guard.
     trigger = max(1000, config.max_input_chars // 4)
     if isinstance(profile_limit, int) and profile_limit > 0:
         trigger = min(

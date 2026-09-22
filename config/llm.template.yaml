@@ -13,7 +13,10 @@ roles: {}
 # Coordinator, all specialists and framework summaries consume the same ledger.
 # Restart/resume preserves it; an accepted Gate or new user turn starts one new budget.
 # Omit max_model_calls to use that single runtime default.
-max_input_chars: 60000
+# Native working-memory summarization starts above this target. The hard guard is a separate
+# fail-closed request-capacity boundary and must remain above the working target.
+max_input_chars: 120000
+hard_input_chars: 250000
 
 # To use a different provider, change provider, model AND secret_env together.
 # Supported providers in Phase 1: deepseek, openai, anthropic.

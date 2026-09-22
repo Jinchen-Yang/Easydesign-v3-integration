@@ -1,7 +1,10 @@
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from langchain_core.messages import ToolMessage
 from pydantic import ValidationError
 
 from easydesign.agent.contracts import (
@@ -72,8 +75,6 @@ def test_stale_approval_cannot_change_request(bridge: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_execution_middleware_rejects_hidden_tools_and_foreign_files(bridge: Any) -> None:
-    from types import SimpleNamespace
-
     from easydesign.agent.harness import RoleBoundary
     from tests.agent_support import scripted_config
 
@@ -92,6 +93,58 @@ async def test_execution_middleware_rejects_hidden_tools_and_foreign_files(bridg
     )
     with pytest.raises(AgentBoundaryError):
         await guard.awrap_tool_call(request, handler)
+
+
+@pytest.mark.asyncio
+async def test_registered_large_tool_alias_becomes_scoped_result_index(bridge: Any) -> None:
+    from easydesign.agent.design import DesignBridge
+    from easydesign.agent.evidence_output import output_message
+    from easydesign.agent.harness import RoleBoundary
+    from easydesign.agent.session_store import compact
+    from tests.agent_support import scripted_config
+
+    b = DesignBridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Design against approved hotspots")
+    execution_id = execution["execution_id"]
+    visible = output_message(
+        b,
+        "binder",
+        execution_id,
+        ToolMessage(
+            name="read_design_evidence",
+            tool_call_id="design-evidence-call",
+            content=compact({"approved_hotspots": [349, 370], "private": "x" * 3000}),
+        ),
+    )
+    ref = json.loads(visible.content)["full_result"]
+    guard = RoleBoundary(
+        b,
+        "binder",
+        scripted_config(),
+        "Design against approved hotspots",
+        execution_id=execution_id,
+    )
+
+    async def forbidden_handler(request: Any) -> Any:
+        raise AssertionError("Filesystem reader must not receive an evicted evidence path")
+
+    request = SimpleNamespace(
+        tool_call={
+            "name": "read_file",
+            "args": {"file_path": "/large_tool_results/design-evidence-call"},
+            "id": "read-evicted",
+        }
+    )
+    result = await guard.awrap_tool_call(request, forbidden_handler)
+    index = json.loads(result.content)
+    assert index["status"] == "scoped-result-index"
+    assert index["full_result"] == ref
+    assert set(index["available_fields"]) == {"approved_hotspots", "private"}
+    assert "x" * 100 not in result.content
+
+    request.tool_call["args"]["file_path"] = "/large_tool_results/foreign-call"
+    with pytest.raises(AgentBoundaryError, match="not supplied"):
+        await guard.awrap_tool_call(request, forbidden_handler)
 
 
 @pytest.mark.parametrize(

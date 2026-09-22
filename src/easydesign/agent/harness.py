@@ -1520,6 +1520,42 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         token = None
         if name == "read_file":
             path = args.get("file_path", "")
+            evicted_parts = path.split("/") if isinstance(path, str) else []
+            evicted_result = (
+                len(evicted_parts) == 3
+                and evicted_parts[:2] == ["", "large_tool_results"]
+                and bool(evicted_parts[2])
+                and all(character.isalnum() or character in "_-" for character in evicted_parts[2])
+            )
+            if evicted_result:
+                # DeepAgents can replace a large, already registered ToolMessage with
+                # /large_tool_results/<tool-call-id> and tell the model to use read_file.
+                # Never expose that filesystem namespace. Resolve it only through the
+                # current role/execution's immutable tool-view receipt, then reuse the
+                # same scoped result index as an explicit /result-*.json request.
+                if not isinstance(self.bridge, Phase2Bridge) or self.execution_id is None:
+                    raise AgentBoundaryError(
+                        "Evicted result is not bound to a scoped scientific execution"
+                    )
+                issued = self.bridge.store.db.execute(
+                    "SELECT json_extract(payload,'$.ref') FROM events "
+                    "WHERE thread=? AND kind='tool-view' "
+                    "AND json_extract(payload,'$.role')=? "
+                    "AND json_extract(payload,'$.execution_id')=? "
+                    "AND json_extract(payload,'$.tool_call_id')=? "
+                    "ORDER BY seq DESC LIMIT 1",
+                    (
+                        self.bridge.thread,
+                        self.role,
+                        self.execution_id,
+                        evicted_parts[2],
+                    ),
+                ).fetchone()
+                if issued is None:
+                    raise AgentBoundaryError(
+                        "Evicted result was not supplied to this role/execution"
+                    )
+                path = issued[0]
             expected = f"/skills/{self.skills.get(self.role, '')}/SKILL.md"
             own_reference = self.role == "site" and path in {
                 "/skills/site-mechanism/references/membrane.md",

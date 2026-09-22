@@ -597,6 +597,19 @@ class EvidenceRetrievalQueryMismatch(InvalidFieldProjection):
         }
 
 
+class EvidenceCursorCopyMismatch(InvalidFieldProjection):
+    """A near-copy of one owned opaque cursor; no source view was consumed."""
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "CURSOR_COPY_MISMATCH",
+            "required_action": "continue_evidence",
+            "message": str(self),
+        }
+
+
 class SiteResidueQueryMismatch(AgentBoundaryError, InvalidFieldProjection):
     """Unavailable labels in a read-only query; no hotspot is validated or changed."""
 

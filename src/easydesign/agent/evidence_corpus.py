@@ -17,6 +17,7 @@ from easydesign.core import ArtifactRef
 
 from .contracts import (
     AgentBoundaryError,
+    EvidenceCursorCopyMismatch,
     EvidenceCursorQueryMismatch,
     EvidenceRetrievalQueryMismatch,
     ShortText,
@@ -280,10 +281,14 @@ class EvidenceCorpus:
     def continue_page(self, request: ContinueEvidence) -> dict[str, Any]:
         """Continue a verified issued view without model retyping its scientific query."""
         owned = []
+        issued_cursors: set[str] = set()
         for event in reversed(self.bridge.store.events(self.bridge.thread)):
             if event["kind"] != "evidence-view":
                 continue
             prior = self.bridge.document(event["payload"]["ref"])
+            issued_cursor = prior.get("next_cursor")
+            if isinstance(issued_cursor, str) and issued_cursor:
+                issued_cursors.add(issued_cursor)
             if prior["next_cursor"] == request.cursor:
                 # The existing reader independently checks current binding, selection,
                 # source bytes and the exact issued cursor; no stale-view auto-reset.
@@ -298,6 +303,18 @@ class EvidenceCorpus:
                     )
                 )
             owned.append(prior.get("query_id", "").rsplit("-", 1)[0])
+        near_copies = [
+            cursor
+            for cursor in issued_cursors
+            if len(cursor) == len(request.cursor)
+            and sum(left != right for left, right in zip(cursor, request.cursor, strict=True)) == 1
+        ]
+        if len(near_copies) == 1:
+            raise EvidenceCursorCopyMismatch(
+                "One-character copy mismatch against one cursor issued in this thread. "
+                "No passage was read and the cursor was not advanced. Retry continue_evidence "
+                "with the exact returned next_cursor; do not edit or decode it."
+            )
         try:
             decoded = json.loads(base64.urlsafe_b64decode(request.cursor))
         except (ValueError, TypeError):

@@ -1985,6 +1985,71 @@ def test_cursor_only_continuation_restores_verified_query_and_retains_hard_bound
 
 
 @pytest.mark.asyncio
+async def test_one_character_owned_cursor_copy_error_is_bounded_repair(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.contracts import EvidenceCursorCopyMismatch
+    from easydesign.agent.evidence_corpus import ContinueEvidence
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Read consecutive source passages")
+    source_transport(b, monkeypatch)
+    EvidenceResearch(b).acquire(
+        ResearchQuery.model_validate(
+            {**ACQUIRE, "selection_reason": "Read complete assay conditions and counterevidence"}
+        ),
+        role="site",
+    )
+    corpus = EvidenceCorpus(b)
+    first = corpus.retrieve(
+        RetrieveEvidence(
+            need="FUNCTIONAL_MECHANISM",
+            question="assay control",
+            source_id="EuropePMC:PMC123",
+            page_size=3,
+        )
+    )
+    cursor = first["next_cursor"]
+    replacement = "A" if cursor[22] != "A" else "B"
+    near_copy = cursor[:22] + replacement + cursor[23:]
+    assert sum(left != right for left, right in zip(cursor, near_copy, strict=True)) == 1
+    with pytest.raises(EvidenceCursorCopyMismatch, match="One-character copy mismatch"):
+        corpus.continue_page(ContinueEvidence(cursor=near_copy))
+
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Read selected source",
+        execution_id=execution["execution_id"],
+    )
+
+    async def handler(request: Any) -> Any:
+        return compact(
+            corpus.continue_page(ContinueEvidence.model_validate(request.tool_call["args"]))
+        )
+
+    request = SimpleNamespace(
+        tool_call={
+            "name": "continue_evidence",
+            "id": "near-copy",
+            "args": {"cursor": near_copy},
+        }
+    )
+    response = await guard.awrap_tool_call(request, handler)
+    value = json.loads(response.content)
+    assert response.status == "error"
+    assert value["error_code"] == "CURSOR_COPY_MISMATCH"
+    assert value["required_action"] == "continue_evidence"
+    assert value["repair_attempt"] == 1
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "evidence-view"]) == 1
+
+    random_cursor = "x" * len(cursor)
+    with pytest.raises(AgentBoundaryError, match="foreign"):
+        corpus.continue_page(ContinueEvidence(cursor=random_cursor))
+
+
+@pytest.mark.asyncio
 async def test_acquired_source_for_another_need_is_not_reported_as_empty_evidence(
     bridge: Any, monkeypatch: Any
 ) -> None:

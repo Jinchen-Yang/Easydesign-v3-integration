@@ -31,6 +31,7 @@ from .contracts import (
     DecisionOutcome,
     EvidenceBinding,
     EvidenceCitationMismatch,
+    EvidenceCursorCopyMismatch,
     EvidenceCursorQueryMismatch,
     EvidenceRetrievalQueryMismatch,
     EvidenceRoleMismatch,
@@ -1835,6 +1836,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             and isinstance(
                                 error,
                                 (
+                                    EvidenceCursorCopyMismatch,
                                     EvidenceCursorQueryMismatch,
                                     StaleEvidenceCursor,
                                     EvidenceRetrievalQueryMismatch,

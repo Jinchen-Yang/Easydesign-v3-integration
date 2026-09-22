@@ -1,0 +1,238 @@
+{
+  "schema_version": "easydesign-gate3-fresh-protocol-v1",
+  "authority_id": "easydesign-gate3-fresh-v1",
+  "status": "frozen",
+  "title": "EasyDesign NK2R sentinel plus BenchBB seven-target fresh Gate3 acceptance",
+  "scope": "One fresh design-only attempt per target from Gate1 through validated design YAML freeze.",
+  "precedence": "For authority_id easydesign-gate3-fresh-v1, this file is the sole protocol authority.",
+  "freeze_ref": "refs/tags/easydesign-gate3-fresh-v1",
+  "agent_code_commit": "e8d0899fabf07e7032ce5ef6c58086b329878e5b",
+  "endpoint": "design-frozen",
+  "through": "design",
+  "replicates_per_target": 1,
+  "generation_allowed": false,
+  "pilot_allowed": false,
+  "handoff_allowed": false,
+  "cohort_success_reporting": {
+    "engineering_completion": "Report completion over all eight targets.",
+    "benchbb_statistics": "Compute BenchBB aggregate statistics over the seven BenchBB targets only; NK2R is an engineering sentinel, not a BenchBB target."
+  },
+  "protected_inputs": {
+    "model_config": {
+      "path": "evaluation/figure2_benchbb/configs/easydesign-models.yaml",
+      "sha256": "a1a4d0b821ad0bcad424ad9eb0281e49a26e9935bc5f1e7a3cf045ce39e1f42b"
+    },
+    "metric_dictionary": {
+      "path": "evaluation/figure2_benchbb/configs/metric_dictionary.csv",
+      "sha256": "1c6c9b61d942b0ea39b6d3620aa08d26a0e1f9ca22f1f7b1367cbc8d98c269ac",
+      "declared_metric_count": 54,
+      "missing_value": "not_available",
+      "derive_every_metric": true
+    }
+  },
+  "legacy_protocols": [
+    {
+      "path": "evaluation/figure2_benchbb/configs/protocol.json",
+      "sha256": "40a70116313a9dc54e7557218bc648078606a917ea77dcefc9de397258d8a06f",
+      "disposition": "historical development preflight; not authority for this cohort"
+    },
+    {
+      "path": "evaluation/figure2_benchbb/configs/easydesign_experimental_protocol.json",
+      "sha256": "8a248e42e4027297fd7c99a401bb601b06865737cc22b1d26c357f1f20300927",
+      "disposition": "historical seven-target protocol; not authority for this cohort"
+    },
+    {
+      "path": "evaluation/figure2_benchbb/configs/easydesign_experimental_runs.json",
+      "sha256": "1525efc24655e7fca0c54c64ad691a57ac80dc16d97d7004c36705971cb4b7a2",
+      "disposition": "historical run registry; no new cohort records may be appended"
+    },
+    {
+      "path": "evaluation/figure2_benchbb/results/formal_runs.json",
+      "sha256": "96b1d39b19d98623248d15089ab7a5192f01fca797c0db96cf3554bf5173b949",
+      "disposition": "historical run registry; no new cohort records may be appended"
+    }
+  ],
+  "freshness_contract": {
+    "required_head": "The resolved freeze_ref commit; no source, prompt, skill, config, protocol, input or metric change is allowed after the first attempt starts.",
+    "tracked_tree": "Clean at every attempt start. The pre-existing untracked protected audit is excluded from project state and must remain byte-untouched.",
+    "project_state": "Every attempt uses a never-before-existing project path, thread, run ID and runtime-state path. No old SQLite, dossier, candidate, transcript, project artifact or scientific cache is copied or resumed.",
+    "retry": "Product-native retry/resume inside the same unchanged attempt is measured. A failed fresh attempt is retained; any replacement uses a new r2/r3 identity.",
+    "invalidation": "Any protected change after cohort start invalidates the complete v1 cohort. Create v2 and restart all eight targets from Gate1."
+  },
+  "execution": {
+    "project_name_template": "figure2-eight-gate3-fresh-v1-{target}-r{attempt}-20260922",
+    "external_results_root": "/data/easydesign-results/easydesign-gate3-fresh-v1-20260922",
+    "external_append_only_registry": "/data/easydesign-results/easydesign-gate3-fresh-v1-20260922/run-registry.jsonl",
+    "command": "easydesign-agent start <new-project> --target <frozen-input> --goal <exact-goal> --models evaluation/figure2_benchbb/configs/easydesign-models.yaml --through design --stream --technical-details",
+    "max_concurrent_agents": 2,
+    "validation_workers_per_agent": 2,
+    "launch_waves": [
+      ["NK2R", "MBP"],
+      ["BHRF1", "PDL1"],
+      ["EGFR", "IL7RA"],
+      ["CAS9", "BBF14"]
+    ],
+    "load_policy": "Start at most two agents when 1-minute load is below 75; reduce to one at 75-84; start none at 85 or above. Pause launches for less than 300 GiB available memory, provider 429s or repeated transport timeouts.",
+    "control_worker_required_count": 0
+  },
+  "gate_policy": {
+    "gate1": "Approve the highest-ranked selectable identity/structure/chain option only when identity, species, mapping and provenance hard checks pass. Otherwise stop.",
+    "gate2_default": "For each BenchBB target, approve the highest-ranked selectable candidate. Keep the complete A/B/C candidate set in the record. Do not override a blocked candidate.",
+    "gate2_nk2r": {
+      "authority": "Scientist pre-authorized target-specific site preference",
+      "selection": "From the fresh selectable options, choose the candidate that is extracellular, faces the orthosteric pocket and occupies the deeper outer-pore/deep-pocket entrance rather than the shallow outer vestibule.",
+      "must_be_true": [
+        "eligible=true",
+        "hard_block=null",
+        "extracellular",
+        "deeper outer-pore or deep-pocket entrance",
+        "orthosteric-pocket-facing"
+      ],
+      "must_not_be_true": [
+        "shallow outer-vestibule-only",
+        "intracellular",
+        "verified compartment conflict"
+      ],
+      "fresh_id_rule": "Use the exact option_id produced by the fresh Gate2 card. Do not hard-code rank, candidate letter or residue IDs from a historical run.",
+      "failure_rule": "If no selectable fresh candidate matches this semantic site, stop NK2R as a scientific failure. Do not fall back to candidate A and do not override."
+    },
+    "gate3": {
+      "normal_approval": "Approve only when hard_constraints=passed, every backend validation passed, blockers is empty and generation_started=false.",
+      "soft_override": "One explicit override is allowed only when every remaining item is a displayed soft warning and the card is otherwise override-eligible.",
+      "override_reason_scope": "Authorize validated design YAML freeze only; do not authorize Pilot, handoff, BoltzGen generation, binding or functional claims.",
+      "never_override": [
+        "identity",
+        "species",
+        "mapping",
+        "provenance",
+        "target membership",
+        "backend validation",
+        "hard constraint",
+        "blocker",
+        "judge reject",
+        "judge insufficient"
+      ]
+    }
+  },
+  "targets": [
+    {
+      "order": 1,
+      "target_id": "NK2R",
+      "cohort_role": "engineering-sentinel",
+      "pdb_id": "9W2H",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/NK2R_9W2H/9W2H.cif",
+      "structure_sha256": "33ff56e619b30fbb1edeba2d58726aaf78006ad1b2480416b97bb4892e488e51",
+      "goal": "Design an extracellular inhibitory VHH nanobody against human NK2R (TACR2).",
+      "goal_sha256": "487b2b6db63fcadf6ee8ed6027e52ce2477adc8aa0c6b7f7d8f797f44bd5c88e",
+      "gate2_policy": "gate2_nk2r"
+    },
+    {
+      "order": 2,
+      "target_id": "PDL1",
+      "cohort_role": "benchbb",
+      "pdb_id": "4Z18",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/PDL1_4Z18/4Z18.cif",
+      "structure_sha256": "e5d5991c1d4d76425e9075e2f30e49fcb457b0b51fc12713f57b1f3b6144eca6",
+      "goal": "Design a VHH nanobody against the human PD-L1 extracellular domain that is intended to inhibit PD-1 engagement.",
+      "gate2_policy": "gate2_default"
+    },
+    {
+      "order": 3,
+      "target_id": "BHRF1",
+      "cohort_role": "benchbb",
+      "pdb_id": "2WH6",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/BHRF1_2WH6/2WH6.cif",
+      "structure_sha256": "149d06ba396c29129b810e54137ddb9f9c193eaf23e08ff89a158a1063b40ad9",
+      "goal": "Design a VHH nanobody against Epstein-Barr virus BHRF1 that targets the accessible BH3-binding cleft and is intended to inhibit pro-survival ligand engagement.",
+      "gate2_policy": "gate2_default"
+    },
+    {
+      "order": 4,
+      "target_id": "BBF14",
+      "cohort_role": "benchbb",
+      "pdb_id": "9HAG",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/BBF14_9HAG/9HAG.cif",
+      "structure_sha256": "891bc906fe4ae4fc65e77a04bc63700aa6606e48d2c7c6bf2cf7eb43c5d28182",
+      "goal": "Design a VHH nanobody binder against the de novo beta-barrel protein BBF-14 using an accessible, structurally coherent surface epitope.",
+      "gate2_policy": "gate2_default"
+    },
+    {
+      "order": 5,
+      "target_id": "MBP",
+      "cohort_role": "benchbb",
+      "pdb_id": "1PEB",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/MBP_1PEB/1PEB.cif",
+      "structure_sha256": "dc7f3c23ab43d3b7f90b74da61216ba84a3ae3d7d8d9c56b96a20a0df08f183b",
+      "goal": "Design a VHH nanobody binder against maltose-binding protein using an accessible, structurally coherent epitope.",
+      "gate2_policy": "gate2_default"
+    },
+    {
+      "order": 6,
+      "target_id": "IL7RA",
+      "cohort_role": "benchbb",
+      "pdb_id": "3DI3",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/IL7RA_3DI3/3DI3.cif",
+      "structure_sha256": "04ff2f0e75713307824e6cdbf9674a5920b194bcf086a782fbee7a529ab43eb1",
+      "goal": "Design a VHH nanobody against the human IL-7 receptor alpha extracellular domain that is intended to inhibit IL-7 receptor engagement.",
+      "gate2_policy": "gate2_default"
+    },
+    {
+      "order": 7,
+      "target_id": "EGFR",
+      "cohort_role": "benchbb",
+      "pdb_id": "8HGO",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/EGFR_8HGO/8HGO.cif",
+      "structure_sha256": "1542cf3f3ea2c2fd08e97ac9334d425cdcaee25a81502223463402f3f80968c2",
+      "goal": "Design a VHH nanobody against the human EGFR ectodomain that is intended to inhibit ligand-driven receptor activation.",
+      "gate2_policy": "gate2_default"
+    },
+    {
+      "order": 8,
+      "target_id": "CAS9",
+      "cohort_role": "benchbb",
+      "pdb_id": "4OO8",
+      "structure": "evaluation/figure2_benchbb/inputs/targets/CAS9_4OO8/4OO8.cif",
+      "structure_sha256": "147dd18bc06e97de52896862ffd69f3db7b4aa060d0a9a084f06d078a9ece511",
+      "goal": "Design an inhibitory VHH nanobody against Streptococcus pyogenes Cas9 using an accessible, functionally relevant surface site.",
+      "gate2_policy": "gate2_default"
+    }
+  ],
+  "success_contract": {
+    "terminal_status": "finished/design-frozen",
+    "required": [
+      "STRATEGY_CURRENT exists",
+      "proposal, approval and frozen strategy SHA bindings agree",
+      "compiled.json ArtifactRef size and SHA checks pass",
+      "design.yaml count equals compiled strategy count",
+      "every manifest has compilation_status=compiled and the expected design SHA",
+      "all 54 metric IDs are emitted without zero-imputation",
+      "generation_started=false",
+      "no Pilot, handoff, generation or StrategyBundle event/path exists"
+    ]
+  },
+  "run_registry_contract": {
+    "format": "append-only JSON Lines outside the Git worktree",
+    "required_identity": [
+      "authority_id",
+      "protocol_file_sha256",
+      "resolved_freeze_commit",
+      "agent_code_commit",
+      "target_id",
+      "attempt",
+      "project",
+      "thread",
+      "run_id"
+    ],
+    "required_evidence": [
+      "preflight HEAD/tree/control/project-absent checks",
+      "goal/input/model/environment hashes",
+      "Gate1/Gate2/Gate3 card IDs, options, recommendation and selected decision",
+      "override warnings, acknowledgement and reason when applicable",
+      "model/tool/query/repair/token/latency/wall checkpoints",
+      "54-metric artifact path, SHA and count",
+      "strategy/YAML/manifest/compiled refs and SHA",
+      "generation_started",
+      "status/failure/invalidation reason and UTC times"
+    ]
+  }
+}

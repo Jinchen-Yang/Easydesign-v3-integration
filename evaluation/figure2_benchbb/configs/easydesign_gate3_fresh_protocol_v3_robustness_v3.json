@@ -1,0 +1,53 @@
+{
+  "schema_version": "easydesign-gate3-fresh-protocol-hotfix-v3",
+  "authority_id": "easydesign-gate3-fresh8-robustness-v3",
+  "status": "frozen",
+  "title": "EGFR Gate3 recovery for an omitted scoped-result reference after model truncation",
+  "scope": "Resume the existing EGFR r5 execution from its approved Gate2 state after Binder emitted read_evidence_result with empty arguments; stop at a validated Gate3 decision card and do not approve Gate3.",
+  "precedence": "This addendum governs only the post-failure Binder resumption of EGFR r5. Gate1, Site, Gate2 and their scientific state remain governed by robustness-v2; base-cohort and prior failed-attempt records remain immutable.",
+  "freeze_ref": "refs/tags/easydesign-gate3-fresh8-robustness-v3",
+  "agent_code_commit": "71bf028a17469d5de56689ea5dc98e4af8e32ae4",
+  "parent_protocol": {
+    "path": "evaluation/figure2_benchbb/configs/easydesign_gate3_fresh_protocol_v3_robustness_v2.json",
+    "sha256": "23ac23a0eadf1ce920a041c99c305bf8d6da7cd33fdbebaaba843b823370c5eb",
+    "authority_id": "easydesign-gate3-fresh8-robustness-v2"
+  },
+  "observed_failure": {
+    "stage": "binder-strategy/design-not-proposed",
+    "condition": "After a max_tokens response, Binder emitted read_evidence_result with empty arguments and no ref.",
+    "result": "AgentBoundaryError: Invalid scoped result reference",
+    "disposition": "Preserve the failed event and checkpoint; resume only after freezing the bounded repair change."
+  },
+  "change_boundary": {
+    "recoverable_input": "Only an omitted ref (null/missing), the literal display label full_result, or a hash-shaped unissued handle receives bounded repair feedback.",
+    "repair_output": "Return at most the recent result handles already issued to the same project thread, role and execution; do not read evidence and do not choose a replacement.",
+    "hard_boundaries": "Foreign, stale, cross-role, cross-thread, cross-execution, unregistered-file and tampered references remain fatal. Judge authority is not widened.",
+    "scientific_effect": "None: the repair changes only tool-argument navigation and cannot create, alter, rank or approve scientific evidence."
+  },
+  "execution": {
+    "target_id": "EGFR",
+    "project_name": "figure2-eight-gate3-fresh8-robustness-v2-egfr-r5-20260924",
+    "thread_id": "thread-bc85f7f5dc8c439686fc1d3e531aa346",
+    "resume_from": "approved Gate2 card 222b8bc348919b90bc592ca6c4ea14f509610d27ab6613ee9ae17f04286c5934",
+    "endpoint": "gate3-awaiting-decision",
+    "generation_allowed": false,
+    "pilot_allowed": false,
+    "handoff_allowed": false
+  },
+  "success_contract": {
+    "required": [
+      "current Design proposal and Gate3 decision card exist",
+      "compiled design artifacts pass size and SHA verification",
+      "no Gate3 response or design approval exists",
+      "generation_started=false",
+      "no Pilot, handoff, generation or StrategyBundle event/path exists"
+    ]
+  },
+  "verification": {
+    "targeted_result_reference_tests": "13 passed",
+    "broader_tool_boundary_and_projection_tests": "107 passed",
+    "lint": "ruff passed",
+    "format": "ruff format --check passed",
+    "diff_check": "passed"
+  }
+}

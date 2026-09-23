@@ -77,6 +77,7 @@ from .site_contracts import ScientificTask
 from .site_decision import RankedSiteDecision, decision_working_set, hydrate_site_decision
 from .site_dossier import (
     SiteResearchHandoff,
+    demote_invalid_question_citations,
     persist_dossier,
     site_dossier,
 )
@@ -1316,11 +1317,62 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         diagnostic = str(error)
                         evidence_role_repair = True
                     except EvidenceCitationMismatch as error:
-                        diagnostic = str(error)
-                        evidence_citation_repair = True
-                        evidence_citation_repair_keys = error.repair_keys
-                        evidence_citation_unkeyed = error.citation_unkeyed
-                        repair_findings = error.repair_findings()
+                        normalized = None
+                        if (
+                            self.role == "site"
+                            and self.site_stage == "research"
+                            and finalize_research
+                            and attempt == max_submission_attempts - 1
+                            and error.citation_findings
+                        ):
+                            candidate = demote_invalid_question_citations(
+                                response.structured_response, error.citation_findings
+                            )
+                            try:
+                                site_dossier(self.bridge, candidate)
+                            except AgentBoundaryError:
+                                pass
+                            else:
+                                normalized = candidate
+                        if normalized is not None:
+                            submitted = response.structured_response.model_dump(mode="json")
+                            response.structured_response = normalized
+                            self.bridge.store.event(
+                                self.bridge.thread,
+                                "site-research-citation-demotion",
+                                {
+                                    "role": self.role,
+                                    "execution_id": self.execution_id,
+                                    "submission_attempt_id": submission_attempt_id,
+                                    "citation_findings": [
+                                        {
+                                            "question_index": index,
+                                            "card_id": card_id,
+                                            "source_kind": (
+                                                "acquisition-receipt"
+                                                if receipt
+                                                else "focused-passage"
+                                            ),
+                                        }
+                                        for index, card_id, receipt in error.citation_findings
+                                    ],
+                                    "submitted_handoff_sha256": identity(submitted),
+                                    "normalized_handoff_sha256": identity(
+                                        normalized.model_dump(mode="json")
+                                    ),
+                                    "authority": (
+                                        "Runtime removed invalid citation use and demoted only "
+                                        "the affected question to UNRESOLVED; it did not infer "
+                                        "a quotation, scientific conclusion or approval."
+                                    ),
+                                },
+                            )
+                        else:
+                            diagnostic = str(error)
+                            evidence_citation_repair = True
+                            evidence_citation_repair_keys = error.repair_keys
+                            evidence_citation_unkeyed = error.citation_unkeyed
+                            repair_findings = error.repair_findings()
                     except (
                         ResearchConclusionMismatch,
                         JudgeStageMismatch,

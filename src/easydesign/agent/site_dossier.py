@@ -104,6 +104,48 @@ class SiteResearchHandoff(StrictDTO):
     unresolved_questions: list[ShortText] = Field(min_length=1, max_length=6)
 
 
+def demote_invalid_question_citations(
+    handoff: SiteResearchHandoff,
+    citation_findings: list[tuple[int, str, bool]] | tuple[tuple[int, str, bool], ...],
+) -> SiteResearchHandoff:
+    """Remove non-verbatim question evidence without inventing a corrected quotation.
+
+    This is a last-chance serialization fallback, not scientific repair. Runtime-created
+    findings identify citations already proven invalid against the owned evidence snapshot.
+    The affected question remains visible but becomes unresolved and contributes no evidence
+    or ranking claim. Candidate membership, other questions and every source artifact remain
+    unchanged for independent review.
+    """
+    payload = handoff.model_dump(mode="json")
+    affected: dict[int, set[str]] = {}
+    for index, card_id, _is_receipt in citation_findings:
+        if index < 0 or index >= len(payload["decision_questions"]):
+            raise AgentBoundaryError("Citation demotion points outside the submitted handoff")
+        affected.setdefault(index, set()).add(card_id)
+    if not affected:
+        raise AgentBoundaryError("Citation demotion requires Runtime-owned findings")
+    note = (
+        "Runtime excluded one or more submitted excerpts because they did not exactly match "
+        "the owned focused passage; this question remains unresolved."
+    )
+    for index, card_ids in affected.items():
+        question = payload["decision_questions"][index]
+        submitted_ids = {item["card_id"] for item in question["evidence"]}
+        if not card_ids.issubset(submitted_ids):
+            raise AgentBoundaryError("Citation demotion does not match the submitted evidence")
+        question["status"] = "UNRESOLVED"
+        question["evidence"] = []
+        question["decision_impact"] = (
+            "UNRESOLVED: the submitted evidence excerpt failed exact Runtime citation "
+            "validation and cannot support candidate ranking or approval."
+        )
+        question["limitations"] = [
+            note,
+            *[item for item in question["limitations"] if item != note],
+        ][:4]
+    return SiteResearchHandoff.model_validate(payload)
+
+
 def candidate_membrane_facts(
     mappings: list[dict[str, Any]], analyses: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:

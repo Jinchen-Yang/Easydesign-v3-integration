@@ -19,6 +19,7 @@ from easydesign.agent.site_contracts import SiteQuery
 from easydesign.agent.site_dossier import (
     DecisionEvidenceQuestion,
     SiteResearchHandoff,
+    demote_invalid_question_citations,
     persist_dossier,
     site_dossier,
     validate_dossier_intent,
@@ -39,6 +40,45 @@ def handoff() -> SiteResearchHandoff:
         stopping_reason="SYNTHETIC structural exploration only; no functional claim.",
         unresolved_questions=["No actual binding or functional experiment was performed."],
     )
+
+
+def test_invalid_question_citation_is_demoted_without_rewriting_evidence() -> None:
+    source = handoff().model_copy(
+        update={
+            "decision_questions": [
+                DecisionEvidenceQuestion.model_validate(
+                    {
+                        "query_ids": ["query-owned"],
+                        "question": "Does the focused passage support the proposed mechanism?",
+                        "status": "VERIFIED",
+                        "evidence": [
+                            {
+                                "card_id": "passage-owned",
+                                "excerpt": "This submitted excerpt is not verbatim.",
+                                "claim": "The mechanism is supported.",
+                                "relation": "supports",
+                                "strength": "E1",
+                                "transfer_limit": "Synthetic unit-test scope only.",
+                            }
+                        ],
+                        "limitations": ["No independent functional assay was performed."],
+                        "decision_impact": "Prefer candidate A.",
+                    }
+                )
+            ]
+        }
+    )
+    demoted = demote_invalid_question_citations(
+        source, ((0, "passage-owned", False),)
+    )
+    question = demoted.decision_questions[0]
+    assert question.status == "UNRESOLVED" and question.evidence == []
+    assert "cannot support candidate ranking or approval" in question.decision_impact
+    assert "Runtime excluded" in question.limitations[0]
+    assert demoted.candidates == source.candidates
+
+    with pytest.raises(AgentBoundaryError, match="does not match"):
+        demote_invalid_question_citations(source, ((0, "passage-foreign", False),))
 
 
 def decision_scope(

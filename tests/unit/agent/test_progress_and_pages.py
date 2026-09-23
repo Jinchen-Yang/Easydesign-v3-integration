@@ -2760,6 +2760,154 @@ async def test_site_distinct_focused_citation_cards_converge_within_two_rounds(
 
 
 @pytest.mark.asyncio
+async def test_final_site_citation_failure_is_safely_demoted_not_target_fatal(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from easydesign.agent.site_dossier import DecisionEvidenceQuestion
+    from tests.unit.agent.test_site_dossier import handoff
+
+    b = site_bridge
+    cfg = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Demote a final invalid Site citation")[
+        "execution_id"
+    ]
+    for _index in range(SITE_RESEARCH_MODEL_CALL_LIMIT - 1):
+        b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
+    guard = RoleBoundary(
+        b,
+        "site",
+        cfg,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    attempts = 0
+    validations = 0
+
+    def cited(card_id: str) -> Any:
+        return handoff().model_copy(
+            update={
+                "decision_questions": [
+                    DecisionEvidenceQuestion.model_validate(
+                        {
+                            "query_ids": ["query-owned"],
+                            "question": "Does the passage support the proposed mechanism?",
+                            "status": "VERIFIED",
+                            "evidence": [
+                                {
+                                    "card_id": card_id,
+                                    "excerpt": "This submitted excerpt is not verbatim.",
+                                    "claim": "The mechanism is supported.",
+                                    "relation": "supports",
+                                    "strength": "E1",
+                                    "transfer_limit": "Synthetic unit-test scope only.",
+                                }
+                            ],
+                            "limitations": ["No functional assay was performed."],
+                            "decision_impact": "Prefer candidate A.",
+                        }
+                    )
+                ]
+            }
+        )
+
+    def validate(_bridge: Any, candidate: Any) -> dict[str, Any]:
+        nonlocal validations
+        validations += 1
+        if validations == 1:
+            raise ResearchConclusionMismatch("Synthetic conclusion mismatch")
+        if candidate.decision_questions[0].evidence:
+            card_id = candidate.decision_questions[0].evidence[0].card_id
+            raise EvidenceCitationMismatch(
+                f"CITATION_MISMATCH for known source {card_id}",
+                repair_keys=(f"known-source:{card_id}",),
+                citation_findings=((0, card_id, False),),
+            )
+        return {}
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", validate)
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_research_packet_message",
+        lambda *args, **kwargs: HumanMessage(
+            content='{"runtime_site_research_packet":"citation-demotion"}'
+        ),
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(_current: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            b.store.reserve_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "Synthetic framework shape failure",
+                contract="SiteResearchHandoff",
+            )
+            return SimpleNamespace(
+                result=[
+                    ToolMessage(
+                        content="INVALID_STRUCTURED_SUBMISSION: missing required field",
+                        name="SiteResearchHandoff",
+                        tool_call_id="invalid-shape",
+                    )
+                ],
+                structured_response=None,
+            )
+        value = cited(f"passage-{attempts}")
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": f"handoff-{attempts}",
+                        }
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    result = await guard.awrap_model_call(
+        Request(
+            tools=phase2_tools(b, "site"),
+            messages=[],
+            model_settings={},
+            system_message=SystemMessage(content="Finalize Site research"),
+        ),
+        handler,
+    )
+
+    question = result.structured_response.decision_questions[0]
+    assert attempts == 4 and question.status == "UNRESOLVED" and question.evidence == []
+    demotions = [
+        event
+        for event in b.store.events(b.thread)
+        if event["kind"] == "site-research-citation-demotion"
+    ]
+    assert len(demotions) == 1
+    assert demotions[0]["payload"]["citation_findings"] == [
+        {
+            "question_index": 0,
+            "card_id": "passage-4",
+            "source_kind": "focused-passage",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_site_shape_and_acquisition_citation_repairs_use_independent_slots(
     site_bridge: Any, monkeypatch: Any
 ) -> None:

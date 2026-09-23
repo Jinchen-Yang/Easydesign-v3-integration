@@ -190,6 +190,8 @@ async def test_registered_large_tool_alias_becomes_scoped_result_index(bridge: A
     index = json.loads(result.content)
     assert index["status"] == "scoped-result-index"
     assert index["full_result"] == ref
+    assert f"ref={ref!r}" in index["instruction"]
+    assert "literal word 'full_result'" in index["instruction"]
     assert set(index["available_fields"]) == {"approved_hotspots", "private"}
     assert "x" * 100 not in result.content
 

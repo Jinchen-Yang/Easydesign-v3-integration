@@ -1671,9 +1671,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             "full_result": path,
                             "available_fields": list(value)[:30] if isinstance(value, dict) else [],
                             "instruction": (
-                                "Use read_evidence_result(ref=full_result, field=<one key>) "
-                                "for evidence. This index contains no scientific field values; "
-                                "read_file reads Skills, not scientific result pages."
+                                f"Use read_evidence_result(ref={path!r}, field=<one key>) "
+                                "for evidence. Copy that exact ref; do not pass the literal "
+                                "word 'full_result'. This index contains no scientific field "
+                                "values; read_file reads Skills, not scientific result pages."
                             ),
                         }
                     ),

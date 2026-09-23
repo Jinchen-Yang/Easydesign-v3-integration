@@ -811,9 +811,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                         "Use supplied scientific content directly when complete, or the "
                         "declared fields when declared_scope_complete=true. Other analysis "
                         "fields are optional scoped reads, not required full-file paging. "
-                        "Pass full_result exactly as displayed; do not rewrite it as a "
-                        "result:<hash> handle. If field types are unknown, call "
-                        "read_evidence_result(ref) with no "
+                        f"Copy the exact ref value {receipt['ref']!r}; never pass the literal "
+                        "word 'full_result' and do not rewrite it as a result:<hash> handle. "
+                        "If field types are unknown, call read_evidence_result with that exact "
+                        "ref and no "
                         "selector to inspect navigation; do not guess another tool's fields. "
                         "read_evidence_result(ref, path=['key']) for one top-level field; "
                         "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
@@ -834,13 +835,14 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
 
 def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | None = None) -> Any:
     """Authorization and integrity precede all recoverable argument diagnostics."""
-    # A model may mix a result file's hash with the numeric handle syntax. Treat
-    # that as unissued: offer owned IDs below, never resolve the hash implicitly.
-    malformed_handle = isinstance(ref, str) and bool(
-        re.fullmatch(r"result:[a-f0-9]{32,64}", ref)
+    # A model may mix a result file's hash with the numeric handle syntax or pass
+    # the displayed field label instead of its value. Treat either as unissued:
+    # offer owned IDs below, never resolve an ambiguous alias implicitly.
+    recoverable_unissued = isinstance(ref, str) and (
+        ref == "full_result" or bool(re.fullmatch(r"result:[a-f0-9]{32,64}", ref))
     )
     if not isinstance(ref, str) or (
-        not re.fullmatch(RESULT_REF_PATTERN, ref) and not malformed_handle
+        not re.fullmatch(RESULT_REF_PATTERN, ref) and not recoverable_unissued
     ):
         raise AgentBoundaryError("Invalid scoped result reference")
     execution = bridge.store.latest_execution(bridge.thread)
@@ -849,7 +851,7 @@ def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | Non
     ):
         raise AgentBoundaryError("Result read is not bound to the current execution")
     handle = ref.startswith("result:")
-    if handle and not malformed_handle:
+    if handle and not recoverable_unissued:
         issued = bridge.store.db.execute(
             "SELECT thread,payload FROM events WHERE seq=? AND kind='tool-view'",
             (int(ref.split(":", 1)[1]),),

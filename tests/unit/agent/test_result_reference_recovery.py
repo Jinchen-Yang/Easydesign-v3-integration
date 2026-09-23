@@ -101,11 +101,18 @@ async def test_actual_harness_recovers_unissued_id_with_explicit_authorized_read
 
 
 @pytest.mark.asyncio
-async def test_binder_repairs_hash_as_handle_with_current_owned_reference(bridge: Any) -> None:
+@pytest.mark.parametrize("reference_kind", ["hash-as-handle", "literal-display-label"])
+async def test_binder_repairs_malformed_reference_with_current_owned_reference(
+    bridge: Any, reference_kind: str
+) -> None:
     b = DesignBridge(bridge.project, bridge.thread, bridge.store)
     execution = b.store.begin_execution(b.thread, "Inspect design evidence")["execution_id"]
     original = offload(b, execution, role="binder")
-    malformed = "result:" + original.removeprefix("/result-").removesuffix(".json")
+    malformed = (
+        "result:" + original.removeprefix("/result-").removesuffix(".json")
+        if reference_kind == "hash-as-handle"
+        else "full_result"
+    )
     guard = RoleBoundary(
         b, "binder", scripted_config(), "Inspect design evidence", execution_id=execution
     )

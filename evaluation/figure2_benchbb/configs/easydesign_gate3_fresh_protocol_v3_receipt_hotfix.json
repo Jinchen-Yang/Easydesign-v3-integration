@@ -1,0 +1,61 @@
+{
+  "schema_version": "easydesign-gate3-fresh-protocol-hotfix-v1",
+  "authority_id": "easydesign-gate3-fresh8-receipt-hotfix-v1",
+  "status": "frozen",
+  "title": "EGFR fresh Gate3 recovery after scoped-result label failure",
+  "scope": "One new EGFR fresh attempt from Gate1 through a validated Gate3 decision card; Gate3 is not approved.",
+  "precedence": "This addendum governs only the post-failure EGFR recovery attempt and does not rewrite or invalidate the append-only records from the base cohort.",
+  "freeze_ref": "refs/tags/easydesign-gate3-fresh8-receipt-hotfix-v1",
+  "agent_code_commit": "9341c15ccbfc54440304b734859a048c26571c00",
+  "base_protocol": {
+    "path": "evaluation/figure2_benchbb/configs/easydesign_gate3_fresh_protocol_v3.json",
+    "sha256": "c4079979715a5131a335b6e19294c0ed685b3ec5202d92ccd4589269d7659b3c",
+    "authority_id": "easydesign-gate3-fresh8-v1",
+    "freeze_ref": "refs/tags/easydesign-gate3-fresh8-v1"
+  },
+  "change_boundary": {
+    "observed_failure": "The Binder copied the display label full_result instead of the exact /result-*.json value; the guard classified that recoverable argument error as a fatal AgentBoundaryError.",
+    "code_change": "Render the exact immutable result reference in navigation instructions. A literal full_result label is now handled by the existing bounded unknown-reference repair path, which lists only references already issued to the current role, thread and execution.",
+    "authority_change": "None. Foreign, stale, tampered and cross-role references remain fatal; no implicit alias is resolved and no scientific content is exposed by repair feedback.",
+    "scientific_change": "None. Target, Site, Binder, Judge, compiler, validation and Gate policies are unchanged."
+  },
+  "execution": {
+    "target_id": "EGFR",
+    "structure": "evaluation/figure2_benchbb/inputs/targets/EGFR_8HGO/8HGO.cif",
+    "structure_sha256": "1542cf3f3ea2c2fd08e97ac9334d425cdcaee25a81502223463402f3f80968c2",
+    "goal": "Design a VHH nanobody against the human EGFR ectodomain that is intended to inhibit ligand-driven receptor activation.",
+    "project_name": "figure2-eight-gate3-fresh8-receipt-hotfix-v1-egfr-r4-20260924",
+    "results_root": "/data/easydesign-results/easydesign-gate3-fresh8-v1-20260923",
+    "environment": {
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "endpoint": "gate3-awaiting-decision",
+    "generation_allowed": false,
+    "pilot_allowed": false,
+    "handoff_allowed": false
+  },
+  "freshness_contract": {
+    "project_state": "Use a never-before-existing r4 project path, thread, run ID and runtime-state path. Do not copy or resume r2/r3 state.",
+    "tracked_tree": "Clean at attempt start except the pre-existing protected untracked audit, which remains byte-untouched.",
+    "failed_attempts": "Retain r2 and r3 projects and logs unchanged for audit.",
+    "retry": "Any further replacement uses a new attempt identity and is reported separately."
+  },
+  "success_contract": {
+    "terminal_status": "waiting-for-human/design-specification",
+    "required": [
+      "current Design proposal and Gate3 decision card exist",
+      "compiled design artifacts pass size and SHA verification",
+      "no Gate3 response or design approval exists",
+      "generation_started=false",
+      "no Pilot, handoff, generation or StrategyBundle event/path exists"
+    ]
+  },
+  "verification": {
+    "direct_tests": "23 passed",
+    "extended_tests": "60 passed; two pre-existing hard-context-threshold assertions remain stale after the earlier 250000-character policy change",
+    "lint": "ruff passed",
+    "diff_check": "passed"
+  }
+}

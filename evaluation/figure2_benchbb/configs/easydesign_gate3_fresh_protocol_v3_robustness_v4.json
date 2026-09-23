@@ -1,0 +1,61 @@
+{
+  "schema_version": "easydesign-gate3-fresh-protocol-hotfix-v4",
+  "authority_id": "easydesign-gate3-fresh8-robustness-v4",
+  "status": "frozen",
+  "title": "Fresh EGFR Gate3 validation with bounded omitted-result recovery",
+  "scope": "Run one new EGFR attempt from Gate1 through a validated Gate3 decision card on the frozen omitted-result recovery code; do not approve Gate3.",
+  "precedence": "This addendum governs only EGFR r6. Base-cohort and prior EGFR attempts remain immutable audit records.",
+  "freeze_ref": "refs/tags/easydesign-gate3-fresh8-robustness-v4",
+  "agent_code_commit": "71bf028a17469d5de56689ea5dc98e4af8e32ae4",
+  "parent_addendum": {
+    "path": "evaluation/figure2_benchbb/configs/easydesign_gate3_fresh_protocol_v3_robustness_v3.json",
+    "sha256": "e268824aa9db4caceee4010737acd851315b02f072675f796c4914c884c61721",
+    "authority_id": "easydesign-gate3-fresh8-robustness-v3",
+    "disposition": "Retained as the immutable record of a rejected cross-fingerprint r5 resume; no model or scientific state was changed by that attempt."
+  },
+  "change_boundary": {
+    "recoverable_input": "Only an omitted ref (null/missing), the literal display label full_result, or a hash-shaped unissued handle receives bounded repair feedback.",
+    "repair_output": "Return at most the recent result handles already issued to the same project thread, role and execution; do not read evidence and do not choose a replacement.",
+    "hard_boundaries": "Foreign, stale, cross-role, cross-thread, cross-execution, unregistered-file and tampered references remain fatal. Judge authority is not widened.",
+    "scientific_effect": "None: the repair changes only tool-argument navigation and cannot create, alter, rank or approve scientific evidence."
+  },
+  "execution": {
+    "target_id": "EGFR",
+    "structure": "evaluation/figure2_benchbb/inputs/targets/EGFR_8HGO/8HGO.cif",
+    "structure_sha256": "1542cf3f3ea2c2fd08e97ac9334d425cdcaee25a81502223463402f3f80968c2",
+    "goal": "Design a VHH nanobody against the human EGFR ectodomain that is intended to inhibit ligand-driven receptor activation.",
+    "project_name": "figure2-eight-gate3-fresh8-robustness-v4-egfr-r6-20260924",
+    "results_root": "/data/easydesign-results/easydesign-gate3-fresh8-v1-20260923",
+    "environment": {
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "endpoint": "gate3-awaiting-decision",
+    "generation_allowed": false,
+    "pilot_allowed": false,
+    "handoff_allowed": false
+  },
+  "freshness_contract": {
+    "project_state": "Use a never-before-existing r6 project, thread, run ID and runtime-state path. Do not resume or copy r2-r5 state.",
+    "tracked_tree": "Clean at attempt start except the pre-existing protected untracked audit, which remains byte-untouched.",
+    "failed_attempts": "Retain r2-r5 projects and logs unchanged for audit."
+  },
+  "success_contract": {
+    "terminal_status": "waiting-for-human/design-specification",
+    "required": [
+      "current Design proposal and Gate3 decision card exist",
+      "compiled design artifacts pass size and SHA verification",
+      "no Gate3 response or design approval exists",
+      "generation_started=false",
+      "no Pilot, handoff, generation or StrategyBundle event/path exists"
+    ]
+  },
+  "verification": {
+    "targeted_result_reference_tests": "13 passed",
+    "broader_tool_boundary_and_projection_tests": "107 passed",
+    "lint": "ruff passed",
+    "format": "ruff format --check passed",
+    "diff_check": "passed"
+  }
+}

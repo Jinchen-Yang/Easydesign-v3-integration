@@ -200,9 +200,10 @@ class ApplyDecision(StrictDTO):
             raise ValueError(
                 "Provide exactly one assessment, review failure, or explicit optional-review record"
             )
-        site_only_review = self.review_failure_id is not None or self.review_not_requested
-        if site_only_review and self.option_id != "site":
-            raise ValueError("Optional or unavailable review belongs only to Site Gate 2")
+        if self.review_not_requested and self.option_id != "site":
+            raise ValueError("Optional review belongs only to Site Gate 2")
+        if self.review_failure_id is not None and self.option_id not in {"site", "design"}:
+            raise ValueError("Unavailable review belongs only to Site Gate 2 or Design Gate 3")
         return self
 
 
@@ -262,11 +263,22 @@ class DecisionCard(DecisionProposal):
             ):
                 return self
             if (
-                self.gate_type not in {"site-hotspot", "pilot-promotion", "wet-lab-handoff"}
+                self.gate_type
+                not in {
+                    "site-hotspot",
+                    "design-specification",
+                    "pilot-promotion",
+                    "wet-lab-handoff",
+                }
                 or (
                     self.judge_status is not None
                     and not (
-                        self.gate_type in {"pilot-promotion", "wet-lab-handoff"}
+                        self.gate_type
+                        in {
+                            "design-specification",
+                            "pilot-promotion",
+                            "wet-lab-handoff",
+                        }
                         and self.judge_status == "BLOCKED"
                     )
                 )

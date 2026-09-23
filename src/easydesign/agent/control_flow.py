@@ -229,7 +229,8 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
                 "request_scientific_decision",
                 {"review_not_requested": True, "option_id": "site"},
             )
-        from .site_review_availability import checked_failure, matching_failure
+    if assessment is None and gate in {"site-hotspot", "design-specification"}:
+        from .review_availability import checked_failure, matching_failure
 
         unavailable = matching_failure(bridge, snapshot)
         if unavailable:
@@ -238,7 +239,10 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
                 "scientist-gate",
                 binding,
                 "request_scientific_decision",
-                {"review_failure_id": unavailable["record_id"], "option_id": "site"},
+                {
+                    "review_failure_id": unavailable["record_id"],
+                    "option_id": "site" if gate == "site-hotspot" else "design",
+                },
             )
     if assessment is None:
         return _task(
@@ -295,6 +299,7 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
     )
     reviewable = (
         ranked_site
+        or gate == "design-specification"
         or assessment.verdict == "ready-to-ask"
         or (
             gate == "target-structure"

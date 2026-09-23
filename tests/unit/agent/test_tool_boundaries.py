@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
 
 from easydesign.agent.contracts import (
@@ -26,6 +26,57 @@ def test_role_surface_and_forged_human_args(bridge: Any) -> None:
         )
     with pytest.raises(ValidationError):
         EmptyArguments.model_validate({"stop_after_stage": 7})
+
+
+@pytest.mark.asyncio
+async def test_malformed_foreign_judge_tool_is_review_unavailable(bridge: Any) -> None:
+    from easydesign.agent.harness import RoleBoundary
+    from easydesign.agent.review_availability import ReviewUnavailable
+    from tests.agent_support import scripted_config
+
+    execution_id = bridge.store.begin_execution(bridge.thread, "Review current proposal")[
+        "execution_id"
+    ]
+    guard = RoleBoundary(
+        bridge,
+        "judge",
+        scripted_config(),
+        "Review current proposal",
+        execution_id=execution_id,
+        domain_skills=False,
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(request: Any) -> Any:
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    invalid_tool_calls=[
+                        {
+                            "name": "read_file",
+                            "args": "{bad json",
+                            "id": "malformed-foreign-tool",
+                            "error": "invalid JSON",
+                        }
+                    ],
+                )
+            ],
+            structured_response=None,
+        )
+
+    request = Request(
+        tools=build_tools(bridge, "judge"),
+        messages=[],
+        system_message=SystemMessage(content="Review"),
+    )
+    with pytest.raises(ReviewUnavailable, match="malformed JSON"):
+        await guard.awrap_model_call(request, handler)
 
 
 def test_untrusted_judge_and_wrong_run(bridge: Any) -> None:

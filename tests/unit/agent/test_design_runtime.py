@@ -227,23 +227,130 @@ def test_design_hard_constraints_cannot_be_overridden(
     assert bridge.terminal_result("finished")["status"] == "incomplete-turn"
 
 
-def test_design_crop_discouragement_and_override(design_bridge: Any) -> None:
+def test_design_crop_discouragement_allows_normal_approval(design_bridge: Any) -> None:
     bridge = design_bridge
     result = propose_design(bridge, binder_intent(target_crop={"start": 1, "end": 4}))
     assert result["evaluation"]["status"] == "DISCOURAGED", result["evaluation"]
     card = design_card(bridge)
-    with pytest.raises(AgentBoundaryError, match="OVERRIDE"):
-        bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")
     bridge.store.respond(
         bridge.thread,
         card.card_id,
-        "override",
+        "approve",
         "synthetic-scientist",
-        optional_reason="Test a cropped context as an exploratory comparison",
-        explicit_acknowledgement="I acknowledge artificial terminal/context risks",
     )
     assert bridge.apply_decision(card)["status"] == "design-frozen"
     assert bridge.approved_design()["outcome"]["recorded_warnings"] == card.warnings
+
+
+def test_design_review_unavailable_reaches_normal_gate(design_bridge: Any) -> None:
+    from easydesign.agent.review_availability import record_design_unavailable
+
+    bridge = design_bridge
+    propose_design(bridge)
+    failure = record_design_unavailable(
+        bridge,
+        "judge-execution",
+        failure_code="OUTPUT_VALIDATION_EXHAUSTED",
+        diagnostic="Judge exhausted typed-output repairs",
+    )
+    card = bridge.decision_card(
+        ApplyDecision(review_failure_id=failure["record_id"], option_id="design")
+    )
+    assert card.assessment_id is None
+    assert card.judge_status is None
+    assert card.scientific_summary["independent_review"] == {
+        "availability": "unavailable",
+        "failure_code": "OUTPUT_VALIDATION_EXHAUSTED",
+        "failure_record_id": failure["record_id"],
+    }
+    bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")
+    assert bridge.apply_decision(card)["status"] == "design-frozen"
+
+
+def test_design_review_unavailable_does_not_bypass_hard_invalidity(
+    design_bridge: Any,
+) -> None:
+    from easydesign.agent.review_availability import record_design_unavailable
+
+    bridge = design_bridge
+    result = propose_design(bridge, binder_intent(binding_label_seq_ids=[999]))
+    assert result["evaluation"]["status"] == "BLOCKED"
+    failure = record_design_unavailable(
+        bridge,
+        "judge-execution",
+        failure_code="PROVIDER_UNAVAILABLE",
+        diagnostic="synthetic provider outage",
+    )
+    card = bridge.decision_card(
+        ApplyDecision(review_failure_id=failure["record_id"], option_id="design")
+    )
+    assert card.judge_status == "BLOCKED"
+    with pytest.raises(AgentBoundaryError, match="BLOCKED"):
+        bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")
+    assert bridge.approved_design() is None
+
+
+@pytest.mark.asyncio
+async def test_design_judge_boundary_records_classified_unavailability(design_bridge: Any) -> None:
+    from easydesign.agent.control_flow import next_action
+    from easydesign.agent.review_availability import ReviewUnavailable
+    from easydesign.agent.site_judge import create_site_aware_judge
+    from tests.agent_support import scripted_config
+
+    class BrokenLegacyJudge:
+        async def ainvoke(self, state: Any, config: Any) -> Any:
+            raise ReviewUnavailable(
+                "STRUCTURED_OUTPUT_REPAIR_EXHAUSTED", "synthetic invalid Judge output"
+            )
+
+    bridge = design_bridge
+    propose_design(bridge)
+    agent = create_site_aware_judge(
+        bridge,
+        object(),
+        scripted_config(),
+        "judge-execution",
+        BrokenLegacyJudge(),
+    )
+    await agent.ainvoke({"messages": []})
+    action = next_action(bridge)
+    assert action.stage == "scientist-gate"
+    assert action.arguments["option_id"] == "design"
+    assert action.arguments["review_failure_id"].startswith("review-unavailable-")
+
+
+def test_design_judge_reject_is_advisory_when_runtime_is_valid(design_bridge: Any) -> None:
+    bridge = design_bridge
+    propose_design(bridge)
+    evidence = bridge.judge_evidence()
+    token = JUDGE_EVIDENCE.set(
+        EvidenceBinding.model_validate({k: evidence[k] for k in EvidenceBinding.model_fields})
+    )
+    try:
+        assessment = bridge.register_judge(
+            JudgeVerdict.model_validate(
+                {
+                    "verdict": "reject",
+                    "reasons": ["The mechanism remains an untested structural-transfer claim."],
+                    "limitations": ["No binding or inhibition result exists."],
+                    "recommendation": {
+                        "option_id": "design",
+                        "status": "DISCOURAGED",
+                        "warnings": ["Mechanistic confidence is low."],
+                        "alternative": "Revise the arm or approve it as an exploratory design.",
+                    },
+                }
+            )
+        )
+    finally:
+        JUDGE_EVIDENCE.reset(token)
+    card = bridge.decision_card(
+        ApplyDecision(assessment_id=assessment.assessment_id, option_id="design")
+    )
+    assert card.judge_status == "DISCOURAGED"
+    assert "The mechanism remains an untested structural-transfer claim." in card.warnings
+    bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")
+    assert bridge.apply_decision(card)["status"] == "design-frozen"
 
 
 def test_restart_after_old_strategy_freeze_does_not_duplicate(design_bridge: Any) -> None:

@@ -441,6 +441,8 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
                 else ["revise", "reject"]
                 if card.judge_status == "BLOCKED"
                 or (ranked and not any(o["eligible"] for o in card.options))
+                else ["approve", "revise", "reject"]
+                if card.gate_type == "design-specification"
                 else ["override", "revise", "reject"]
                 if card.judge_status in {"DISCOURAGED", None}
                 else ["approve", "revise", "reject"],

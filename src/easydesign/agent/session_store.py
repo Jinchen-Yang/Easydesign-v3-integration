@@ -1144,6 +1144,7 @@ class SessionStore:
                 response == "approve"
                 and effective_judge_status in {"DISCOURAGED", None}
                 and not ranked
+                and proposal.gate_type != "design-specification"
                 and not (downstream and effective_judge_status is None)
             ):
                 raise AgentBoundaryError("Review the warning and use explicit OVERRIDE or REVISE")

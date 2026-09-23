@@ -409,7 +409,11 @@ class DesignBridge(Phase2Bridge):
     def decision_card(self, args: ApplyDecision) -> DecisionCard:
         if args.option_id != "design":
             return super().decision_card(args)
-        card_id = identity({"assessment": args.assessment_id, "option": "design"})
+        card_id = (
+            identity({"assessment": args.assessment_id, "option": "design"})
+            if args.assessment_id
+            else identity({"review_failure": args.review_failure_id, "option": "design"})
+        )
         try:
             existing = self.store.card(self.thread, card_id)
         except AgentBoundaryError:
@@ -420,37 +424,58 @@ class DesignBridge(Phase2Bridge):
         if proposal is None:
             raise AgentBoundaryError("No current Design Specification")
         snapshot = self.design_snapshot(proposal)
-        if args.assessment_id is None:
-            raise AgentBoundaryError("A completed Judge assessment is required at this Gate")
-        assessment = self.store.assessment(self.thread, args.assessment_id)
-        if (
-            assessment.evidence_id != snapshot["evidence_id"]
-            or assessment.evidence_refs != tuple(snapshot["evidence_refs"])
-            or assessment.request_identity != snapshot["request_identity"]
-        ):
-            raise AgentBoundaryError("Gate 3 Judge assessed a stale or different snapshot")
-        opinion = assessment.recommendation
+        assessment = (
+            self.store.assessment(self.thread, args.assessment_id) if args.assessment_id else None
+        )
+        failure = None
+        if assessment is not None:
+            if (
+                assessment.evidence_id != snapshot["evidence_id"]
+                or assessment.evidence_refs != tuple(snapshot["evidence_refs"])
+                or assessment.request_identity != snapshot["request_identity"]
+            ):
+                raise AgentBoundaryError("Gate 3 Judge assessed a stale or different snapshot")
+        else:
+            from .review_availability import checked_failure
+
+            assert args.review_failure_id is not None
+            failure = checked_failure(self, snapshot, args.review_failure_id)
+        opinion = assessment.recommendation if assessment is not None else None
         if opinion and opinion.option_id != "design":
             raise AgentBoundaryError("Judge opinion belongs to a different scientific question")
         evaluation = proposal["evaluation"]
         blocked = evaluation["status"] == "BLOCKED"
         discouraged = evaluation["status"] == "DISCOURAGED" or (
             opinion and opinion.status == "DISCOURAGED"
-        )
-        if (
-            not blocked
-            and assessment.verdict != "ready-to-ask"
-            and not (assessment.verdict == "reject" and discouraged)
-        ):
-            raise AgentBoundaryError("Judge has not supplied a reviewable Design Specification")
-        status: ScientificStatus = (
-            "BLOCKED" if blocked else "DISCOURAGED" if discouraged else "SUPPORTED"
+        ) or bool(assessment and assessment.verdict in {"reject", "insufficient"})
+        status: ScientificStatus | None = (
+            "BLOCKED"
+            if blocked
+            else None
+            if failure is not None
+            else "DISCOURAGED"
+            if discouraged
+            else "SUPPORTED"
         )
         warnings = list(
-            dict.fromkeys([*evaluation["warnings"], *(opinion.warnings if opinion else [])])
+            dict.fromkeys(
+                [
+                    *evaluation["warnings"],
+                    *(opinion.warnings if opinion else []),
+                    *(
+                        assessment.reasons
+                        if assessment and assessment.verdict in {"reject", "insufficient"}
+                        else []
+                    ),
+                ]
+            )
         )
         if blocked:
             warnings = evaluation["blockers"]
+        if failure is not None:
+            from .review_availability import REVIEW_WARNING
+
+            warnings = list(dict.fromkeys([*warnings, REVIEW_WARNING]))
         if status == "DISCOURAGED" and not warnings:
             warnings = ["The current design is scientifically discouraged; review its limitations."]
         intent = BinderIntent.model_validate(proposal["intent"])
@@ -459,7 +484,7 @@ class DesignBridge(Phase2Bridge):
             owner_specialist="binder-strategy",
             judge_status=status,
             card_id=card_id,
-            assessment_id=assessment.assessment_id,
+            assessment_id=assessment.assessment_id if assessment else None,
             project_id=self.project_id,
             run_id=proposal["run_id"],
             request_identity=proposal["request_identity"],
@@ -468,7 +493,11 @@ class DesignBridge(Phase2Bridge):
             option_id="design",
             options=[{"option_id": "design", "label": intent.objective}],
             evidence_refs=snapshot["evidence_refs"],
-            limitations=list(dict.fromkeys([*intent.uncertainty, *assessment.limitations])),
+            limitations=list(
+                dict.fromkeys(
+                    [*intent.uncertainty, *(assessment.limitations if assessment else [])]
+                )
+            ),
             warnings=warnings,
             alternative=(opinion.alternative if opinion else None)
             or (
@@ -498,13 +527,29 @@ class DesignBridge(Phase2Bridge):
                     "scaffolds_per_arm": 7,
                     "generation_started": False,
                 },
+                "independent_review": (
+                    {
+                        "availability": "completed",
+                        "assessment_id": assessment.assessment_id,
+                        "verdict": assessment.verdict,
+                    }
+                    if assessment is not None
+                    else {
+                        "availability": "unavailable",
+                        "failure_code": failure["failure_code"],
+                        "failure_record_id": failure["record_id"],
+                    }
+                ),
                 "validation": "blocked"
                 if blocked
                 else "existing compiler and BoltzGen validation passed",
             },
             action=(
-                "Approve and freeze this specification, revise, reject, or "
-                "explicitly override scientific warnings. No pilot starts."
+                "Revise or reject this invalid specification; approval is unavailable."
+                if blocked
+                else "Approve and freeze this deterministically valid specification, revise, "
+                "or reject. Scientific warnings and review availability remain recorded. "
+                "No pilot starts."
             ),
         )
         self.store.save_card(self.thread, card)
@@ -580,9 +625,7 @@ class DesignBridge(Phase2Bridge):
                     "scientific_gate": "still-pending",
                 }
             if card.judge_status == "BLOCKED" or proposal["evaluation"]["status"] == "BLOCKED":
-                raise AgentBoundaryError("BLOCKED specifications cannot be frozen by override")
-            if card.judge_status == "DISCOURAGED" and outcome.action != "OVERRIDE":
-                raise AgentBoundaryError("Discouraged design requires explicit human override")
+                raise AgentBoundaryError("BLOCKED specifications cannot be frozen")
             command = self.store.prepare(
                 self.thread,
                 "design-freeze",

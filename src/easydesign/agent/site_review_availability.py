@@ -8,6 +8,8 @@ from .contracts import AgentBoundaryError, EvidenceBinding
 from .session_store import identity
 
 TECHNICAL_FAILURES = {
+    "INVALID_REVIEW_SUBMISSION",
+    "MODEL_CONTEXT_CAPACITY_EXCEEDED",
     "OUTPUT_TRUNCATED",
     "MISSING_OR_INVALID_TYPED_SUBMISSION",
     "PROVIDER_TIMEOUT",
@@ -19,6 +21,7 @@ REVIEW_WARNING = (
     "continuation requires explicit acknowledgement and a human rationale."
 )
 PREFLIGHT_FAILURE_MODE = "context-capacity-preflight"
+RECOVERY_CAPACITY_FAILURE_MODE = "context-capacity-recovery"
 PREFLIGHT_DIAGNOSTIC = "MODEL_CONTEXT_CAPACITY_EXCEEDED"
 
 
@@ -40,7 +43,7 @@ def _capacity_exceeded(usage: Any) -> bool:
     )
 
 
-def _assert_no_completed_or_substantive_review(
+def _assert_no_completed_review(
     bridge: Any, bound: dict[str, Any], events: list[dict[str, Any]]
 ) -> None:
     for event in events:
@@ -50,14 +53,6 @@ def _assert_no_completed_or_substantive_review(
                 raise AgentBoundaryError(
                     "An existing Judge assessment cannot be replaced by unavailability"
                 )
-        if (
-            event["kind"] == "rejected-submission"
-            and event["payload"].get("binding") == bound
-            and event["payload"].get("substantive_finding")
-        ):
-            raise AgentBoundaryError(
-                "Unresolved substantive findings cannot be hidden by unavailability"
-            )
 
 
 def _preflight_consumed_review_budget(
@@ -113,7 +108,7 @@ def checked_failure(bridge: Any, packet: dict[str, Any], record_id: str) -> dict
         "review-unavailable-" + identity(payload)
     ):
         raise AgentBoundaryError("Review failure requires a verified runtime record")
-    _assert_no_completed_or_substantive_review(bridge, bound, events)
+    _assert_no_completed_review(bridge, bound, events)
 
     mode = failure.get("failure_mode")
     if mode == PREFLIGHT_FAILURE_MODE:
@@ -142,10 +137,29 @@ def checked_failure(bridge: Any, packet: dict[str, Any], record_id: str) -> dict
         ):
             raise AgentBoundaryError("Invalid context preflight unavailability evidence")
         return failure
-    if mode is not None:
+    if mode == RECOVERY_CAPACITY_FAILURE_MODE:
+        evidence = [e for e in events if e["seq"] in failure.get("failure_events", [])]
+        capacity = evidence[-1] if evidence else None
+        if (
+            capacity is None
+            or capacity["kind"] != "rejected-submission"
+            or capacity["payload"].get("role") != "judge"
+            or capacity["payload"].get("binding") != bound
+            or capacity["payload"].get("execution_id") != failure["execution_id"]
+            or capacity["payload"].get("diagnostic_code") != PREFLIGHT_DIAGNOSTIC
+            or not _capacity_exceeded(capacity["payload"].get("usage"))
+            or not any(
+                e["kind"] == "contract-repair"
+                and e["payload"].get("execution_id") == failure["execution_id"]
+                and e["payload"].get("contract") in {None, "JudgeVerdict"}
+                for e in events
+            )
+        ):
+            raise AgentBoundaryError("Invalid recovery context-capacity evidence")
+    elif mode is not None:
         raise AgentBoundaryError("Unknown review unavailability mode")
 
-    if (
+    if mode != RECOVERY_CAPACITY_FAILURE_MODE and (
         sum(
             e["kind"] == "contract-repair"
             and e["payload"].get("execution_id") == failure["execution_id"]
@@ -167,8 +181,7 @@ def checked_failure(bridge: Any, packet: dict[str, Any], record_id: str) -> dict
             p.get("role") != "judge"
             or p.get("binding") != bound
             or p.get("execution_id") != failure["execution_id"]
-            or p.get("diagnostic") not in TECHNICAL_FAILURES
-            or p.get("substantive_finding")
+            or p.get("diagnostic_code", p.get("diagnostic")) not in TECHNICAL_FAILURES
         ):
             raise AgentBoundaryError("Invalid review unavailability evidence")
     return failure
@@ -184,7 +197,7 @@ def record_preflight_unavailable(bridge: Any, execution_id: str) -> dict[str, An
     if existing:
         return checked_failure(bridge, packet, existing["record_id"])
     events = bridge.store.events(bridge.thread)
-    _assert_no_completed_or_substantive_review(bridge, bound, events)
+    _assert_no_completed_review(bridge, bound, events)
     candidates = [
         event
         for event in events
@@ -242,12 +255,21 @@ def record_unavailable(bridge: Any, execution_id: str) -> dict[str, Any]:
         and e["payload"].get("execution_id") == execution_id
         and e["payload"].get("contract") in {None, "JudgeVerdict"}
     ]
+    recovery_capacity = bool(
+        failures
+        and repairs
+        and failures[-1]["payload"].get(
+            "diagnostic_code", failures[-1]["payload"].get("diagnostic")
+        )
+        == PREFLIGHT_DIAGNOSTIC
+        and _capacity_exceeded(failures[-1]["payload"].get("usage"))
+    )
     if (
         not failures
-        or len(repairs) < 2
+        or (len(repairs) < 2 and not recovery_capacity)
         or any(
-            e["payload"]["diagnostic"] not in TECHNICAL_FAILURES
-            or e["payload"].get("substantive_finding")
+            e["payload"].get("diagnostic_code", e["payload"].get("diagnostic"))
+            not in TECHNICAL_FAILURES
             for e in failures
         )
     ):
@@ -264,6 +286,8 @@ def record_unavailable(bridge: Any, execution_id: str) -> dict[str, Any]:
         "failure_events": [e["seq"] for e in failures],
         "source_role": "verified-runtime",
     }
+    if recovery_capacity:
+        payload["failure_mode"] = RECOVERY_CAPACITY_FAILURE_MODE
     payload["record_id"] = "review-unavailable-" + identity(payload)
     bridge.store.event(bridge.thread, "site-judge-unavailable", payload)
     return checked_failure(bridge, packet, payload["record_id"])

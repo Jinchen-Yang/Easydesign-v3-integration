@@ -7,7 +7,7 @@ import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from easydesign.agent.context_policy import ModelContextCapacityError, context_usage
+from easydesign.agent.context_policy import context_usage
 from easydesign.agent.contracts import (
     AgentBoundaryError,
     ApplyDecision,
@@ -194,7 +194,7 @@ async def test_ordinary_boundary_error_is_not_reclassified(packet_case, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_recovery_capacity_error_remains_hard(packet_case, monkeypatch):
+async def test_recovery_capacity_error_degrades_to_unavailable(packet_case, monkeypatch):
     bridge = packet_case["bridge"]
     packet = bridge.judge_evidence()
     execution = bridge.store.latest_execution(bridge.thread)["execution_id"]
@@ -217,14 +217,21 @@ async def test_recovery_capacity_error_remains_hard(packet_case, monkeypatch):
         role="judge",
         profile={"max_input_tokens": config.for_role("judge").max_output_tokens + 1},
     )
-    with pytest.raises(ModelContextCapacityError, match="hard context guard"):
-        await _invoke_site(bridge, packet, model, monkeypatch)
+    result = await _invoke_site(bridge, packet, model, monkeypatch)
     assert model.calls == 0
-    assert matching_failure(bridge, packet) is None
+    failure = matching_failure(bridge, packet)
+    assert failure is not None
+    assert failure["failure_mode"] == "context-capacity-recovery"
+    assert result["structured_response"] is None
+    assert sum(event["kind"] == "contract-repair" for event in _judge_attempt_events(bridge)) == 1
     assert not any(
         event["kind"] == "site-judge-context-preflight-failed"
         for event in bridge.store.events(bridge.thread)
     )
+    card = bridge.decision_card(
+        ApplyDecision(review_failure_id=failure["record_id"], option_id="site")
+    )
+    assert card.assessment_id is None and card.judge_status is None
 
 
 @pytest.mark.asyncio
@@ -279,19 +286,19 @@ async def test_binding_mismatch_is_not_reclassified(packet_case, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fact_error_remains_substantive_and_cannot_degrade(packet_case, monkeypatch):
+async def test_fact_error_degrades_to_unavailable_after_bounded_repairs(packet_case, monkeypatch):
     bridge = packet_case["bridge"]
     packet = bridge.judge_evidence()
     model = CompactJudgeModel(role="judge", invalid_fact=True)
-    with pytest.raises(AgentBoundaryError, match="unresolved substantive findings"):
-        await _invoke_site(bridge, packet, model, monkeypatch)
+    result = await _invoke_site(bridge, packet, model, monkeypatch)
     assert model.calls == 3
-    assert matching_failure(bridge, packet) is None
+    assert result["structured_response"] is None
+    assert matching_failure(bridge, packet) is not None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prior_state", ["substantive", "assessment"])
-async def test_prior_scientific_outcome_forbids_preflight_degradation(
+async def test_completed_assessment_blocks_degradation_but_invalid_draft_can_recover(
     packet_case, monkeypatch, prior_state
 ):
     bridge = packet_case["bridge"]
@@ -330,7 +337,15 @@ async def test_prior_scientific_outcome_forbids_preflight_degradation(
             )
         finally:
             JUDGE_EVIDENCE.reset(token)
-    with pytest.raises(AgentBoundaryError):
+    if prior_state == "assessment":
+        with pytest.raises(AgentBoundaryError):
+            await _invoke_site(bridge, packet, model, monkeypatch)
+        assert model.calls == 0
+    else:
         await _invoke_site(bridge, packet, model, monkeypatch)
+        assert model.calls == 1
+        assert any(
+            event["kind"] == "judge-assessment"
+            for event in bridge.store.events(bridge.thread)
+        )
     assert matching_failure(bridge, packet) is None
-    assert model.calls == 0

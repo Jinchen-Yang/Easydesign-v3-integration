@@ -201,7 +201,7 @@ async def test_truncation_exhaustion_is_unavailable_without_fake_assessment(pack
 
 
 @pytest.mark.asyncio
-async def test_exhausted_review_cannot_restart_calls_or_erase_substantive_error(packet_case):
+async def test_invalid_review_content_degrades_without_restarting_calls(packet_case):
     from easydesign.agent.site_review_availability import record_unavailable
 
     bridge = packet_case["bridge"]
@@ -212,18 +212,18 @@ async def test_exhausted_review_cannot_restart_calls_or_erase_substantive_error(
     )
     try:
         model = CompactJudgeModel(role="judge", invalid_fact=True)
-        with pytest.raises(AgentBoundaryError, match="substantive"):
+        with pytest.raises(SiteJudgeUnavailable):
             await create_site_judge(bridge, model, scripted_config(), execution).ainvoke(
                 {"messages": [HumanMessage(content="Review.")]}
             )
         before = sum(e["kind"] == "model-call" for e in bridge.store.events(bridge.thread))
-        with pytest.raises(AgentBoundaryError, match="substantive"):
+        with pytest.raises(SiteJudgeUnavailable):
             await create_site_judge(bridge, model, scripted_config(), execution).ainvoke(
                 {"messages": [HumanMessage(content="Review again.")]}
             )
         assert sum(e["kind"] == "model-call" for e in bridge.store.events(bridge.thread)) == before
-        with pytest.raises(AgentBoundaryError):
-            record_unavailable(bridge, execution)
+        receipt = record_unavailable(bridge, execution)
+        assert receipt["record_id"].startswith("review-unavailable-")
     finally:
         JUDGE_EVIDENCE.reset(token)
 
@@ -371,10 +371,7 @@ async def test_only_known_technical_failure_is_degraded_and_recovery_gets_diagno
             execution,
             never_legacy,
         )
-        if kind in {"invalid-negative", "invalid-fact-and-schema"}:
-            with pytest.raises(AgentBoundaryError, match="substantive"):
-                await agent.ainvoke({"messages": [HumanMessage(content="Review.")]})
-        elif kind == "unexpected":
+        if kind == "unexpected":
             with pytest.raises(RuntimeError, match="unexpected implementation fault"):
                 await agent.ainvoke({"messages": [HumanMessage(content="Review.")]})
         else:
@@ -382,13 +379,17 @@ async def test_only_known_technical_failure_is_degraded_and_recovery_gets_diagno
     finally:
         JUDGE_EVIDENCE.reset(token)
     events = bridge.store.events(bridge.thread)
-    assert any(e["kind"] == "site-judge-unavailable" for e in events) == (kind == "timeout")
+    assert any(e["kind"] == "site-judge-unavailable" for e in events) == (
+        kind in {"timeout", "invalid-negative", "invalid-fact-and-schema"}
+    )
     assert any(e["kind"] == "judge-assessment" for e in events) == (kind == "invalid-schema")
     if kind == "invalid-fact-and-schema":
         rejected = [e["payload"] for e in events if e["kind"] == "rejected-submission"]
         assert len(rejected) == 3
         assert all("JUDGE_FACT_CONFLICT" in r["diagnostic"] for r in rejected)
-        assert all(r["substantive_finding"] and not r["schema_valid"] for r in rejected)
+        assert all(r["diagnostic_code"] == "INVALID_REVIEW_SUBMISSION" for r in rejected)
+        assert all(r["unaccepted_review_content"] and not r["schema_valid"] for r in rejected)
+        assert all(not r["substantive_finding"] for r in rejected)
     if kind == "unexpected":
         assert sum(e["kind"] == "model-call" for e in events) == 1
 

@@ -70,6 +70,7 @@ from .evidence_research import (
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
+from .review_availability import ReviewUnavailable
 from .session_store import TOOL_REPAIR_LIMIT, compact, confined, identity
 from .site_contracts import ScientificTask
 from .site_decision import RankedSiteDecision, decision_working_set, hydrate_site_decision
@@ -199,6 +200,9 @@ def fingerprint(config: ModelConfig, harness_variant: SiteHarnessVariant = "full
             },
             "site_dossier": Path(__file__).with_name("site_dossier.py").read_text(),
             "judge_packet": Path(__file__).with_name("judge_packet.py").read_text(),
+            "review_availability": Path(__file__)
+            .with_name("review_availability.py")
+            .read_text(),
             "context_policy": Path(__file__).with_name("context_policy.py").read_text(),
             "phase2_bridge": Path(__file__).with_name("phase2.py").read_text(),
             "phase2_tools": Path(__file__).with_name("phase2_tools.py").read_text(),
@@ -1141,6 +1145,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "executed": False,
                     },
                 )
+                if self.role == "judge":
+                    raise ReviewUnavailable(
+                        "INVALID_REVIEW_SUBMISSION",
+                        "Judge requested tools outside its permissions: "
+                        + compact(rejected_names),
+                    )
                 raise AgentBoundaryError(
                     "Rejected: tool is outside this role's permissions: " + compact(rejected_names)
                 )
@@ -1148,6 +1158,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 call for m in response.result for call in getattr(m, "invalid_tool_calls", [])
             ]
             if any(call.get("name") != schema.__name__ for call in invalid):
+                if self.role == "judge":
+                    raise ReviewUnavailable(
+                        "INVALID_REVIEW_SUBMISSION",
+                        "Judge emitted malformed JSON for a tool outside its submission contract",
+                    )
                 raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
             diagnostic = ""
             repair_already_counted = False
@@ -1430,6 +1445,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 )
             )
             base_system = request.system_message.text
+        if self.role == "judge":
+            raise ReviewUnavailable(
+                "OUTPUT_VALIDATION_EXHAUSTED",
+                "Judge output could not be validated within the bounded repair budget",
+            )
         raise AgentBoundaryError("Scientific output could not be validated")
 
     def contract_error(self, error: Any, *, submission_attempt_id: str | None = None) -> str:
@@ -1455,6 +1475,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "diagnostic": diagnostic[:6000],
                 },
             )
+            if self.role == "judge":
+                raise ReviewUnavailable(
+                    "STRUCTURED_OUTPUT_REPAIR_EXHAUSTED",
+                    "Benchmark control has no structured-output repair",
+                )
             raise AgentBoundaryError("Benchmark control has no structured-output repair")
         if isinstance(error, (MultipleStructuredOutputsError, StructuredOutputValidationError)):
             message = error.ai_message
@@ -1477,14 +1502,21 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "recovery returns; do not count this usage twice. No reasoning text stored.",
                 },
             )
-        self.bridge.store.reserve_contract_repair(
-            self.bridge.thread,
-            self.role,
-            self.execution_id,
-            diagnostic,
-            contract=self.output_schema.__name__ if self.output_schema else self.role,
-            submission_attempt_id=submission_attempt_id,
-        )
+        try:
+            self.bridge.store.reserve_contract_repair(
+                self.bridge.thread,
+                self.role,
+                self.execution_id,
+                diagnostic,
+                contract=self.output_schema.__name__ if self.output_schema else self.role,
+                submission_attempt_id=submission_attempt_id,
+            )
+        except AgentBoundaryError as repair_error:
+            if self.role == "judge":
+                raise ReviewUnavailable(
+                    "STRUCTURED_OUTPUT_REPAIR_EXHAUSTED", str(repair_error)
+                ) from repair_error
+            raise
         return (
             "INVALID_STRUCTURED_SUBMISSION: "
             + diagnostic[:6000]
@@ -1998,6 +2030,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             None,
         )
         if last is None:
+            if self.role == "judge":
+                raise ReviewUnavailable(
+                    "MISSING_OR_INVALID_TYPED_SUBMISSION", "Judge produced no assessment"
+                )
             raise AgentBoundaryError("Specialist produced no assessment")
         structured = state.get("structured_response")
         if (
@@ -2005,6 +2041,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             or self.output_schema is None
             or not isinstance(structured, self.output_schema)
         ):
+            if self.role == "judge":
+                raise ReviewUnavailable(
+                    "MISSING_OR_INVALID_TYPED_SUBMISSION",
+                    "Judge did not finish through its typed submission tool",
+                )
             raise AgentBoundaryError("Specialist must finish through its typed submission tool")
         if self.site_stage == "research":
             return None  # The next graph node assembles evidence; no Site proposal here.

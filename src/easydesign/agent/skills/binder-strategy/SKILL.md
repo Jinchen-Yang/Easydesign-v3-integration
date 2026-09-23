@@ -69,10 +69,11 @@ instruction actually changes the site/hotspot, explain the dependency to the Coo
 it explicitly reopens Gate 2. Never sneak different hotspot residues into a design. A target
 identity/structure change needs explicit upstream input; do not manufacture it.
 
-The Evidence Judge independently reviews the bound specification. A human approves, revises,
-rejects or explicitly overrides scientific discouragement. Hard mapping/compiler constraints
-cannot be overridden. Carry inherited warnings and human rationale forward; a coherent HOW
-proposal does not erase a risky WHERE decision. Stop at the frozen Design Specification.
+The Evidence Judge independently reviews the bound specification. A human approves, revises or
+rejects a Runtime-valid design; discouragement and unavailable review remain recorded warnings,
+not alternate validity systems. Hard mapping/compiler constraints cannot be approved. Carry
+inherited warnings and human rationale forward; a coherent HOW proposal does not erase a risky
+WHERE decision. Stop at the frozen Design Specification.
 
 The scaffold evidence comes from runtime-verified official VHH assets and Skill-owned GPCR
 templates. read_design_evidence lists each available template separately, with explicit compiler

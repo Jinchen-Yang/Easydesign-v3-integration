@@ -436,9 +436,10 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
             (p["submitted_opinion"] for p in reversed(previous) if p.get("submitted_opinion")),
             None,
         )
-        substantive = any(p.get("substantive_finding") for p in previous)
-        if substantive:
-            raise AgentBoundaryError("Site Judge review contains unresolved substantive findings")
+        unaccepted_review_content = any(
+            p.get("unaccepted_review_content") or p.get("substantive_finding")
+            for p in previous
+        )
         # Restart does not reset attempts. Normal and compact schemas share this contract.
         for attempt in range(len(previous), 3):
             if attempt:
@@ -489,10 +490,30 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     request.model, self.config, "judge", [system, *messages], schema_chars
                 )
             except ModelContextCapacityError as error:
-                # Only the untouched first review can degrade without consuming a call or
-                # repair. A recovery overflow remains a hard failure.
+                # Capacity is an operational Reviewer failure, not a Site verdict. Preserve
+                # the first-call proof separately; a failed recovery is recorded against the
+                # already-reserved repair so the Scientist Gate can still open.
                 if attempt != 0 or previous:
-                    raise
+                    diagnostic = "MODEL_CONTEXT_CAPACITY_EXCEEDED"
+                    failures.append(diagnostic)
+                    self.bridge.store.event(
+                        self.bridge.thread,
+                        "rejected-submission",
+                        {
+                            "role": "judge",
+                            "execution_id": self.execution_id,
+                            "binding": binding,
+                            "diagnostic": diagnostic,
+                            "diagnostic_code": diagnostic,
+                            "schema_diagnostic": self.schema_diagnostic,
+                            "submitted_opinion": last_opinion,
+                            "schema_valid": False,
+                            "substantive_finding": False,
+                            "unaccepted_review_content": unaccepted_review_content,
+                            "usage": error.usage,
+                        },
+                    )
+                    raise SiteJudgeUnavailable("; ".join(failures)) from error
                 self.bridge.store.event(
                     self.bridge.thread,
                     "site-judge-context-preflight-failed",
@@ -613,7 +634,6 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     try:
                         validate_partial_fact_submission(submitted, packet)
                     except AgentBoundaryError as error:
-                        substantive = True
                         fact_error = type(error).__name__ + ": " + str(error)
             if isinstance(opinion, SiteJudgeVerdict):
                 try:
@@ -621,8 +641,9 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     validate_judge_stage(normalized, packet)
                     validate_judge_corrections(normalized, packet)
                 except (AgentBoundaryError, ValueError) as error:
-                    substantive = True
                     diagnostic = type(error).__name__ + ": " + str(error)
+                    diagnostic_code = "INVALID_REVIEW_SUBMISSION"
+                    unaccepted_review_content = True
                 else:
                     self.bridge.store.event(
                         self.bridge.thread,
@@ -636,21 +657,22 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                     return response
             else:
-                substantive |= any(
+                unaccepted_review_content |= any(
                     isinstance(c.get("args"), dict)
                     and c["args"].get("verdict") in {"reject", "insufficient"}
                     for m in raw
                     for c in m.tool_calls
                 )
-                diagnostic = (
-                    fact_error
-                    or transport_failure
-                    or (
-                        "OUTPUT_TRUNCATED"
-                        if any(r["stop_reason"] in {"max_tokens", "length"} for r in records)
-                        else "MISSING_OR_INVALID_TYPED_SUBMISSION"
-                    )
-                )
+                if fact_error:
+                    diagnostic_code = "INVALID_REVIEW_SUBMISSION"
+                    unaccepted_review_content = True
+                elif transport_failure:
+                    diagnostic_code = transport_failure
+                elif any(r["stop_reason"] in {"max_tokens", "length"} for r in records):
+                    diagnostic_code = "OUTPUT_TRUNCATED"
+                else:
+                    diagnostic_code = "MISSING_OR_INVALID_TYPED_SUBMISSION"
+                diagnostic = fact_error or diagnostic_code
             failures.append(diagnostic)
             self.bridge.store.event(
                 self.bridge.thread,
@@ -660,14 +682,14 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     "execution_id": self.execution_id,
                     "binding": binding,
                     "diagnostic": diagnostic,
+                    "diagnostic_code": diagnostic_code,
                     "schema_diagnostic": self.schema_diagnostic,
                     "submitted_opinion": submitted,
                     "schema_valid": isinstance(opinion, SiteJudgeVerdict),
-                    "substantive_finding": substantive,
+                    "substantive_finding": False,
+                    "unaccepted_review_content": unaccepted_review_content,
                 },
             )
-        if substantive:
-            raise AgentBoundaryError("Site Judge review contains unresolved substantive findings")
         raise SiteJudgeUnavailable("; ".join(failures))
 
     async def aafter_agent(self, state: Any, runtime: Any) -> Any:
@@ -765,10 +787,65 @@ def create_site_aware_judge(
             "structured_response": None,
         }
 
+    async def legacy_with_fallback(state: Any, config: RunnableConfig) -> Any:
+        packet = bridge.judge_evidence()
+        if packet.get("gate_type") != "design-specification":
+            return await legacy.ainvoke(state, config)
+        from anthropic import APIConnectionError as AnthropicConnectionError
+        from anthropic import APITimeoutError as AnthropicTimeout
+        from anthropic import InternalServerError as AnthropicServerError
+        from anthropic import RateLimitError as AnthropicRateLimit
+        from openai import APIConnectionError as OpenAIConnectionError
+        from openai import APITimeoutError as OpenAITimeout
+        from openai import InternalServerError as OpenAIServerError
+        from openai import RateLimitError as OpenAIRateLimit
+
+        from .review_availability import ReviewUnavailable, record_design_unavailable
+
+        try:
+            return await legacy.ainvoke(state, config)
+        except ReviewUnavailable as error:
+            failure_code, diagnostic = error.code, error.detail
+        except ModelContextCapacityError as error:
+            failure_code, diagnostic = "MODEL_CONTEXT_CAPACITY_EXCEEDED", str(error)
+        except (AnthropicTimeout, OpenAITimeout) as error:
+            failure_code, diagnostic = "PROVIDER_TIMEOUT", str(error)
+        except (
+            AnthropicConnectionError,
+            AnthropicServerError,
+            AnthropicRateLimit,
+            OpenAIConnectionError,
+            OpenAIServerError,
+            OpenAIRateLimit,
+        ) as error:
+            failure_code, diagnostic = "PROVIDER_UNAVAILABLE", str(error)
+        if execution_id is None:
+            raise AgentBoundaryError("Design Judge fallback requires a persisted execution")
+        failure = record_design_unavailable(
+            bridge,
+            execution_id,
+            failure_code=failure_code,
+            diagnostic=diagnostic,
+        )
+        return {
+            "messages": [
+                AIMessage(
+                    content=compact(
+                        {
+                            "review_availability": "unavailable",
+                            "review_failure_id": failure["record_id"],
+                            "next": "Scientist Gate 3 review; advisory assessment unavailable",
+                        }
+                    )
+                )
+            ],
+            "structured_response": None,
+        }
+
     model_config = config
     graph = StateGraph(State)
     graph.add_node("site", site)
-    graph.add_node("legacy", legacy)
+    graph.add_node("legacy", legacy_with_fallback)
     graph.add_conditional_edges(START, route, {"site": "site", "legacy": "legacy"})
     graph.add_edge("site", END)
     graph.add_edge("legacy", END)

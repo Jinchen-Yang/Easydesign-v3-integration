@@ -101,27 +101,29 @@ async def test_actual_harness_recovers_unissued_id_with_explicit_authorized_read
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reference_kind", ["hash-as-handle", "literal-display-label"])
+@pytest.mark.parametrize(
+    "reference_kind", ["hash-as-handle", "literal-display-label", "missing-reference"]
+)
 async def test_binder_repairs_malformed_reference_with_current_owned_reference(
     bridge: Any, reference_kind: str
 ) -> None:
     b = DesignBridge(bridge.project, bridge.thread, bridge.store)
     execution = b.store.begin_execution(b.thread, "Inspect design evidence")["execution_id"]
     original = offload(b, execution, role="binder")
-    malformed = (
-        "result:" + original.removeprefix("/result-").removesuffix(".json")
-        if reference_kind == "hash-as-handle"
-        else "full_result"
-    )
+    malformed = {
+        "hash-as-handle": "result:" + original.removeprefix("/result-").removesuffix(".json"),
+        "literal-display-label": "full_result",
+        "missing-reference": None,
+    }[reference_kind]
     guard = RoleBoundary(
         b, "binder", scripted_config(), "Inspect design evidence", execution_id=execution
     )
 
-    async def call(ref: str) -> ToolMessage:
+    async def call(ref: str | None) -> ToolMessage:
         request = SimpleNamespace(
             tool_call={
                 "name": "read_evidence_result",
-                "args": {"ref": ref, "fields": KEYS},
+                "args": {} if ref is None else {"ref": ref, "fields": KEYS},
                 "id": "read",
             }
         )
@@ -146,9 +148,7 @@ async def test_binder_repairs_malformed_reference_with_current_owned_reference(
     read = await call(handle)
     assert read.status == "success"
     assert json.loads(read.content)["value"] == {key: SNAPSHOT[key] for key in KEYS}
-    assert len(
-        [e for e in b.store.events(b.thread) if e["kind"] == "tool-argument-repair"]
-    ) == 1
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "tool-argument-repair"]) == 1
 
 
 @pytest.mark.asyncio

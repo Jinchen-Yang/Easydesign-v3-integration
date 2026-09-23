@@ -838,11 +838,12 @@ def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | Non
     # A model may mix a result file's hash with the numeric handle syntax or pass
     # the displayed field label instead of its value. Treat either as unissued:
     # offer owned IDs below, never resolve an ambiguous alias implicitly.
-    recoverable_unissued = isinstance(ref, str) and (
-        ref == "full_result" or bool(re.fullmatch(r"result:[a-f0-9]{32,64}", ref))
+    recoverable_unissued = ref is None or (
+        isinstance(ref, str)
+        and (ref == "full_result" or bool(re.fullmatch(r"result:[a-f0-9]{32,64}", ref)))
     )
-    if not isinstance(ref, str) or (
-        not re.fullmatch(RESULT_REF_PATTERN, ref) and not recoverable_unissued
+    if not recoverable_unissued and (
+        not isinstance(ref, str) or not re.fullmatch(RESULT_REF_PATTERN, ref)
     ):
         raise AgentBoundaryError("Invalid scoped result reference")
     execution = bridge.store.latest_execution(bridge.thread)
@@ -850,7 +851,7 @@ def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | Non
         execution is None or execution["execution_id"] != execution_id
     ):
         raise AgentBoundaryError("Result read is not bound to the current execution")
-    handle = ref.startswith("result:")
+    handle = isinstance(ref, str) and ref.startswith("result:")
     if handle and not recoverable_unissued:
         issued = bridge.store.db.execute(
             "SELECT thread,payload FROM events WHERE seq=? AND kind='tool-view'",
@@ -866,24 +867,40 @@ def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | Non
             ):
                 raise AgentBoundaryError("Result handle belongs to another role/thread/execution")
             ref = payload["ref"]
-    row = bridge.store.db.execute(
-        "SELECT payload FROM events WHERE thread=? AND kind='tool-view' "
-        "AND json_extract(payload,'$.role')=? AND json_extract(payload,'$.ref')=? "
-        "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 1",
-        (bridge.thread, role, ref, execution["execution_id"] if execution else None),
-    ).fetchone()
-    if row is None:
-        known = bridge.store.db.execute(
-            "SELECT 1 FROM events WHERE kind='tool-view' "
-            "AND json_extract(payload,'$.ref')=? LIMIT 1",
-            (ref,),
+    row = (
+        bridge.store.db.execute(
+            "SELECT payload FROM events WHERE thread=? AND kind='tool-view' "
+            "AND json_extract(payload,'$.role')=? AND json_extract(payload,'$.ref')=? "
+            "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 1",
+            (bridge.thread, role, ref, execution["execution_id"] if execution else None),
         ).fetchone()
-        unregistered = bridge.store.root / "agent-work" / bridge.thread / ref[1:]
+        if isinstance(ref, str)
+        else None
+    )
+    if row is None:
+        known = (
+            bridge.store.db.execute(
+                "SELECT 1 FROM events WHERE kind='tool-view' "
+                "AND json_extract(payload,'$.ref')=? LIMIT 1",
+                (ref,),
+            ).fetchone()
+            if isinstance(ref, str)
+            else None
+        )
+        unregistered = (
+            bridge.store.root / "agent-work" / bridge.thread / ref[1:]
+            if isinstance(ref, str) and ref.startswith("/")
+            else None
+        )
         if (
             known
             or execution is None
             or role not in {"target", "site", "binder"}
-            or (not handle and (unregistered.exists() or unregistered.is_symlink()))
+            or (
+                not handle
+                and unregistered is not None
+                and (unregistered.exists() or unregistered.is_symlink())
+            )
         ):
             raise AgentBoundaryError("Result was not supplied to this role/execution")
         # No fuzzy matching or implicit reads. A mistyped, never-issued ID can be

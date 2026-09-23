@@ -1879,8 +1879,8 @@ def show_run(runs_root: Path, selector: str) -> RunSummary:
     )
 
 
-def list_runs(runs_root: Path) -> tuple[RunSummary, ...]:
-    """列出 index 声明的 project run；不扫描 runs 目录。"""
+def list_runs(runs_root: Path, *, project_id: str | None = None) -> tuple[RunSummary, ...]:
+    """列出 index 声明的 project run；可先按项目过滤且不扫描 runs 目录。"""
 
     root = runs_root.resolve()
     index_path = root / "run-index.json"
@@ -1889,7 +1889,11 @@ def list_runs(runs_root: Path) -> tuple[RunSummary, ...]:
     index = load_latest_runtime_model(index_path, RunIndex)
     summaries = []
     for entry in index.entries:
-        if entry.category != "project-run" or entry.run_id is None:
+        if (
+            entry.category != "project-run"
+            or entry.run_id is None
+            or (project_id is not None and entry.project_id != project_id)
+        ):
             continue
         try:
             summaries.append(show_run(root, entry.path))

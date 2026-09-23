@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 from easydesign.core import (
     ConfigurationError,
     ExecutionStatus,
+    ManifestStateError,
     RunManifest,
     StageManifest,
     load_model,
@@ -19,7 +20,7 @@ from easydesign.core import (
 from easydesign.safe_writes import read_last_text_line
 from easydesign.workspace_context import WorkspaceContext
 
-from .application import RunSummary, list_runs
+from .application import RunSummary, list_runs, show_run
 from .config import EasyDesignRunConfig, load_run_config
 from .task_tracking import atomic_dump_runtime_model, load_latest_runtime_model
 
@@ -145,16 +146,54 @@ def resolve_project_run(
     context = WorkspaceContext.discover()
     root = resolve_project_path(project_root, must_exist=True)
     project_id = load_run_config(project_config_path(root), source_base_dir=root).config.project_id
-    summaries = [
-        item
-        for item in list_runs(context.runs_root)
-        if item.project_id == project_id and (run_id is None or item.run_id == run_id)
-    ]
+
+    # The project binding is the current-run authority and already identifies one
+    # indexed run.  Resolve that run directly instead of listing and integrity-
+    # checking every historical run in the workspace on each agent state read.
+    # The fallback below is retained for old projects that predate local bindings.
     if run_id is None:
         binding_path = _binding_path(context, project_id)
         if binding_path.is_file():
             binding = load_latest_runtime_model(binding_path, LocalProjectRunBinding)
-            summaries = [item for item in summaries if item.run_id == binding.run_id]
+            if binding.project_id != project_id:
+                raise ConfigurationError("本地项目 run binding 与当前项目身份不一致")
+            try:
+                selector = (
+                    binding.run_root.resolve().relative_to(context.runs_root.resolve()).as_posix()
+                )
+            except ValueError as error:
+                raise ConfigurationError("本地项目 run binding 逃出 workspace/runs") from error
+            summary = show_run(context.runs_root, selector)
+            if (
+                summary.project_id != project_id
+                or summary.run_id != binding.run_id
+                or summary.path.resolve() != binding.run_root.resolve()
+            ):
+                raise ConfigurationError("本地项目 run binding 与 run-index 不一致")
+            return summary
+
+    if run_id is not None:
+        try:
+            summary = show_run(context.runs_root, run_id)
+        except ManifestStateError as error:
+            # Preserve the public project API's historical "no matching run"
+            # contract while allowing genuine manifest-integrity failures to
+            # retain their more specific error type.
+            missing = "run-index 没有匹配 run" in str(error) or "run-index 不存在" in str(error)
+            if not missing:
+                raise
+            if not required:
+                return None
+            raise ConfigurationError(
+                f"项目没有匹配 run: project={project_id}, run={run_id}"
+            ) from error
+        if summary.project_id == project_id:
+            return summary
+        if not required:
+            return None
+        raise ConfigurationError(f"项目没有匹配 run: project={project_id}, run={run_id}")
+
+    summaries = [item for item in list_runs(context.runs_root) if item.project_id == project_id]
     if len(summaries) == 1:
         return summaries[0]
     if not summaries and not required:

@@ -36,6 +36,8 @@ class DesignModel(SiteModel):
             "get_job_status",
             "prepare_target",
             "read_target_evidence",
+            "read_design_evidence",
+            "evaluate_design_constraints",
             "read_evidence_result",
             "analyze_receptor_context",
             "continue_evidence",
@@ -132,6 +134,53 @@ class DesignModel(SiteModel):
                     description="Revise the current proposal using the trusted human instruction.",
                 )
         return self.call("read_scientific_state")
+
+
+@pytest.mark.asyncio
+async def test_binder_complete_packet_closes_reads_and_forces_final_submission(
+    design_bridge: Any,
+) -> None:
+    observed_surfaces: dict[str, list[set[str]]] = {"binder": []}
+
+    class ObservedDesignModel(DesignModel):
+        def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+            if self.role == "binder":
+                observed_surfaces["binder"].append({tool.name for tool in tools})
+            return super().bind_tools(tools, **kwargs)
+
+    models = {role: ObservedDesignModel(role=role) for role in DESIGN_ALLOWED}
+    result = await run_session(
+        design_bridge,
+        scripted_config(),
+        models,
+        "SYNTHETIC continue from approved Gate 2 and propose a reviewed design.",
+    )
+    assert result["status"] == "awaiting-human-approval", result
+    assert result["card"]["gate_type"] == "design-specification"
+    surfaces = observed_surfaces["binder"]
+    assert any(
+        "evaluate_design_constraints" in surface
+        and "read_design_evidence" not in surface
+        and "read_evidence_result" not in surface
+        for surface in surfaces
+    )
+    assert {"BinderIntent"} in surfaces
+    timings = [
+        event["payload"]
+        for event in design_bridge.store.events(design_bridge.thread)
+        if event["kind"] == "runtime-action-timing"
+    ]
+    assert any(
+        event["specialist"] == "binder-strategy" and event["status"] == "completed"
+        for event in timings
+    )
+    assert any(
+        event["specialist"] == "evidence-judge" and event["status"] == "completed"
+        for event in timings
+    )
+    gate_timing = next(event for event in timings if event["tool"] == "request_scientific_decision")
+    assert gate_timing["status"] == "awaiting-human-approval"
+    assert "error_type" not in gate_timing
 
 
 @pytest.mark.asyncio

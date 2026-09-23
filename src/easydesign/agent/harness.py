@@ -20,6 +20,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from langgraph.errors import GraphInterrupt
 from pydantic import ValidationError
 
 from easydesign.orchestration.local_jobs import ACTIVE_JOB_STATUSES
@@ -475,6 +476,39 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         # Show the same fixed paths the authority guard permits. Legacy scoped
         # result-index reads remain compatible, but are not advertised as file IO.
         available = [t for t in available if t.name != "read_file" or unread_skill_paths]
+        successful_tools: set[str] = set()
+        if self.execution_id is not None:
+            successful_tools = {
+                row[0]
+                for row in self.bridge.store.db.execute(
+                    "SELECT DISTINCT json_extract(payload,'$.name') FROM events "
+                    "WHERE thread=? AND kind='tool' "
+                    "AND json_extract(payload,'$.role')=? "
+                    "AND json_extract(payload,'$.execution_id')=? "
+                    "AND COALESCE(json_extract(payload,'$.status'),'success')!='error'",
+                    (self.bridge.thread, self.role, self.execution_id),
+                ).fetchall()
+                if isinstance(row[0], str)
+            }
+        binder_evidence_ready = self.role == "binder" and "read_design_evidence" in successful_tools
+        binder_constraints_ready = (
+            self.role == "binder" and "evaluate_design_constraints" in successful_tools
+        )
+        if binder_evidence_ready:
+            # read_design_evidence is a declared complete decision packet. Once delivered,
+            # repeated full-result paging cannot add authority or deterministic facts and was
+            # a major source of live-run latency. Keep the exact packet in history, close its
+            # navigation surface, and let Binder spend the next call on its scientific intent.
+            available = [
+                tool
+                for tool in available
+                if tool.name not in {"read_design_evidence", "read_evidence_result"}
+            ]
+        if binder_constraints_ready:
+            # The scientific choice has been made and deterministically checked. The remaining
+            # provider turn only serializes the already evaluated BinderIntent; runtime still
+            # re-runs the same validation before compilation and Gate 3.
+            available = []
         for index, tool in enumerate(available):
             if tool.name != "read_file":
                 continue
@@ -823,7 +857,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             # synthesis call rather than waiting for a 16k-token truncation.
             compact_site_submission = synthesize or compact_site_handoff or finalize_research
             submission_only = (
-                synthesize or compact_judge or compact_site_handoff or finalize_research
+                synthesize
+                or compact_judge
+                or compact_site_handoff
+                or finalize_research
+                or binder_constraints_ready
             )
             call_tools = [] if submission_only else available
             if submission_only:
@@ -942,6 +980,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "the runtime and independent Judge may reject an insufficient proposal."
                     )
                 )
+            if binder_constraints_ready:
+                context_suffix.append(
+                    HumanMessage(
+                        content="Runtime Binder phase notice (not a scientific decision or "
+                        "approval): the proposed intent has completed deterministic constraint "
+                        f"evaluation. Submit {submission_name} now with that same scientific "
+                        "intent. Do not reread evidence or introduce new arms/constraints; the "
+                        "trusted callback revalidates and compiles the submitted intent."
+                    )
+                )
             if finalize_research:
                 context_suffix.append(
                     HumanMessage(
@@ -1022,6 +1070,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "tool_mode": (
                         "site-synthesis"
                         if synthesize
+                        else "binder-finalization"
+                        if binder_constraints_ready
                         else "site-research-recovery"
                         if compact_site_handoff
                         else "site-research-finalization"
@@ -2001,6 +2051,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "role": self.role,
                     "name": name,
                     "execution_id": self.execution_id,
+                    "status": result.status if isinstance(result, ToolMessage) else "success",
                     "raw_result_chars": raw_chars,
                     "focused_cards_in_model_result": supplied_cards,
                     "model_result_chars": len(str(result.content))
@@ -2165,6 +2216,8 @@ class RuntimeCoordinator(RoleBoundary):
         )
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        from time import perf_counter
+
         from .control_flow import next_action
 
         assert isinstance(self.bridge, Phase2Bridge)
@@ -2183,8 +2236,58 @@ class RuntimeCoordinator(RoleBoundary):
                     name=call["name"],
                     tool_call_id=call["id"],
                 )
-        result = await super().awrap_tool_call(request, handler)
-        self.bridge.failpoint("after_runtime_action_before_checkpoint")
+        started = perf_counter()
+        action = next_action(self.bridge)
+        try:
+            result = await super().awrap_tool_call(request, handler)
+            self.bridge.failpoint("after_runtime_action_before_checkpoint")
+        except GraphInterrupt:
+            # LangGraph uses this exception as the successful control-flow boundary
+            # for a persisted human decision card.  Record the pause without making
+            # observability report a runtime failure, then preserve the interrupt.
+            self.bridge.store.event(
+                self.bridge.thread,
+                "runtime-action-timing",
+                {
+                    "execution_id": self.execution_id,
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "tool": call["name"],
+                    "specialist": call["args"].get("subagent_type"),
+                    "status": "awaiting-human-approval",
+                    "latency_seconds": perf_counter() - started,
+                },
+            )
+            raise
+        except Exception as error:
+            self.bridge.store.event(
+                self.bridge.thread,
+                "runtime-action-timing",
+                {
+                    "execution_id": self.execution_id,
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "tool": call["name"],
+                    "specialist": call["args"].get("subagent_type"),
+                    "status": "failed",
+                    "error_type": type(error).__name__,
+                    "latency_seconds": perf_counter() - started,
+                },
+            )
+            raise
+        self.bridge.store.event(
+            self.bridge.thread,
+            "runtime-action-timing",
+            {
+                "execution_id": self.execution_id,
+                "action_id": action.action_id,
+                "stage": action.stage,
+                "tool": call["name"],
+                "specialist": call["args"].get("subagent_type"),
+                "status": "completed",
+                "latency_seconds": perf_counter() - started,
+            },
+        )
         return result
 
 

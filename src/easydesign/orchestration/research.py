@@ -507,10 +507,9 @@ def _site_approval_next_action(
 
 def _runs(root: Path) -> tuple[RunSummary, ...]:
     project_id = _project_id(root)
-    values = tuple(
-        item
-        for item in list_runs(WorkspaceContext.discover().runs_root)
-        if item.project_id == project_id
+    values = list_runs(
+        WorkspaceContext.discover().runs_root,
+        project_id=project_id,
     )
     return tuple(sorted(values, key=lambda item: (item.run_id, item.manifest_revision)))
 

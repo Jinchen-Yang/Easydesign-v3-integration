@@ -611,6 +611,52 @@ def test_runs_list_marks_legacy_entry_unavailable_without_scanning(tmp_path: Pat
     assert summaries[0].integrity_message is not None
 
 
+def test_runs_list_filters_index_before_validating_run_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs = tmp_path / "runs"
+    entries = (
+        RunIndexEntry(
+            category="project-run",
+            path="project-a/run-a",
+            layout_version="0.1",
+            status="succeeded",
+            project_id="project-a",
+            run_id="run-a",
+        ),
+        RunIndexEntry(
+            category="project-run",
+            path="project-b/run-b",
+            layout_version="0.1",
+            status="succeeded",
+            project_id="project-b",
+            run_id="run-b",
+        ),
+    )
+    upsert_run_index_entries(
+        runs,
+        entries,
+        generated_at=datetime(2026, 9, 23, tzinfo=UTC),
+    )
+    validated: list[str] = []
+
+    def show_selected(root: Path, selector: str) -> SimpleNamespace:
+        validated.append(selector)
+        entry = next(item for item in entries if item.path == selector)
+        return SimpleNamespace(
+            project_id=entry.project_id,
+            run_id=entry.run_id,
+            manifest_revision=1,
+        )
+
+    monkeypatch.setattr("easydesign.orchestration.application.show_run", show_selected)
+
+    summaries = list_runs(runs, project_id="project-a")
+
+    assert [item.run_id for item in summaries] == ["run-a"]
+    assert validated == ["project-a/run-a"]
+
+
 def test_local_structural_only_input_succeeds_with_warning(
     tmp_path: Path,
 ) -> None:

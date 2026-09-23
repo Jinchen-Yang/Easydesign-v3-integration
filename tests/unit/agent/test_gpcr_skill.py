@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from easydesign.agent.design_evidence import design_constraints, resolve_design_intent
+from easydesign.agent.harness import site_research_prompt, site_synthesis_prompt
 from easydesign.core import ManifestStateError
 from easydesign.stages.s03_boltzgen_configuration.compiler import ASSET_PACKAGE, SCAFFOLD_IDS
 from easydesign.stages.s03_boltzgen_configuration.scaffold_templates import (
@@ -25,6 +26,21 @@ def gpcr_context(bridge, monkeypatch):
         return result
 
     monkeypatch.setattr(bridge, "read_site_evidence", read)
+
+
+def test_site_skill_prioritizes_reachable_orthosteric_gpcr_candidate() -> None:
+    research = " ".join(site_research_prompt(domain_skills=True).split())
+    synthesis = " ".join(site_synthesis_prompt().split())
+
+    for prompt in (research, synthesis):
+        assert "activating and inhibitory extracellular GPCR binder goals" in prompt
+        assert "orthosteric ligand entrance or outer vestibule" in prompt
+        assert "Peripheral ECL-only patches" in prompt
+        assert "Pocket depth alone is insufficient" in prompt
+        assert "Orthosteric engagement alone" in prompt
+    assert "default-rank first" in synthesis
+    assert "Runtime will display that first-ranked candidate as A" in synthesis
+    assert "hard-invalid rather than merely later-ranked" in synthesis
 
 
 def compiled_designs(bridge):

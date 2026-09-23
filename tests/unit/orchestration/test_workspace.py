@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -21,9 +22,12 @@ from easydesign.core import (
 from easydesign.orchestration import (
     ResolvedRunConfig,
     RunIndex,
+    RunIndexEntry,
     initialize_pse_run,
     initialize_sequence_run,
 )
+from easydesign.orchestration.task_tracking import load_latest_runtime_model
+from easydesign.orchestration.workspace import ProjectNavigation, upsert_run_index_entries
 
 ROOT = Path(__file__).resolve().parents[3]
 APOE_CONFIG = ROOT / "examples/stage01-apoe/easydesign.yaml"
@@ -34,6 +38,65 @@ def adapter() -> ProtenixV2Adapter:
         executable=Path("/envs/protenix-v2/bin/protenix"),
         model_root=Path("/models/protenix"),
     )
+
+
+def _concurrent_run_index_writer(
+    runs_root: Path,
+    writer_number: int,
+    ready: multiprocessing.synchronize.Event,
+    start: multiprocessing.synchronize.Event,
+) -> None:
+    ready.set()
+    if not start.wait(timeout=10):
+        raise RuntimeError("concurrent run-index test did not start")
+    slug = f"writer-{writer_number}"
+    upsert_run_index_entries(
+        runs_root,
+        (
+            RunIndexEntry(
+                category="project-run",
+                path=f"{slug}/fresh",
+                layout_version="1",
+                status="pending",
+                project_id=slug,
+                run_id="fresh",
+            ),
+        ),
+        generated_at=datetime(2026, 9, 23, 8, writer_number, tzinfo=UTC),
+    )
+
+
+def test_run_index_preserves_all_eight_concurrent_writers(tmp_path: Path) -> None:
+    ctx = multiprocessing.get_context("spawn")
+    runs_root = tmp_path / "runs"
+    start = ctx.Event()
+    ready = [ctx.Event() for _ in range(8)]
+    processes = [
+        ctx.Process(
+            target=_concurrent_run_index_writer,
+            args=(runs_root, writer_number, ready[writer_number], start),
+        )
+        for writer_number in range(8)
+    ]
+    for process in processes:
+        process.start()
+    assert all(event.wait(timeout=20) for event in ready)
+    start.set()
+    for process in processes:
+        process.join(timeout=30)
+        assert not process.is_alive()
+        assert process.exitcode == 0
+
+    index = load_latest_runtime_model(runs_root / "run-index.json", RunIndex)
+    assert {entry.path for entry in index.entries} == {
+        f"writer-{writer_number}/fresh" for writer_number in range(8)
+    }
+    for writer_number in range(8):
+        navigation = load_latest_runtime_model(
+            runs_root / f"writer-{writer_number}/PROJECT.json",
+            ProjectNavigation,
+        )
+        assert navigation.project_id == f"writer-{writer_number}"
 
 
 def test_initialize_sequence_run_creates_one_shallow_workspace(tmp_path: Path) -> None:

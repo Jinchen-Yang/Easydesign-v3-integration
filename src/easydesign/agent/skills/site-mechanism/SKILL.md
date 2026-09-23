@@ -96,6 +96,17 @@ computational hypotheses, not curated epitopes or demonstrated functional effect
 records may report folding/expression effects rather than a causal epitope. Scan candidates are
 not an exhaustive epitope inventory. Exact numbering cannot turn a weak mechanism into evidence.
 
+For both activating and inhibitory extracellular GPCR binder goals, give provisional priority to
+a verified extracellular candidate that spans the orthosteric ligand entrance or outer vestibule
+and extends far enough along the orthosteric pocket to offer a direct occupancy or conformational
+mechanism, provided coordinate mapping, surface access and whole-VHH approach have no clear
+conflict. Pocket-lining ECL residues belong to that orthosteric candidate; do not confuse them with
+a peripheral ECL-only patch. Pocket depth alone is insufficient: distinguish a CDR-reachable
+entrance or vestibule from a narrow inner cavity accessible only to a small molecule. A verified hard
+compartment conflict remains blocked, and stronger receptor-specific contrary evidence may change
+the ranking when the reason is explicit. Orthosteric engagement does not by itself establish
+activation or inhibition.
+
 The Runtime preloads references/research.md, references/membrane.md and
 references/shielding.md for the normal Site path. Do not spend model calls reading them again.
 General protein reasoning remains the default. Preserve ligand/state/partner/assembly/construct

@@ -42,6 +42,19 @@ falsifier. Do not turn exposure, contact, curated state or a high model score in
 
 Conditional GPCR branch only after verified receptor identity and family hierarchy:
 
+- For both activating and inhibitory extracellular GPCR binder goals, when the candidate set
+  contains a verified extracellular site covering the orthosteric ligand entrance or outer
+  vestibule and extending sufficiently far along the orthosteric pocket to support a direct
+  ligand-occupancy or receptor-conformation mechanism, treat it as the default provisional
+  first-ranked hypothesis if coordinate mapping is valid, surface exposure is reasonable and
+  there is no clear whole-VHH approach conflict. Peripheral ECL-only patches and other surfaces
+  without an orthosteric mechanistic connection default later. Pocket-lining ECL residues are part
+  of the orthosteric candidate, not evidence that it is merely peripheral.
+- Pocket depth alone is insufficient. Distinguish a CDR-reachable entrance/outer vestibule from
+  a narrow inner cavity that only a small molecule can enter while the VHH framework cannot
+  approach. Mapping/access conflicts, functional mismatch or stronger receptor-specific contrary
+  evidence can overturn the default, but state the reason explicitly. Orthosteric engagement alone
+  does not prove whether the binder activates or inhibits.
 - Class A: distinguish extracellular pocket rim/vestibule from inaccessible lipid-facing TM
   surface; peptide receptors may require N-terminus/ECL context. Ligand binding is not function.
 - Class B1: large ECD capture and TMD activation can be different mechanisms; preserve both domains.
@@ -51,7 +64,8 @@ Conditional GPCR branch only after verified receptor identity and family hierarc
 - Rare/unresolved families: retain receptor-specific evidence and uncertainty, not a guessed class.
 
 Default extracellular delivery excludes an intracellular transducer mechanism unless the goal
-explicitly authorizes intrabody access. A signed membrane frame must come from validated geometry.
+explicitly authorizes intrabody access. That verified compartment conflict is hard-invalid rather
+than a lower-ranked A/B/C alternative. A signed membrane frame must come from validated geometry.
 Compare target/counterstate, ligand/transducer, construct fusions/mutations and full framework
 access. Family rules may generate hypotheses, not assign a fused score or choose a winner.
 

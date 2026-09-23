@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import re
 import shutil
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -327,6 +329,23 @@ def _atomic_replace_text(text: str, path: Path) -> None:
     append_pointer_revision(path, text)
 
 
+@contextmanager
+def _run_index_writer_lock(runs_root: Path) -> Iterator[None]:
+    """Serialize the full run-index read/merge/publish transaction across processes."""
+
+    root = runs_root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / ".run-index.lock"
+    if lock_path.is_symlink():
+        raise ManifestStateError(f"run-index lock 不能是符号链接: {lock_path}")
+    with lock_path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _sync_project_navigation_files(runs_root: Path, index: RunIndex) -> None:
     """从 run-index 生成 PROJECT.json/PRIMARY，并移除归档后的导航空壳。"""
 
@@ -404,21 +423,22 @@ def upsert_run_index_entries(
     """更新可再生目录索引；索引不是科学 artifact。"""
 
     index_path = runs_root / "run-index.json"
-    existing: tuple[RunIndexEntry, ...] = ()
-    if index_path.is_file():
-        existing = load_latest_runtime_model(index_path, RunIndex).entries
-    by_path = {entry.path: entry for entry in existing}
-    for entry in entries:
-        previous = by_path.get(entry.path)
-        if previous is not None and previous.is_project_primary:
-            entry = entry.model_copy(update={"is_project_primary": True})
-        by_path[entry.path] = entry
-    index = RunIndex(
-        generated_at=generated_at,
-        entries=tuple(by_path[path] for path in sorted(by_path)),
-    )
-    _atomic_replace_json(index, index_path)
-    _sync_project_navigation_files(runs_root, index)
+    with _run_index_writer_lock(runs_root):
+        existing: tuple[RunIndexEntry, ...] = ()
+        if index_path.is_file():
+            existing = load_latest_runtime_model(index_path, RunIndex).entries
+        by_path = {entry.path: entry for entry in existing}
+        for entry in entries:
+            previous = by_path.get(entry.path)
+            if previous is not None and previous.is_project_primary:
+                entry = entry.model_copy(update={"is_project_primary": True})
+            by_path[entry.path] = entry
+        index = RunIndex(
+            generated_at=generated_at,
+            entries=tuple(by_path[path] for path in sorted(by_path)),
+        )
+        _atomic_replace_json(index, index_path)
+        _sync_project_navigation_files(runs_root, index)
     return index_path
 
 
@@ -431,12 +451,13 @@ def replace_run_index_entries(
     """原子替换可再生运行索引，用于归档等需要改变路径的受控迁移。"""
 
     index_path = runs_root / "run-index.json"
-    index = RunIndex(
-        generated_at=generated_at,
-        entries=tuple(sorted(entries, key=lambda entry: entry.path)),
-    )
-    _atomic_replace_json(index, index_path)
-    _sync_project_navigation_files(runs_root, index)
+    with _run_index_writer_lock(runs_root):
+        index = RunIndex(
+            generated_at=generated_at,
+            entries=tuple(sorted(entries, key=lambda entry: entry.path)),
+        )
+        _atomic_replace_json(index, index_path)
+        _sync_project_navigation_files(runs_root, index)
     return index_path
 
 

@@ -42,6 +42,20 @@ difference establishes a difference, not the experimental origin or intent of en
 Kernel hypotheses are not an exhaustive epitope inventory or database-curated epitopes; a mode
 label such as "inhibit" is a computational hypothesis, not evidence of measured inhibition.
 
+For both activating and inhibitory extracellular GPCR binder goals, default-rank first the
+hard-valid candidate that covers the orthosteric ligand entrance or outer vestibule and extends
+sufficiently far along the orthosteric pocket to offer a direct ligand-occupancy or
+receptor-conformation mechanism, when it has valid coordinate mapping, reasonable surface exposure
+and no clear whole-VHH approach conflict. Runtime will display that first-ranked candidate as A.
+Peripheral ECL-only patches and other surfaces without an orthosteric mechanistic connection
+default later; pocket-lining ECL residues are part of the orthosteric candidate rather than a
+peripheral-ECL category. Pocket depth alone is insufficient: distinguish a CDR-reachable entrance
+or vestibule from a narrow inner cavity accessible only to a small molecule while the VHH framework
+cannot approach. Mapping/access conflict, functional mismatch or stronger receptor-specific
+contrary evidence may overturn this default, but the rationale must identify the reason. A verified
+intracellular transducer site for an extracellular objective is hard-invalid rather than merely
+later-ranked. Orthosteric engagement alone does not establish activation versus inhibition.
+
 For enzymes/PPI inhibition, distinguish direct competition from allostery, loss of integrity
 and assay interference. For sensors/chaperones, separate reporting a state from stabilizing or
 perturbing it. Flexible/disordered, amyloid and composite/multimer sites need the appropriate

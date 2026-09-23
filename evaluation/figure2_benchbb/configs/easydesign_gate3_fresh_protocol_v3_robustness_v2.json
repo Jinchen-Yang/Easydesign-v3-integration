@@ -1,0 +1,65 @@
+{
+  "schema_version": "easydesign-gate3-fresh-protocol-hotfix-v2",
+  "authority_id": "easydesign-gate3-fresh8-robustness-v2",
+  "status": "frozen",
+  "title": "EGFR fresh Gate3 recovery with scoped-result and Site-citation fail-safe handling",
+  "scope": "One new EGFR fresh attempt from Gate1 through a validated Gate3 decision card; Gate3 is not approved.",
+  "precedence": "This addendum governs only EGFR r5. Base-cohort and earlier failed-attempt records remain immutable.",
+  "freeze_ref": "refs/tags/easydesign-gate3-fresh8-robustness-v2",
+  "agent_code_commit": "65afac72a3ed16161dceef12de6dc874068b7816",
+  "base_protocol": {
+    "path": "evaluation/figure2_benchbb/configs/easydesign_gate3_fresh_protocol_v3.json",
+    "sha256": "c4079979715a5131a335b6e19294c0ed685b3ec5202d92ccd4589269d7659b3c",
+    "authority_id": "easydesign-gate3-fresh8-v1"
+  },
+  "supersedes_recovery_addendum": {
+    "path": "evaluation/figure2_benchbb/configs/easydesign_gate3_fresh_protocol_v3_receipt_hotfix.json",
+    "sha256": "a0eb3979a59d4e5fb07c83012f07e9b48e07b2edddc216ea5c8efef0ce78d15b",
+    "authority_id": "easydesign-gate3-fresh8-receipt-hotfix-v1",
+    "disposition": "r4 audit authority; retained unchanged after r4 exposed a distinct SiteResearchHandoff citation failure"
+  },
+  "change_boundary": {
+    "scoped_result": "Retain the v1 receipt fix: exact /result-*.json references are shown, while a literal full_result label receives only bounded owned-reference repair feedback.",
+    "site_citation": "After all bounded Site handoff submissions are spent, a Runtime-proven non-verbatim decision-question citation is removed and only that question is demoted to UNRESOLVED. The normalized handoff must pass the complete dossier validator before it can continue.",
+    "authority": "No citation text is rewritten or inferred. Candidate geometry, source artifacts, Target/Site mappings and unaffected questions remain unchanged. Foreign source IDs, invalid candidate citations, hard-fact contradictions and any handoff that still fails full validation remain fatal.",
+    "scientific_effect": "The fallback loses unsupported evidence strength rather than granting it. Independent Judge review and the Scientist Gate still receive the demotion and original durable evidence."
+  },
+  "execution": {
+    "target_id": "EGFR",
+    "structure": "evaluation/figure2_benchbb/inputs/targets/EGFR_8HGO/8HGO.cif",
+    "structure_sha256": "1542cf3f3ea2c2fd08e97ac9334d425cdcaee25a81502223463402f3f80968c2",
+    "goal": "Design a VHH nanobody against the human EGFR ectodomain that is intended to inhibit ligand-driven receptor activation.",
+    "project_name": "figure2-eight-gate3-fresh8-robustness-v2-egfr-r5-20260924",
+    "results_root": "/data/easydesign-results/easydesign-gate3-fresh8-v1-20260923",
+    "environment": {
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "endpoint": "gate3-awaiting-decision",
+    "generation_allowed": false,
+    "pilot_allowed": false,
+    "handoff_allowed": false
+  },
+  "freshness_contract": {
+    "project_state": "Use a never-before-existing r5 project, thread, run ID and runtime-state path. Do not resume or copy r2-r4 state.",
+    "tracked_tree": "Clean at attempt start except the pre-existing protected untracked audit, which remains byte-untouched.",
+    "failed_attempts": "Retain r2-r4 projects and logs unchanged for audit."
+  },
+  "success_contract": {
+    "terminal_status": "waiting-for-human/design-specification",
+    "required": [
+      "current Design proposal and Gate3 decision card exist",
+      "compiled design artifacts pass size and SHA verification",
+      "no Gate3 response or design approval exists",
+      "generation_started=false",
+      "no Pilot, handoff, generation or StrategyBundle event/path exists"
+    ]
+  },
+  "verification": {
+    "citation_and_handoff_tests": "24 passed",
+    "broader_site_and_receipt_tests": "50 passed",
+    "lint": "ruff passed",
+    "diff_check": "passed"
+  }
+}

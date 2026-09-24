@@ -1,0 +1,222 @@
+{
+  "schema_version": "ui-demo-v1",
+  "mode": "demo-fixture",
+  "project": {
+    "id": "demo-lysozyme-vhh",
+    "title": "Lysozyme VHH",
+    "badge": "UI Demo Fixture",
+    "goal": "Design a VHH binder against hen egg-white lysozyme and prioritize a compact accessible epitope."
+  },
+  "structure": {
+    "pdb_id": "1MEL",
+    "source_url": "https://files.rcsb.org/download/1MEL.cif",
+    "target_name": "Hen egg-white lysozyme",
+    "uniprot": "P00698",
+    "target_chain": "C",
+    "binder_chain": "A",
+    "note": "Use as a UI demo reference only. Verify chain identifiers at runtime."
+  },
+  "phases": [
+    {
+      "id": "goal",
+      "label": "Goal"
+    },
+    {
+      "id": "target",
+      "label": "Target"
+    },
+    {
+      "id": "site",
+      "label": "Site"
+    },
+    {
+      "id": "design",
+      "label": "Design"
+    },
+    {
+      "id": "pilot",
+      "label": "Pilot"
+    },
+    {
+      "id": "scale",
+      "label": "Scale"
+    },
+    {
+      "id": "candidates",
+      "label": "Candidates"
+    }
+  ],
+  "site_options": [
+    {
+      "id": "A",
+      "label": "Site A",
+      "residues": [
+        "34-38",
+        "50-53"
+      ],
+      "accessibility": 0.78,
+      "geometry": 0.73,
+      "evidence": 0.67
+    },
+    {
+      "id": "B",
+      "label": "Site B",
+      "residues": [
+        "61-66",
+        "96-101"
+      ],
+      "accessibility": 0.91,
+      "geometry": 0.88,
+      "evidence": 0.84,
+      "recommended": true
+    },
+    {
+      "id": "C",
+      "label": "Site C",
+      "residues": [
+        "104-110",
+        "116-120"
+      ],
+      "accessibility": 0.72,
+      "geometry": 0.69,
+      "evidence": 0.75
+    }
+  ],
+  "design": {
+    "binder_type": "VHH",
+    "scaffold": "Demo VHH scaffold",
+    "arms": [
+      {
+        "id": "focused",
+        "label": "Focused hotspot",
+        "pilot_candidates": 4
+      },
+      {
+        "id": "broad",
+        "label": "Broader interface",
+        "pilot_candidates": 4
+      }
+    ]
+  },
+  "pilot": {
+    "total": 8,
+    "passed": 6,
+    "failed": 2,
+    "candidates": [
+      {
+        "id": "P-01",
+        "status": "pass",
+        "interface": 0.86,
+        "confidence": 0.92,
+        "clash": 0.05
+      },
+      {
+        "id": "P-02",
+        "status": "pass",
+        "interface": 0.848,
+        "confidence": 0.911,
+        "clash": 0.056
+      },
+      {
+        "id": "P-03",
+        "status": "pass",
+        "interface": 0.836,
+        "confidence": 0.902,
+        "clash": 0.062
+      },
+      {
+        "id": "P-04",
+        "status": "pass",
+        "interface": 0.824,
+        "confidence": 0.893,
+        "clash": 0.068
+      },
+      {
+        "id": "P-05",
+        "status": "pass",
+        "interface": 0.812,
+        "confidence": 0.884,
+        "clash": 0.074
+      },
+      {
+        "id": "P-06",
+        "status": "pass",
+        "interface": 0.8,
+        "confidence": 0.875,
+        "clash": 0.08
+      },
+      {
+        "id": "P-07",
+        "status": "filtered",
+        "interface": 0.788,
+        "confidence": 0.866,
+        "clash": 0.086
+      },
+      {
+        "id": "P-08",
+        "status": "filtered",
+        "interface": 0.776,
+        "confidence": 0.857,
+        "clash": 0.092
+      }
+    ]
+  },
+  "scale": {
+    "total": 24,
+    "batches": 3,
+    "batch_size": 8,
+    "passed": 18,
+    "filtered": 6
+  },
+  "finalists": [
+    {
+      "id": "ED-001",
+      "rank": 1,
+      "sequence_preview": "QVQLV\u2026WGQGTQVTVSS",
+      "interface": 0.91,
+      "confidence": 0.94,
+      "developability": 0.88
+    },
+    {
+      "id": "ED-002",
+      "rank": 2,
+      "sequence_preview": "QVQLV\u2026WGQGTQVTVSS",
+      "interface": 0.898,
+      "confidence": 0.932,
+      "developability": 0.871
+    },
+    {
+      "id": "ED-003",
+      "rank": 3,
+      "sequence_preview": "QVQLV\u2026WGQGTQVTVSS",
+      "interface": 0.886,
+      "confidence": 0.924,
+      "developability": 0.862
+    },
+    {
+      "id": "ED-004",
+      "rank": 4,
+      "sequence_preview": "QVQLV\u2026WGQGTQVTVSS",
+      "interface": 0.874,
+      "confidence": 0.916,
+      "developability": 0.853
+    },
+    {
+      "id": "ED-005",
+      "rank": 5,
+      "sequence_preview": "QVQLV\u2026WGQGTQVTVSS",
+      "interface": 0.862,
+      "confidence": 0.908,
+      "developability": 0.844
+    },
+    {
+      "id": "ED-006",
+      "rank": 6,
+      "sequence_preview": "QVQLV\u2026WGQGTQVTVSS",
+      "interface": 0.85,
+      "confidence": 0.9,
+      "developability": 0.835
+    }
+  ],
+  "disclaimer": "All site residues and candidate metrics are simulated for UI development. Do not interpret as EasyDesign scientific output."
+}

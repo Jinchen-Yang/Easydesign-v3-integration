@@ -1,0 +1,5 @@
+# Preserve deposited fixed-width coordinates, original licenses and raw validation logs.
+public/structures/*.pdb -text -whitespace
+public/structures/*.cif -text -whitespace
+docs/licenses/** -whitespace
+docs/validation/** -whitespace

@@ -1,0 +1,111 @@
+$ playwright test
+
+Running 18 tests using 1 worker
+
+(node:59351) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:59351) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-1440] › e2e/journey.spec.ts:27:1 › entire product journey, structure interactions, explicit approvals, completion and replay (21.6s)
+  ✓  2 [desktop-1440] › e2e/journey.spec.ts:143:1 › refresh mid-animation, follow-up goal preservation and corrupted storage recovery (6.5s)
+  ✓  3 [desktop-1440] › e2e/journey.spec.ts:167:1 › viewer failure cannot block completion (2.8s)
+  ✓  4 [desktop-1440] › e2e/journey.spec.ts:185:1 › keyboard dialog focus, linked context and reversible design revision (8.8s)
+  ✓  5 [desktop-1440] › e2e/journey.spec.ts:221:1 › rail navigation opens fresh drafts and returns home without losing the active design (10.3s)
+  ✘  6 [desktop-1440] › e2e/journey.spec.ts:293:1 › project sidebar creates, renames, switches and restores independent designs (27.0s)
+(node:59657) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:59657) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  7 [desktop-1366] › e2e/journey.spec.ts:27:1 › entire product journey, structure interactions, explicit approvals, completion and replay (19.8s)
+  ✓  8 [desktop-1366] › e2e/journey.spec.ts:143:1 › refresh mid-animation, follow-up goal preservation and corrupted storage recovery (5.4s)
+  ✓  9 [desktop-1366] › e2e/journey.spec.ts:167:1 › viewer failure cannot block completion (2.1s)
+  ✓  10 [desktop-1366] › e2e/journey.spec.ts:185:1 › keyboard dialog focus, linked context and reversible design revision (7.2s)
+  ✓  11 [desktop-1366] › e2e/journey.spec.ts:221:1 › rail navigation opens fresh drafts and returns home without losing the active design (6.8s)
+  ✘  12 [desktop-1366] › e2e/journey.spec.ts:293:1 › project sidebar creates, renames, switches and restores independent designs (24.0s)
+(node:59924) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:59924) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  13 [desktop-1728] › e2e/journey.spec.ts:27:1 › entire product journey, structure interactions, explicit approvals, completion and replay (19.4s)
+  ✓  14 [desktop-1728] › e2e/journey.spec.ts:143:1 › refresh mid-animation, follow-up goal preservation and corrupted storage recovery (6.5s)
+  ✓  15 [desktop-1728] › e2e/journey.spec.ts:167:1 › viewer failure cannot block completion (2.6s)
+  ✓  16 [desktop-1728] › e2e/journey.spec.ts:185:1 › keyboard dialog focus, linked context and reversible design revision (7.9s)
+  ✓  17 [desktop-1728] › e2e/journey.spec.ts:221:1 › rail navigation opens fresh drafts and returns home without losing the active design (8.7s)
+  ✓  18 [desktop-1728] › e2e/journey.spec.ts:293:1 › project sidebar creates, renames, switches and restores independent designs (16.1s)
+
+
+  1) [desktop-1440] › e2e/journey.spec.ts:293:1 › project sidebar creates, renames, switches and restores independent designs 
+
+    Error: [31mTimed out 12000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveCount[2m([22m[32mexpected[39m[2m)[22m
+
+    Locator: getByText('Keep Site C for this project only.', { exact: true })
+    Expected: [32m0[39m
+    Received: [31m1[39m
+    Call log:
+    [2m  - expect.toHaveCount with timeout 12000ms[22m
+    [2m  - waiting for getByText('Keep Site C for this project only.', { exact: true })[22m
+    [2m    16 × locator resolved to 1 element[22m
+    [2m       - unexpected value "1"[22m
+
+
+      337 |   await page.getByRole('button', { name: 'Open project VHH exploration', exact: true }).click();
+      338 |   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
+    > 339 |   await expect(page.getByText('Keep Site C for this project only.', { exact: true })).toHaveCount(
+          |                                                                                       ^
+      340 |     0,
+      341 |   );
+      342 |   await expect(page.getByLabel('Message Design Scientist')).toHaveValue('');
+        at /Users/knitua/Documents/Easy Design/ui-prototype-20260913/ui-workbench/e2e/journey.spec.ts:339:87
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/journey-project-sidebar-cr-4b39f-estores-independent-designs-desktop-1440/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/journey-project-sidebar-cr-4b39f-estores-independent-designs-desktop-1440/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/journey-project-sidebar-cr-4b39f-estores-independent-designs-desktop-1440/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [desktop-1366] › e2e/journey.spec.ts:293:1 › project sidebar creates, renames, switches and restores independent designs 
+
+    Error: [31mTimed out 12000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveCount[2m([22m[32mexpected[39m[2m)[22m
+
+    Locator: getByText('Keep Site C for this project only.', { exact: true })
+    Expected: [32m0[39m
+    Received: [31m1[39m
+    Call log:
+    [2m  - expect.toHaveCount with timeout 12000ms[22m
+    [2m  - waiting for getByText('Keep Site C for this project only.', { exact: true })[22m
+    [2m    16 × locator resolved to 1 element[22m
+    [2m       - unexpected value "1"[22m
+
+
+      337 |   await page.getByRole('button', { name: 'Open project VHH exploration', exact: true }).click();
+      338 |   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
+    > 339 |   await expect(page.getByText('Keep Site C for this project only.', { exact: true })).toHaveCount(
+          |                                                                                       ^
+      340 |     0,
+      341 |   );
+      342 |   await expect(page.getByLabel('Message Design Scientist')).toHaveValue('');
+        at /Users/knitua/Documents/Easy Design/ui-prototype-20260913/ui-workbench/e2e/journey.spec.ts:339:87
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/journey-project-sidebar-cr-4b39f-estores-independent-designs-desktop-1366/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/journey-project-sidebar-cr-4b39f-estores-independent-designs-desktop-1366/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/journey-project-sidebar-cr-4b39f-estores-independent-designs-desktop-1366/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [desktop-1440] › e2e/journey.spec.ts:293:1 › project sidebar creates, renames, switches and restores independent designs 
+    [desktop-1366] › e2e/journey.spec.ts:293:1 › project sidebar creates, renames, switches and restores independent designs 
+  16 passed (3.4m)
+[ELIFECYCLE] Command failed with exit code 1.

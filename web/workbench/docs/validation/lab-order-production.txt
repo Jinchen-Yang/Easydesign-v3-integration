@@ -1,0 +1,2 @@
+$ node scripts/smoke-production.mjs
+PASS: production bundle full 8 → 24 → 6 journey, three destinations, independent second project, restored final panel, demo compute rows and project links, real reference viewer, Lab Order draft/confirmation/reload, no render errors, no external requests.

@@ -1,0 +1,48 @@
+$ playwright test
+
+Running 30 tests using 1 worker
+
+(node:31010) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31010) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-1440] › e2e/context-links.spec.ts:3:1 › scientific context links reveal, focus and scroll the panel on desktop and narrow screens (7.6s)
+  ✓  2 [desktop-1440] › e2e/journey.spec.ts:35:1 › entire product journey, structure interactions, explicit approvals, completion and replay (12.2s)
+  ✓  3 [desktop-1440] › e2e/journey.spec.ts:151:1 › refresh mid-animation, follow-up goal preservation and corrupted storage recovery (5.2s)
+  ✓  4 [desktop-1440] › e2e/journey.spec.ts:175:1 › viewer failure cannot block completion (2.0s)
+  ✓  5 [desktop-1440] › e2e/journey.spec.ts:193:1 › keyboard dialog focus, linked context and reversible design revision (5.6s)
+  ✓  6 [desktop-1440] › e2e/lab-order.spec.ts:31:1 › lab order follows finalized candidates, persists a real draft and previews without sending (10.4s)
+  ✓  7 [desktop-1440] › e2e/lab-order.spec.ts:118:1 › lab order works in a narrow workspace with a synchronized workflow drawer (7.0s)
+  ✓  8 [desktop-1440] › e2e/platform.spec.ts:26:1 › three English destinations, empty states, browser history and narrow navigation (2.1s)
+  ✓  9 [desktop-1440] › e2e/platform.spec.ts:64:1 › project center creates, searches, renames and switches independent workspaces (14.4s)
+  ✓  10 [desktop-1440] › e2e/platform.spec.ts:132:1 › compute page reflects approved demo runs, filters and returns to the correct project (17.6s)
+(node:31216) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31216) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  11 [desktop-1366] › e2e/context-links.spec.ts:3:1 › scientific context links reveal, focus and scroll the panel on desktop and narrow screens (8.1s)
+  ✓  12 [desktop-1366] › e2e/journey.spec.ts:35:1 › entire product journey, structure interactions, explicit approvals, completion and replay (13.0s)
+  ✓  13 [desktop-1366] › e2e/journey.spec.ts:151:1 › refresh mid-animation, follow-up goal preservation and corrupted storage recovery (5.1s)
+  ✓  14 [desktop-1366] › e2e/journey.spec.ts:175:1 › viewer failure cannot block completion (1.9s)
+  ✓  15 [desktop-1366] › e2e/journey.spec.ts:193:1 › keyboard dialog focus, linked context and reversible design revision (6.4s)
+  ✓  16 [desktop-1366] › e2e/lab-order.spec.ts:31:1 › lab order follows finalized candidates, persists a real draft and previews without sending (9.6s)
+  ✓  17 [desktop-1366] › e2e/lab-order.spec.ts:118:1 › lab order works in a narrow workspace with a synchronized workflow drawer (6.6s)
+  ✓  18 [desktop-1366] › e2e/platform.spec.ts:26:1 › three English destinations, empty states, browser history and narrow navigation (2.5s)
+  ✓  19 [desktop-1366] › e2e/platform.spec.ts:64:1 › project center creates, searches, renames and switches independent workspaces (16.6s)
+  ✓  20 [desktop-1366] › e2e/platform.spec.ts:132:1 › compute page reflects approved demo runs, filters and returns to the correct project (17.5s)
+(node:31667) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31667) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  21 [desktop-1728] › e2e/context-links.spec.ts:3:1 › scientific context links reveal, focus and scroll the panel on desktop and narrow screens (10.0s)
+  ✓  22 [desktop-1728] › e2e/journey.spec.ts:35:1 › entire product journey, structure interactions, explicit approvals, completion and replay (19.4s)
+  ✓  23 [desktop-1728] › e2e/journey.spec.ts:151:1 › refresh mid-animation, follow-up goal preservation and corrupted storage recovery (5.7s)
+  ✓  24 [desktop-1728] › e2e/journey.spec.ts:175:1 › viewer failure cannot block completion (2.5s)
+  ✓  25 [desktop-1728] › e2e/journey.spec.ts:193:1 › keyboard dialog focus, linked context and reversible design revision (8.3s)
+  ✓  26 [desktop-1728] › e2e/lab-order.spec.ts:31:1 › lab order follows finalized candidates, persists a real draft and previews without sending (12.7s)
+  ✓  27 [desktop-1728] › e2e/lab-order.spec.ts:118:1 › lab order works in a narrow workspace with a synchronized workflow drawer (8.6s)
+  ✓  28 [desktop-1728] › e2e/platform.spec.ts:26:1 › three English destinations, empty states, browser history and narrow navigation (2.9s)
+  ✓  29 [desktop-1728] › e2e/platform.spec.ts:64:1 › project center creates, searches, renames and switches independent workspaces (18.8s)
+  ✓  30 [desktop-1728] › e2e/platform.spec.ts:132:1 › compute page reflects approved demo runs, filters and returns to the correct project (18.3s)
+
+  30 passed (4.7m)

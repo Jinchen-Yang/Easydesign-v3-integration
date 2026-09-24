@@ -1,0 +1,13 @@
+{
+  "pdbId": "1MEL",
+  "sourceUrl": "https://files.rcsb.org/download/1MEL.pdb",
+  "localUrl": "/structures/1MEL.pdb",
+  "targetName": "Hen egg-white lysozyme",
+  "uniprot": "P00698",
+  "targetChain": "L",
+  "targetLabelChain": "C",
+  "binderChain": "A",
+  "targetSequence": "KVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGCRL",
+  "binderSequence": "DVQLQASGGGSVQAGGSLRLSCAASGYTIGPYCMGWFRQAPGKEREGVAAINMGGGITYYADSVKGRFTISQDNAKNTVYLLMNSLEPEDTAIYYCAADSTIYASYYECGHGLSTGGYGYDSWGQGTQVTVSSGRYPYDVPDYGSGRA",
+  "chainNote": "PDB author chain L corresponds to mmCIF label chain C. The supplied fixture used label identifiers."
+}

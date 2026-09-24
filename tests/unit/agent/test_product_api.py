@@ -1,0 +1,976 @@
+"""Product boundary against native sessions, not a second workflow implementation."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from contextlib import contextmanager
+from threading import Thread
+from uuid import uuid4
+
+import httpx
+import pytest
+
+from easydesign.agent.cli import run_session
+from easydesign.agent.contracts import DecisionCard
+from easydesign.agent.harness import fingerprint
+from easydesign.product.artifacts import ArtifactCatalog, confined_bytes, immutable_json
+from easydesign.product.contracts import (
+    ActionRequest,
+    CreateProject,
+    ProductError,
+    WorkbenchProjection,
+)
+from easydesign.product.domain import DomainSession, NativeGateway, decision_view
+from easydesign.product.projection import activity, activity_rows, activity_tasks, workbench
+from easydesign.product.server import ProductServer
+from easydesign.product.service import ProductService
+from easydesign.workspace_context import WorkspaceContext
+from tests.agent_support import ScriptedModel, scripted_config
+from tests.unit.agent.test_site_portfolio import review_card, setup_portfolio
+
+ROLES = ("coordinator", "target", "site", "binder", "judge", "pilot-diagnosis", "final-selection")
+
+
+class NoInference(ScriptedModel):
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def answer(self, messages):
+        raise AssertionError("Saved reviewed evidence must not trigger new scientific inference")
+
+
+def service_for(bridge, tmp_path):
+    context = WorkspaceContext.from_root(tmp_path)
+    config = scripted_config()
+    models = tmp_path / "models.yaml"
+    models.write_text(json.dumps(config.model_dump(mode="json")))
+
+    def factory(*args, **kwargs):
+        return {r: NoInference(role=r) for r in ROLES}
+
+    return ProductService(
+        NativeGateway(context, models, model_factory=factory), launcher=lambda _: None
+    )
+
+
+def test_goal_only_create_is_immediately_persistent_and_reloadable(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    request = CreateProject(
+        request_id=str(uuid4()),
+        title="NK2R inhibitory nanobody",
+        goal="Please design an inhibitory nanobody against NK2R.",
+    )
+    accepted = service.create(request)
+    project = accepted["project"]
+    root = service.context.projects_root / project
+    assert accepted["state"] == "accepted"
+    assert (root / "metadata/agent.sqlite").is_file()
+    assert not (root / "PROJECT.yaml").exists()
+    view = service.snapshot(project)
+    WorkbenchProjection.model_validate(view)
+    assert view["lifecycle"] == "project_created"
+    assert view["project"]["goal"] == request.goal
+    assert view["project"]["phase"] == "target"
+    assert view["workflow"][1]["status"] == "running"
+    assert view["tasks"][0]["task_id"] == "target-bootstrap"
+    assert service.create(request)["id"] == accepted["id"]
+
+    restarted = service_for(bridge, tmp_path)
+    assert restarted.snapshot(project)["event_cursor"] == view["event_cursor"]
+    listed = {item["id"]: item for item in restarted.projects()["items"]}
+    assert listed[project]["goal"] == request.goal
+    assert restarted.rename(project, "NK2R program")["title"] == "NK2R program"
+    assert restarted.snapshot(project)["project"]["title"] == "NK2R program"
+
+
+def test_failed_goal_bootstrap_is_retryable_without_recreating_project(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    request = CreateProject(
+        request_id=str(uuid4()),
+        title="Retryable target research",
+        goal="Design an inhibitory nanobody against NK2R.",
+    )
+    accepted = service.create(request)
+    journal = service.journal()
+    try:
+        journal.update(
+            request.request_id,
+            "failed",
+            {"code": "ProviderUnavailable", "message": "Retry target discovery"},
+        )
+        journal.update_project(
+            accepted["project"],
+            "failed",
+            {"code": "ProviderUnavailable", "message": "Retry target discovery"},
+        )
+    finally:
+        journal.close()
+
+    failed = service.snapshot(accepted["project"])
+    assert failed["project"]["status"] == "blocked"
+    assert failed["project"]["notice"] == "Retry target discovery"
+    launched: list[str] = []
+    service.launcher = launched.append
+    assert service.retry(request.request_id)["state"] == "accepted"
+    assert launched == [request.request_id]
+    assert service.retry(request.request_id)["state"] == "accepted"
+    assert launched == [request.request_id]
+
+
+def test_product_api_keeps_uploaded_structure_as_optional_seed(bridge, tmp_path):
+    from easydesign.orchestration.config import LocalFileSourceConfig, load_run_config
+    from easydesign.orchestration.local_project import project_config_path
+    from tests.agent_support import structure
+
+    service = service_for(bridge, tmp_path)
+    uploaded = service.upload("optional-seed.pdb", structure("A").encode())
+    request = CreateProject(
+        request_id=str(uuid4()),
+        title="Optional structure seed",
+        goal="Prepare this supplied structure as review-gated target evidence.",
+        input_id=uploaded["id"],
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+    root = service.context.projects_root / accepted["project"]
+    loaded = service.gateway.project_path(accepted["project"])
+    assert loaded == root
+    configured = load_run_config(project_config_path(root))
+    assert isinstance(configured.config.target.source, LocalFileSourceConfig)
+    assert configured.source_path is not None
+    assert configured.source_path.read_bytes() == structure("A").encode()
+    # The scripted model intentionally refuses inference; the input boundary itself succeeded.
+    assert service.request(request.request_id)["result"]["code"] == "AssertionError"
+
+
+def test_goal_bootstrap_intent_is_structured_non_authority_and_replayed(tmp_path):
+    from langchain_core.messages import AIMessage
+
+    from easydesign.agent.bootstrap import resolve_goal_target
+    from easydesign.agent.session_store import SessionStore
+
+    class IntentModel:
+        calls = 0
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "intent-call",
+                        "name": "GoalTargetIntent",
+                        "args": {
+                            "target_label": "NK2R",
+                            "uniprot_query": "TACR2",
+                            "organism": "Homo sapiens",
+                            "taxon_id": 9606,
+                            "interpretation": "NK2R is interpreted as tachykinin receptor 2.",
+                            "limitations": [
+                                "Human is an explicit discovery assumption pending source review."
+                            ],
+                        },
+                    }
+                ],
+            )
+
+    config = scripted_config()
+    project_root = tmp_path / "bootstrap-project"
+    project_root.mkdir()
+    store = SessionStore(project_root)
+    model = IntentModel()
+    try:
+        thread = "goal-first-thread"
+        goal = "Please design an inhibitory nanobody against NK2R."
+        store.thread(thread, fingerprint(config), goal)
+        first = asyncio.run(
+            resolve_goal_target(
+                store=store,
+                thread=thread,
+                goal=goal,
+                model=model,
+                config=config,
+            )
+        )
+        second = asyncio.run(
+            resolve_goal_target(
+                store=store,
+                thread=thread,
+                goal=goal,
+                model=model,
+                config=config,
+            )
+        )
+        assert first == second
+        assert first.uniprot_query == "TACR2" and first.taxon_id == 9606
+        assert model.calls == 1
+        event = next(e for e in store.events(thread) if e["kind"] == "goal-target-intent")
+        assert event["payload"]["authority"] == "discovery-input-only"
+    finally:
+        store.close()
+
+
+def test_cli_start_accepts_goal_only_and_keeps_optional_structure_path(tmp_path, monkeypatch):
+    from easydesign.agent import bootstrap, cli
+    from easydesign.agent.bootstrap import GoalTargetIntent
+    from easydesign.orchestration.config import (
+        LocalFileSourceConfig,
+        UniProtSearchSourceConfig,
+        load_run_config,
+    )
+    from easydesign.orchestration.local_project import project_config_path
+    from tests.agent_support import structure
+
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        'schema_version: "0.1"\nworkspace_id: goal-first-cli-test\n'
+    )
+    monkeypatch.setenv("EASYDESIGN_WORKSPACE", str(tmp_path))
+    context = WorkspaceContext.from_root(tmp_path)
+    context.ensure_layout()
+    models = tmp_path / "models.json"
+    models.write_text(json.dumps(scripted_config().model_dump(mode="json")))
+
+    async def resolve(**_kwargs):
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Provisional discovery input for NK2R.",
+            limitations=["Identity remains subject to native Stage 01 review."],
+        )
+
+    async def drive(_args, bridge, _config, _goal, **_kwargs):
+        bridge.validate_project()
+        return 0
+
+    monkeypatch.setattr(bootstrap, "resolve_goal_target", resolve)
+    monkeypatch.setattr(cli, "_drive", drive)
+    monkeypatch.setattr(
+        "easydesign.agent.models.create_models", lambda *_args, **_kwargs: {"target": object()}
+    )
+    goal = "Please design an inhibitory nanobody against NK2R."
+    assert cli.main(["start", "goal-only", "--models", str(models), "--goal", goal]) == 0
+    goal_source = load_run_config(
+        project_config_path(context.projects_root / "goal-only")
+    ).config.target.source
+    assert isinstance(goal_source, UniProtSearchSourceConfig)
+    assert goal_source.query == "TACR2" and goal_source.organism_taxon_id == 9606
+
+    target = context.runtime_root / "tmp/optional-seed.pdb"
+    target.write_text(structure("A"))
+    assert (
+        cli.main(
+            [
+                "start",
+                "optional-seed",
+                "--models",
+                str(models),
+                "--goal",
+                goal,
+                "--target",
+                str(target),
+            ]
+        )
+        == 0
+    )
+    local_source = load_run_config(
+        project_config_path(context.projects_root / "optional-seed")
+    ).config.target.source
+    assert isinstance(local_source, LocalFileSourceConfig)
+
+
+def test_remote_target_source_enters_existing_phase34_runtime(bridge, tmp_path):
+    from easydesign.agent.phase34_runtime import Phase34Runtime
+    from easydesign.agent.session_store import SessionStore
+    from easydesign.agent.target_identity import CanonicalProposal, propose_canonical
+    from easydesign.orchestration.research import initialize_research_project
+
+    service = service_for(bridge, tmp_path)
+    root = service.context.projects_root / "goal-first-remote"
+    initialize_research_project(
+        project_root=root,
+        uniprot_query="TACR2",
+        taxon_id=9606,
+    )
+    store = SessionStore(root)
+    try:
+        config = scripted_config()
+        thread = "remote-target-thread"
+        store.thread(thread, fingerprint(config), "Design an inhibitory NK2R nanobody")
+        runtime = Phase34Runtime(root, thread, store, through="handoff")
+        loaded = runtime.validate_project()
+        assert loaded.source_path is None
+        assert runtime.binding()["source_identity"]
+        assert runtime.target_submission_evidence()["status"] == "not-prepared"
+        before = runtime.binding()
+        proposal = propose_canonical(
+            runtime,
+            CanonicalProposal(
+                uniprot_card_id="observed-uniprot-card",
+                reason="Use native Stage 01 selection for this remote source.",
+            ),
+        )
+        assert proposal["status"] == "native-source-configured"
+        assert proposal["authority"].startswith("Discovery configuration only")
+        assert runtime.binding() == before
+        assert not runtime._jobs()
+    finally:
+        store.close()
+
+
+def test_corrupt_project_cannot_hide_other_projects(site_bridge, tmp_path):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic project listing")
+    service = service_for(b, tmp_path)
+    broken = service.context.projects_root / "corrupt-project"
+    (broken / "metadata").mkdir(parents=True)
+    (broken / "PROJECT.yaml").write_text("synthetic: true\n")
+    database = broken / "metadata/agent.sqlite"
+    database.write_bytes(b"Deliberately invalid fixture database")
+    items = {p["id"]: p for p in service.projects()["items"]}
+    assert items["corrupt-project"]["status"] == "unavailable"
+    assert items["target-test"]["status"] == "awaiting_scientist"
+    assert database.read_bytes() == b"Deliberately invalid fixture database"
+
+
+@contextmanager
+def http_api(service):
+    server = ProductServer(service, port=0, token="test-product-access")
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with httpx.Client(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            headers={"Authorization": "Bearer test-product-access"},
+            timeout=60,
+        ) as client:
+            yield client
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def prime(bridge, goal):
+    config = scripted_config()
+    # Fixture helpers predate Harness config binding; bind the synthetic test thread
+    # before entering the real graph. Never applied to a production project.
+    with bridge.store.db:
+        bridge.store.db.execute(
+            "UPDATE threads SET fingerprint=?,goal=? WHERE id=?",
+            (fingerprint(config), goal, bridge.thread),
+        )
+    return asyncio.run(run_session(bridge, config, {r: NoInference(role=r) for r in ROLES}, goal))
+
+
+@pytest.mark.parametrize("rank", ["B", "C"])
+def test_http_ranked_choice_idempotency_reload_and_native_downstream(site_bridge, tmp_path, rank):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    result = prime(b, "Synthetic ranked Site decision")
+    assert result["status"] == "awaiting-human-approval"
+    service = service_for(b, tmp_path)
+    with http_api(service) as client:
+        url = "/api/v1/projects/target-test"
+        before = len(b.store.events(b.thread))
+        snapshot = client.get(url + "/workbench")
+        assert snapshot.status_code == 200, snapshot.text
+        value = snapshot.json()
+        WorkbenchProjection.model_validate(value)
+        assert value["decision"]["gate"] == 2
+        assert len(b.store.events(b.thread)) == before
+        chosen = next(o for o in value["decision"]["options"] if o["rank"] == rank)
+        assert "approve" in chosen["actions"] and "override" not in chosen["actions"]
+        payload = dict(
+            request_id=str(uuid4()),
+            revision=value["revision"],
+            action="approve",
+            card_id=value["decision"]["id"],
+            selected_option_id=chosen["option_id"],
+        )
+        response = client.post(url + "/actions", json=payload)
+        assert response.status_code == 202, response.text
+        assert client.post(url + "/actions", json=payload).json()["id"] == response.json()["id"]
+        assert (
+            client.post(url + "/actions", json={**payload, "action": "reject"}).status_code == 409
+        )
+        service.run(payload["request_id"])
+        status = service.request(payload["request_id"])
+        assert status["state"] == "succeeded", status
+        approved = b.approved_site()
+        assert approved["hotspots"]["hotspot_sets"][0]["label_seq_ids"] == chosen["design_labels"]
+        assert (
+            client.post(url + "/actions", json={**payload, "request_id": str(uuid4())}).status_code
+            == 409
+        )
+        refreshed = service_for(b, tmp_path).snapshot("target-test")
+        assert refreshed["decision"] is None
+        assert not any(
+            task.get("phase") == "site" and task.get("status") == "running"
+            for task in refreshed["tasks"]
+            if task.get("type") == "job.awaiting-human-approval"
+        )
+        chosen_view = refreshed["scientific_context"]["approved_site"]
+        assert chosen_view["selected_rank"] == rank
+        assert chosen_view["selected_candidate_id"] == chosen["option_id"]
+        assert (
+            chosen_view["hotspots"]["hotspot_sets"][0]["label_seq_ids"] == chosen["design_labels"]
+        )
+        assert len([e for e in b.store.events(b.thread) if e["kind"] == "human-response"]) == 1
+
+
+def test_http_auth_origin_and_artifact_integrity(bridge, tmp_path):
+    from easydesign.core import ArtifactRef
+
+    service = service_for(bridge, tmp_path)
+    path = tmp_path / "runtime/tmp/declared.pdb"
+    path.write_text("MODEL\nEND\n")
+    ref = ArtifactRef.from_file(
+        run_root=path.parent,
+        relative_path=path.name,
+        artifact_id="declared",
+        role="test",
+        file_format="pdb",
+    )
+    declared = service.catalog.register(
+        project="target-test",
+        evidence="fixture",
+        root=path.parent,
+        ref=ref,
+        label="Declared structure",
+    )
+    with http_api(service) as client:
+        assert client.get("/api/v1/health", headers={"Authorization": ""}).status_code == 401
+        assert (
+            client.get("/api/v1/health", headers={"Origin": "https://evil.example"}).status_code
+            == 403
+        )
+        assert client.get("/api/v1/health", headers={"Host": "evil.example"}).status_code == 403
+        assert client.get(declared.url).text == path.read_text()
+        assert client.get("/api/v1/artifacts/" + "a" * 64).status_code == 404
+        assert client.get("/api/v1/artifacts/%2e%2e/config.yaml").status_code == 403
+        session = client.post("/api/v1/session", json={"token": "test-product-access"})
+        assert session.status_code == 200
+        assert (
+            "HttpOnly" in session.headers["set-cookie"]
+            and "SameSite=Strict" in session.headers["set-cookie"]
+        )
+        assert (
+            client.post("/api/v1/projects", json={}, headers={"Authorization": ""}).status_code
+            == 403
+        )
+        path.write_text("CHANGED\n")
+        assert client.get(declared.url).json()["error"]["code"] == "integrity_error"
+        path.unlink()
+        path.symlink_to(tmp_path / "models.yaml")
+        assert client.get(declared.url).status_code == 409
+
+
+def test_events_forward_pagination_and_private_reasoning(bridge):
+    bridge.store.thread(bridge.thread, "test", "Synthetic activity")
+    for index in range(65):
+        bridge.store.event(
+            bridge.thread,
+            "specialist.completed",
+            {"role": "target", "reasoning_content": "private", "index": index},
+        )
+    session = DomainSession("target-test", bridge, "Synthetic activity")
+    first = activity(session, 0, 20)
+    second = activity(session, first[-1]["id"], 20)
+    assert second[0]["id"] == first[-1]["id"] + 1
+    assert len(first) == len(second) == 20
+    assert "private" not in json.dumps(first)
+
+
+def test_activity_projection_is_meaningful_bounded_and_task_stable(bridge):
+    bridge.store.thread(bridge.thread, "test", "Synthetic live progress")
+    before = bridge.store.db.execute(
+        "SELECT COALESCE(MAX(seq),0) FROM events WHERE thread=?", (bridge.thread,)
+    ).fetchone()[0]
+    events = (
+        (
+            "runtime-dispatch",
+            {
+                "execution_id": "execution-site",
+                "action_id": "action-site",
+                "tool": "task",
+                "specialist": "site",
+                "stage": "site-not-proposed",
+                "binding": {"private": "/data/secret"},
+            },
+        ),
+        (
+            "model-call",
+            {
+                "execution_id": "execution-site",
+                "role": "site",
+                "reasoning_content": "private chain of thought",
+            },
+        ),
+        (
+            "model-response",
+            {
+                "execution_id": "execution-site",
+                "role": "site",
+                "responses": [{"raw": "private provider response"}],
+            },
+        ),
+        (
+            "tool",
+            {
+                "execution_id": "execution-site",
+                "role": "site",
+                "name": "evaluate_candidate_site",
+                "status": "success",
+                "raw_result": "private tool output",
+            },
+        ),
+        (
+            "runtime-action-timing",
+            {
+                "execution_id": "execution-site",
+                "action_id": "action-site",
+                "tool": "task",
+                "stage": "site-not-proposed",
+                "status": "completed",
+            },
+        ),
+        ("judge-assessment", {"assessment_id": "review-1", "verdict": "DISCOURAGED"}),
+        ("site-proposal", {"proposal_id": "proposal-1", "run_root": "/data/secret"}),
+        ("human-response", {"card": "card-1", "response": "approve"}),
+        ("agent-terminal", {"status": "finished"}),
+    )
+    for kind, payload in events:
+        bridge.store.event(bridge.thread, kind, payload)
+
+    projected = activity_rows(bridge.store, bridge.thread, after=before, limit=50)
+    by_type = {item["type"]: item for item in projected}
+    started = by_type["runtime.started"]
+    completed = by_type["runtime.completed"]
+    assert started["task_id"] == completed["task_id"]
+    assert started["summary"] == "Comparing mechanism-linked Sites and exact hotspot candidates."
+    assert completed["status"] == "completed" and not completed["visible"]
+    assert by_type["specialist.completed"]["summary"].startswith(
+        "A structured response was received"
+    )
+    assert by_type["tool.completed"]["status"] == "completed"
+    assert "DISCOURAGED" in by_type["judge.review.ready"]["summary"]
+    assert by_type["site.proposal.ready"]["phase"] == "site"
+    assert by_type["gate.resolved"]["summary"].startswith("The Scientist approved")
+    assert by_type["agent.finished"]["status"] == "finished"
+    hidden_tool = {
+        "id": 999,
+        "type": "tool.completed",
+        "task_id": "tool-execution-read_file",
+        "title": "Read File",
+        "visible": False,
+    }
+    assert hidden_tool not in activity_tasks([*projected, hidden_tool])
+    public = json.dumps(projected)
+    assert "private" not in public and "/data/secret" not in public
+
+
+def test_declared_artifacts_reject_parent_component_symlinks_and_changed_manifest(tmp_path):
+    from easydesign.core import ArtifactRef
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+    folder = root / "evidence"
+    folder.mkdir()
+    path = folder / "model.pdb"
+    path.write_bytes(b"ATOMS")
+    ref = ArtifactRef.from_file(
+        run_root=root,
+        relative_path="evidence/model.pdb",
+        artifact_id="model",
+        role="test",
+        file_format="pdb",
+    )
+    catalog = ArtifactCatalog(root, tmp_path / "catalog")
+    token = catalog.register(project="p", evidence="e", root=root, ref=ref, label="test").id
+    assert catalog.read(token)[0] == b"ATOMS"
+    folder.rename(root / "moved")
+    folder.symlink_to(root / "moved", target_is_directory=True)
+    with pytest.raises(ProductError, match="unavailable"):
+        catalog.read(token)
+    for relative in ("../escape", "/etc/passwd", "a\\b", "a\x00b"):
+        with pytest.raises(ProductError):
+            confined_bytes(root, relative)
+    manifest = catalog.root / (token + ".json")
+    manifest.write_text("{}")
+    with pytest.raises(ProductError, match="declaration changed"):
+        catalog.read(token)
+
+
+def test_atomic_immutable_registration_under_concurrency(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    path = tmp_path / "record.json"
+    value = {"data": "x" * 100000}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda _: immutable_json(path, value), range(40)))
+    assert json.loads(path.read_bytes()) == value
+    with pytest.raises(ProductError):
+        immutable_json(path, {"changed": True})
+
+
+def test_worker_interruption_journal_survives_service_restart(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    request_id = str(uuid4())
+    j = service.journal()
+    j.reserve("target-test", dict(request_id=request_id, operation="test"))
+    j.db.execute("UPDATE requests SET updated=0 WHERE id=?", (request_id,))
+    j.db.commit()
+    j.close()
+    restarted = service_for(bridge, tmp_path)
+    assert restarted.request(request_id)["state"] == "interrupted"
+    launched = []
+    restarted.launcher = launched.append
+    assert restarted.retry(request_id)["state"] == "accepted"
+    assert launched == [request_id]
+
+
+def test_frozen_pilot_query_is_read_only(design_bridge, tmp_path):
+    from easydesign.agent.phase34_runtime import Phase34Runtime
+    from tests.unit.agent.test_design_runtime import design_card, propose_design
+
+    b = design_bridge
+    propose_design(b)
+    card = design_card(b)
+    b.store.respond(b.thread, card.card_id, "approve", "synthetic-scientist")
+    b.apply_decision(card)
+    b = Phase34Runtime(b.project, b.thread, b.store)
+    before = len(b.store.events(b.thread))
+    before_cards = b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0]
+    service = service_for(b, tmp_path)
+    b.store.thread(b.thread, fingerprint(scripted_config()), "Synthetic plan review")
+    before = len(b.store.events(b.thread))
+    with service.gateway.session("target-test") as session:
+        view = workbench(session, service.catalog)
+    assert view.decision["gate"] == 3
+    assert view.decision["summary"]["pilot_scope"]["planned_candidates"] == 280
+    assert len(b.store.events(b.thread)) == before
+    assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == before_cards
+    WorkbenchProjection.model_validate_json(view.model_dump_json())
+
+
+@pytest.mark.parametrize("action_name", ["approve", "reject"])
+def test_interrupted_gate_request_recovers_native_response_exactly_once(
+    site_bridge, tmp_path, monkeypatch, action_name
+):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic recovery")
+    service = service_for(b, tmp_path)
+    view = service.snapshot("target-test")
+    chosen = view["decision"]["options"][1]
+    action = ActionRequest(
+        request_id=str(uuid4()),
+        revision=view["revision"],
+        action=action_name,
+        card_id=view["decision"]["id"],
+        selected_option_id=chosen["option_id"],
+    )
+    service.submit("target-test", action)
+    original = NativeGateway.session
+
+    @contextmanager
+    def crashing_session(self, *args, **kwargs):
+        with original(self, *args, **kwargs) as session:
+
+            def crash(name):
+                if name == "after_response_intent":
+                    raise SystemExit("Synthetic process death")
+
+            session.bridge.failpoint = crash
+            yield session
+
+    monkeypatch.setattr(NativeGateway, "session", crashing_session)
+    with pytest.raises(SystemExit):
+        service.run(action.request_id)
+    assert b.store.response(b.thread, action.card_id) is not None
+    assert b.approved_site() is None
+    monkeypatch.setattr(NativeGateway, "session", original)
+    j = service.journal()
+    j.db.execute("UPDATE requests SET updated=0 WHERE id=?", (action.request_id,))
+    j.db.commit()
+    j.close()
+    restarted = service_for(b, tmp_path)
+    assert restarted.request(action.request_id)["state"] == "interrupted"
+    restarted.retry(action.request_id)
+    restarted.run(action.request_id)
+    assert restarted.request(action.request_id)["state"] == "succeeded"
+    if action_name == "approve":
+        assert (
+            b.approved_site()["hotspots"]["hotspot_sets"][0]["label_seq_ids"]
+            == chosen["design_labels"]
+        )
+    else:
+        assert b.approved_site() is None
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "human-response"]) == 1
+
+
+def test_gate1_real_http_approval_and_reload(bridge, tmp_path):
+    config = scripted_config()
+    models = {r: ScriptedModel(role=r) for r in ROLES}
+    result = asyncio.run(run_session(bridge, config, models, "Synthetic target approval"))
+    assert result["card"]["gate_type"] == "target-structure"
+    service = service_for(bridge, tmp_path)
+    service.gateway.model_factory = lambda *a, **k: models
+    with http_api(service) as client:
+        snapshot = client.get("/api/v1/projects/target-test/workbench")
+        assert snapshot.status_code == 200, snapshot.text
+        value = snapshot.json()
+        assert value["decision"]["gate"] == 1
+        assert "approve" in value["decision"]["options"][0]["actions"]
+        payload = dict(
+            request_id=str(uuid4()),
+            revision=value["revision"],
+            action="approve",
+            card_id=value["decision"]["id"],
+        )
+        response = client.post("/api/v1/projects/target-test/actions", json=payload)
+        assert response.status_code == 202, response.text
+        service.run(payload["request_id"])
+        status = service.request(payload["request_id"])
+        assert status["state"] == "succeeded", status
+        assert bridge.read_evidence()["request_identity"] is None
+
+
+def test_native_candidate_product_projection_preserves_fail_and_missing(tmp_path):
+    from types import SimpleNamespace
+
+    from easydesign.product.projection import candidate_view
+    from tests.unit.agent.test_phase4_native import native_fixture, observations, pool_for
+
+    measured, campaign, _, _ = native_fixture(tmp_path)
+    rows = observations(tmp_path, measured, campaign)
+    pool = pool_for(campaign, rows)
+    session = SimpleNamespace(
+        project="synthetic", bridge=SimpleNamespace(run=lambda _: (tmp_path, None))
+    )
+    catalog = ArtifactCatalog(tmp_path, tmp_path / "catalog")
+    values = [candidate_view(session, c, pool, {}, catalog) for c in rows]
+    assert len([v for v in values if v.native_status == "pass"]) == 3
+    failed = next(v for v in values if v.native_status == "fail")
+    assert failed.evaluable and not failed.competition_eligible
+    assert failed.independent_prediction == "not-requested"
+    assert all(m.value is not None for m in failed.metrics if m.status == "available")
+    incomplete = rows[0].model_copy(
+        update={
+            "validity": "operational-failed",
+            "native_evidence": None,
+            "competition_eligible": False,
+            "failure_reason": "Missing native outputs",
+        }
+    )
+    value = candidate_view(session, incomplete, pool, {}, catalog)
+    assert not value.evaluable and not value.competition_eligible
+    assert value.native_status == "not-available"
+
+
+def test_gate3_decision_is_bound_to_current_pilot_plan(design_bridge, tmp_path):
+    from easydesign.agent.phase34_runtime import Phase34Runtime
+    from tests.unit.agent.test_phase34_authority import prepared
+
+    original, _, _ = prepared(design_bridge)
+    b = Phase34Runtime(original.project, original.thread, original.store, through="handoff")
+    config = scripted_config()
+    goal = "Synthetic Gate3 rejection; no generation"
+    b.store.thread(b.thread, fingerprint(config), goal)
+    result = prime(b, goal)
+    assert result["card"]["gate_type"] == "design-specification"
+    card = DecisionCard.model_validate(result["card"])
+    discouraged = decision_view(card.model_copy(update={"judge_status": "DISCOURAGED"}))
+    assert "approve" in discouraged["options"][0]["actions"]
+    assert "override" not in discouraged["options"][0]["actions"]
+    blocked = decision_view(card.model_copy(update={"judge_status": "BLOCKED"}))
+    assert "approve" not in blocked["options"][0]["actions"]
+    assert "override" not in blocked["options"][0]["actions"]
+    service = service_for(b, tmp_path)
+    with http_api(service) as client:
+        snapshot = client.get("/api/v1/projects/target-test/workbench").json()
+        assert snapshot["decision"]["gate"] == 3
+        assert "approve" in snapshot["decision"]["options"][0]["actions"]
+        assert snapshot["decision"]["summary"]["pilot_scope"]["planned_candidates"] == 280
+        req = dict(
+            request_id=str(uuid4()),
+            revision=snapshot["revision"],
+            action="reject",
+            card_id=snapshot["decision"]["id"],
+        )
+        assert client.post("/api/v1/projects/target-test/actions", json=req).status_code == 202
+        service.run(req["request_id"])
+        assert service.request(req["request_id"])["state"] == "succeeded"
+        assert b.pilot_authority() is None
+        assert not any(j.step >= 4 for j in b.controller.list(project_id=b.project_id))
+
+
+def test_review_capacity_keeps_full_evidence_and_bounded_display(tmp_path):
+    from easydesign.product.preview import excerpt
+
+    raw = {
+        "pilot_scope": {"planned_candidates": 6000},
+        "candidate_rankings": [
+            {"id": f"candidate-{i}", "rationale": "Synthetic evidence " * 100} for i in range(200)
+        ],
+    }
+    display = excerpt(raw)
+    assert len(json.dumps(display)) < 16000
+    assert display["pilot_scope"]["planned_candidates"] == 6000
+    catalog = ArtifactCatalog(tmp_path, tmp_path / "product/artifacts")
+    view = catalog.document("project", "gate-identity", raw, "Full review")
+    assert json.loads(catalog.read(view.id)[0]) == raw
+
+
+def test_questions_at_gate_persist_without_approving_or_resuming(site_bridge, tmp_path):
+    from langchain_core.messages import AIMessage
+
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic conversational review")
+    service = service_for(b, tmp_path)
+    calls = []
+
+    class Explainer:
+        async def ainvoke(self, inputs):
+            calls.append(inputs)
+            return AIMessage(
+                content=(
+                    "Site B is an alternative. Its risks remain uncertain; "
+                    "your Gate decision is still pending."
+                )
+            )
+
+    service.gateway.model_factory = lambda *a, **k: {"coordinator": Explainer()}
+    before = b.store.events(b.thread)
+    with http_api(service) as client:
+        base = "/api/v1/projects/target-test"
+        view = client.get(base + "/workbench").json()
+        assert view["capabilities"]["message"] and view["capabilities"]["decide"]
+        question = dict(
+            request_id=str(uuid4()),
+            revision=view["revision"],
+            action="message",
+            instruction="Why choose Site B? Do not approve yet.",
+            viewed_phase="site",
+        )
+        first = client.post(base + "/actions", json=question)
+        assert first.status_code == 202, first.text
+        assert client.post(base + "/actions", json=question).json()["id"] == first.json()["id"]
+        running = client.get(base + "/workbench").json()
+        assert running["capabilities"]["decide"]  # asking does not lock the Scientist Gate
+        assert not running["capabilities"]["message"]
+        service.run(question["request_id"])
+        result = client.get("/api/v1/requests/" + question["request_id"]).json()
+        assert result["state"] == "succeeded", result
+        after = client.get(base + "/workbench").json()
+        assert after["revision"] == view["revision"]
+        assert after["decision"] == view["decision"]
+        assert b.store.events(b.thread) == before
+        assert len(calls) == 1
+        assert "tool" not in json.dumps(calls[0][-1])
+        assert after["conversation"][-2]["text"] == question["instruction"]
+        assert "Site B" in after["conversation"][-1]["text"]
+        restarted = service_for(b, tmp_path)
+        assert restarted.snapshot("target-test")["conversation"] == after["conversation"]
+
+
+def test_failed_question_keeps_draft_and_retry_without_scientific_execution(site_bridge, tmp_path):
+    from langchain_core.messages import AIMessage
+
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic failed answer")
+    service = service_for(b, tmp_path)
+    before = b.store.events(b.thread)
+    view = service.snapshot("target-test")
+    request = ActionRequest(
+        request_id=str(uuid4()),
+        revision=view["revision"],
+        action="message",
+        instruction="Explain the remaining uncertainties.",
+        viewed_phase="site",
+    )
+    service.submit("target-test", request)
+    service.run(request.request_id)  # NoInference raises, rather than silently fabricating a reply.
+    assert service.request(request.request_id)["state"] == "failed"
+    assert (
+        service.snapshot("target-test")["conversation"][-1]["retry_request_id"]
+        == request.request_id
+    )
+
+    class Explainer:
+        async def ainvoke(self, inputs):
+            return AIMessage(content="The evidence is incomplete; this is a relative ranking.")
+
+    service.gateway.model_factory = lambda *a, **k: {"coordinator": Explainer()}
+    service.retry(request.request_id)
+    service.run(request.request_id)
+    assert service.request(request.request_id)["state"] == "succeeded"
+    assert b.store.events(b.thread) == before
+    assert (
+        len(
+            [
+                m
+                for m in service.snapshot("target-test")["conversation"]
+                if m["kind"] == "user" and m["text"] == request.instruction
+            ]
+        )
+        == 1
+    )
+
+
+def test_conversation_retry_respects_active_lane_and_does_not_lock_gate(tmp_path):
+    from easydesign.product.journal import RequestJournal
+
+    journal = RequestJournal(tmp_path / "requests.sqlite")
+    try:
+        failed = {"request_id": "failed-question", "operation": "conversation"}
+        journal.reserve("project", failed)
+        journal.update("failed-question", "failed", {"message": "Provider unavailable"})
+        journal.reserve("project", {"request_id": "other-question", "operation": "conversation"})
+        # Native actions and observational questions have separate concurrency lanes.
+        journal.reserve("project", {"request_id": "gate-decision", "operation": "action"})
+        with pytest.raises(ProductError, match="active"):
+            journal.retry("failed-question")
+        journal.update("other-question", "succeeded", {"answer": "Saved explanation"})
+        assert journal.retry("failed-question")
+        assert not journal.retry("failed-question")
+        assert journal.get("gate-decision")["state"] == "accepted"
+    finally:
+        journal.close()
+
+
+def test_project_rename_persists_without_changing_scientific_authority(site_bridge, tmp_path):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic project rename")
+    service = service_for(b, tmp_path)
+    before = service.snapshot("target-test")
+    events = b.store.events(b.thread)
+    with http_api(service) as client:
+        url = "/api/v1/projects/target-test/title"
+        assert client.post(url, json={"title": "   "}).status_code == 400
+        assert client.post(url, json={"title": "Case B", "approve": True}).status_code == 400
+        for _ in range(2):
+            response = client.post(url, json={"title": "  NK2R — Site B  "})
+            assert response.status_code == 200, response.text
+            assert response.json()["title"] == "NK2R — Site B"
+    after = service_for(b, tmp_path).snapshot("target-test")
+    assert after["project"]["title"] == "NK2R — Site B"
+    assert after["revision"] == before["revision"]
+    assert after["decision"] == before["decision"]
+    assert b.store.events(b.thread) == events

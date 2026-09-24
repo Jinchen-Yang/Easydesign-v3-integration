@@ -1,0 +1,21 @@
+$ playwright test e2e/context-links.spec.ts --workers=2
+
+Running 3 tests using 2 workers
+
+(node:64674) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:64673) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:64674) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:64673) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-1440] › e2e/context-links.spec.ts:3:1 › scientific context links reveal, focus and scroll the panel on desktop and narrow screens (6.6s)
+  ✓  2 [desktop-1366] › e2e/context-links.spec.ts:3:1 › scientific context links reveal, focus and scroll the panel on desktop and narrow screens (6.8s)
+(node:64711) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:64711) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 [desktop-1728] › e2e/context-links.spec.ts:3:1 › scientific context links reveal, focus and scroll the panel on desktop and narrow screens (6.8s)
+
+  3 passed (14.2s)

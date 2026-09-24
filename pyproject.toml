@@ -28,6 +28,7 @@ dependencies = [
 [project.scripts]
 easydesign = "easydesign.cli:main"
 easydesign-agent = "easydesign.agent.cli:main"
+easydesign-workbench = "easydesign.product.server:main"
 
 [project.optional-dependencies]
 agent = [

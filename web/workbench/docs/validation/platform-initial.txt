@@ -1,0 +1,104 @@
+$ playwright test --project=desktop-1440 --workers=2
+[2m[WebServer] [22m(node:26454) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m[2m$ vite --host 127.0.0.1 --port 13180 --strictPort[22m
+[2m[WebServer] [22m(node:26470) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 8 tests using 2 workers
+
+(node:26483) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26482) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26483) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26482) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-1440] › e2e/context-links.spec.ts:3:1 › scientific context links reveal, focus and scroll the panel on desktop and narrow screens (6.7s)
+  ✓  3 [desktop-1440] › e2e/platform.spec.ts:26:1 › three English destinations, empty states, browser history and narrow navigation (1.9s)
+  ✓  2 [desktop-1440] › e2e/journey.spec.ts:35:1 › entire product journey, structure interactions, explicit approvals, completion and replay (9.3s)
+  ✓  5 [desktop-1440] › e2e/journey.spec.ts:151:1 › refresh mid-animation, follow-up goal preservation and corrupted storage recovery (3.5s)
+  ✓  6 [desktop-1440] › e2e/journey.spec.ts:175:1 › viewer failure cannot block completion (1.3s)
+  ✓  7 [desktop-1440] › e2e/journey.spec.ts:193:1 › keyboard dialog focus, linked context and reversible design revision (2.8s)
+  ✘  4 [desktop-1440] › e2e/platform.spec.ts:64:1 › project center creates, searches, renames and switches independent workspaces (12.3s)
+(node:26641) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26641) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  8 [desktop-1440] › e2e/platform.spec.ts:132:1 › compute page reflects approved demo runs, filters and returns to the correct project (13.1s)
+
+
+  1) [desktop-1440] › e2e/platform.spec.ts:64:1 › project center creates, searches, renames and switches independent workspaces 
+
+    Error: [31mTimed out 12000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('button', { name: 'Approve target', exact: true })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - expect.toBeVisible with timeout 12000ms[22m
+    [2m  - waiting for getByRole('button', { name: 'Approve target', exact: true })[22m
+
+
+      14 |   await page.getByLabel('Your research goal').fill(goal);
+      15 |   await page.getByRole('button', { name: 'Start design', exact: true }).click();
+    > 16 |   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
+         |                                                                                   ^
+      17 | }
+      18 | async function advance(page: Page, name: string, next: string) {
+      19 |   await page.getByRole('button', { name, exact: true }).click();
+        at create (/Users/knitua/Documents/Easy Design/ui-prototype-20260913/ui-workbench/e2e/platform.spec.ts:16:83)
+        at /Users/knitua/Documents/Easy Design/ui-prototype-20260913/ui-workbench/e2e/platform.spec.ts:73:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/platform-project-center-cr-9cc4a-ches-independent-workspaces-desktop-1440/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/platform-project-center-cr-9cc4a-ches-independent-workspaces-desktop-1440/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/platform-project-center-cr-9cc4a-ches-independent-workspaces-desktop-1440/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [desktop-1440] › e2e/platform.spec.ts:132:1 › compute page reflects approved demo runs, filters and returns to the correct project 
+
+    Error: [31mTimed out 12000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('button', { name: 'Approve target', exact: true })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - expect.toBeVisible with timeout 12000ms[22m
+    [2m  - waiting for getByRole('button', { name: 'Approve target', exact: true })[22m
+
+
+      14 |   await page.getByLabel('Your research goal').fill(goal);
+      15 |   await page.getByRole('button', { name: 'Start design', exact: true }).click();
+    > 16 |   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
+         |                                                                                   ^
+      17 | }
+      18 | async function advance(page: Page, name: string, next: string) {
+      19 |   await page.getByRole('button', { name, exact: true }).click();
+        at create (/Users/knitua/Documents/Easy Design/ui-prototype-20260913/ui-workbench/e2e/platform.spec.ts:16:83)
+        at /Users/knitua/Documents/Easy Design/ui-prototype-20260913/ui-workbench/e2e/platform.spec.ts:136:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/platform-compute-page-refl-25bb3-urns-to-the-correct-project-desktop-1440/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/platform-compute-page-refl-25bb3-urns-to-the-correct-project-desktop-1440/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/platform-compute-page-refl-25bb3-urns-to-the-correct-project-desktop-1440/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [desktop-1440] › e2e/platform.spec.ts:64:1 › project center creates, searches, renames and switches independent workspaces 
+    [desktop-1440] › e2e/platform.spec.ts:132:1 › compute page reflects approved demo runs, filters and returns to the correct project 
+  6 passed (35.3s)
+[ELIFECYCLE] Command failed with exit code 1.

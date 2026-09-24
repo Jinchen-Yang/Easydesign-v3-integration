@@ -1,0 +1,54 @@
+$ tsc -b && vite build
+vite v6.1.0 building for production...
+transforming...
+✓ 1604 modules transformed.
+node_modules/.pnpm/3dmol@2.4.2/node_modules/3dmol/build/3Dmol.js (27620:19): Use of eval in "node_modules/.pnpm/3dmol@2.4.2/node_modules/3dmol/build/3Dmol.js" is strongly discouraged as it poses security risks and may cause issues with minification.
+rendering chunks...
+computing gzip size...
+dist/index.html                                             0.65 kB │ gzip:   0.39 kB
+dist/assets/inter-vietnamese-400-normal-DMkecbls.woff2      4.97 kB
+dist/assets/inter-vietnamese-600-normal-Cc8MFFhd.woff2      5.10 kB
+dist/assets/inter-vietnamese-500-normal-DOriooB6.woff2      5.11 kB
+dist/assets/inter-greek-ext-400-normal-Bput3-QP.woff2       5.23 kB
+dist/assets/inter-greek-ext-500-normal-B6guLgqG.woff2       5.40 kB
+dist/assets/inter-greek-ext-600-normal-Cnui8OiR.woff2       5.43 kB
+dist/assets/inter-vietnamese-400-normal-BUNmGMP1.woff       6.68 kB
+dist/assets/inter-vietnamese-500-normal-DQPw2Hwd.woff       6.77 kB
+dist/assets/inter-vietnamese-600-normal-Cm6aH8_k.woff       6.83 kB
+dist/assets/inter-greek-ext-400-normal-DCpCPQOf.woff        7.14 kB
+dist/assets/inter-greek-ext-500-normal-M2hEX8vc.woff        7.27 kB
+dist/assets/inter-greek-ext-600-normal-C9WLioJ8.woff        7.30 kB
+dist/assets/inter-cyrillic-400-normal-BLGc9T1a.woff2        7.71 kB
+dist/assets/inter-greek-400-normal-DxZsaF_h.woff2           7.84 kB
+dist/assets/inter-cyrillic-500-normal-D4Vwzodn.woff2        7.90 kB
+dist/assets/inter-greek-500-normal-CeQXL5ds.woff2           7.90 kB
+dist/assets/inter-greek-600-normal-Dhlb-90d.woff2           7.96 kB
+dist/assets/inter-cyrillic-600-normal-BGBWG807.woff2        7.97 kB
+dist/assets/inter-greek-400-normal-BZzXV7-1.woff            9.96 kB
+dist/assets/inter-greek-500-normal-d_eO-yCQ.woff           10.04 kB
+dist/assets/inter-greek-600-normal-CwicyhtI.woff           10.08 kB
+dist/assets/inter-cyrillic-400-normal-ZzOtrSSW.woff        10.14 kB
+dist/assets/inter-cyrillic-ext-400-normal-Dc4VJyIJ.woff2   10.22 kB
+dist/assets/inter-cyrillic-500-normal-DH2hs3aW.woff        10.30 kB
+dist/assets/inter-cyrillic-600-normal-BuzJQFbW.woff        10.32 kB
+dist/assets/inter-cyrillic-ext-500-normal-BShVwWPj.woff2   10.44 kB
+dist/assets/inter-cyrillic-ext-600-normal-CaqZN2hq.woff2   10.46 kB
+dist/assets/inter-cyrillic-ext-400-normal-BPnxn4xp.woff    14.19 kB
+dist/assets/inter-cyrillic-ext-500-normal-CUiC4oBV.woff    14.34 kB
+dist/assets/inter-cyrillic-ext-600-normal-Bt9VVOA-.woff    14.35 kB
+dist/assets/inter-latin-400-normal-BOOGhInR.woff2          23.69 kB
+dist/assets/inter-latin-600-normal-D273HNI0.woff2          24.30 kB
+dist/assets/inter-latin-500-normal-D2bGa7uu.woff2          24.37 kB
+dist/assets/inter-latin-ext-400-normal-hnt3BR84.woff2      30.68 kB
+dist/assets/inter-latin-400-normal-gitzw0hO.woff           31.20 kB
+dist/assets/inter-latin-ext-500-normal-CIS2RHJS.woff2      31.76 kB
+dist/assets/inter-latin-500-normal-deR1Tlfd.woff           31.77 kB
+dist/assets/inter-latin-600-normal-B5cFAncS.woff           31.78 kB
+dist/assets/inter-latin-ext-600-normal-BnYJhD27.woff2      31.97 kB
+dist/assets/inter-latin-ext-400-normal-C1t-h-pH.woff       42.88 kB
+dist/assets/inter-latin-ext-500-normal-UMdmhHu2.woff       43.84 kB
+dist/assets/inter-latin-ext-600-normal-CAF0vJDd.woff       43.98 kB
+dist/assets/index-9aRmQxf_.css                             57.70 kB │ gzip:  11.76 kB
+dist/assets/index-JeF5P2bz.js                             286.10 kB │ gzip:  86.07 kB
+dist/assets/3Dmol-BaT6Uctu.js                             560.05 kB │ gzip: 162.09 kB
+✓ built in 2.04s

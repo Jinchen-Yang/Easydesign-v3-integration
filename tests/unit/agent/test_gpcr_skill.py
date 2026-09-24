@@ -28,19 +28,19 @@ def gpcr_context(bridge, monkeypatch):
     monkeypatch.setattr(bridge, "read_site_evidence", read)
 
 
-def test_site_skill_prioritizes_reachable_orthosteric_gpcr_candidate() -> None:
+def test_site_skill_requires_deep_extracellular_orthosteric_gpcr_candidate_as_a() -> None:
     research = " ".join(site_research_prompt(domain_skills=True).split())
     synthesis = " ".join(site_synthesis_prompt().split())
 
     for prompt in (research, synthesis):
-        assert "activating and inhibitory extracellular GPCR binder goals" in prompt
+        assert "activating or inhibitory extracellular GPCR binder goals" in prompt
         assert "orthosteric ligand entrance or outer vestibule" in prompt
-        assert "Peripheral ECL-only patches" in prompt
-        assert "Pocket depth alone is insufficient" in prompt
-        assert "Orthosteric engagement alone" in prompt
-    assert "default-rank first" in synthesis
-    assert "Runtime will display that first-ranked candidate as A" in synthesis
-    assert "hard-invalid rather than merely later-ranked" in synthesis
+        assert "extends deeply along the orthosteric pocket" in prompt
+        assert "must be ranked A" in prompt
+        assert "Peripheral ECL-only surface sites" in prompt
+        assert "must be ranked later" in prompt
+        assert "whole-VHH approach" not in prompt
+        assert "Pocket depth alone is insufficient" not in prompt
 
 
 def compiled_designs(bridge):

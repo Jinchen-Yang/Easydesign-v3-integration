@@ -42,19 +42,11 @@ falsifier. Do not turn exposure, contact, curated state or a high model score in
 
 Conditional GPCR branch only after verified receptor identity and family hierarchy:
 
-- For both activating and inhibitory extracellular GPCR binder goals, when the candidate set
-  contains a verified extracellular site covering the orthosteric ligand entrance or outer
-  vestibule and extending sufficiently far along the orthosteric pocket to support a direct
-  ligand-occupancy or receptor-conformation mechanism, treat it as the default provisional
-  first-ranked hypothesis if coordinate mapping is valid, surface exposure is reasonable and
-  there is no clear whole-VHH approach conflict. Peripheral ECL-only patches and other surfaces
-  without an orthosteric mechanistic connection default later. Pocket-lining ECL residues are part
-  of the orthosteric candidate, not evidence that it is merely peripheral.
-- Pocket depth alone is insufficient. Distinguish a CDR-reachable entrance/outer vestibule from
-  a narrow inner cavity that only a small molecule can enter while the VHH framework cannot
-  approach. Mapping/access conflicts, functional mismatch or stronger receptor-specific contrary
-  evidence can overturn the default, but state the reason explicitly. Orthosteric engagement alone
-  does not prove whether the binder activates or inhibits.
+- For activating or inhibitory extracellular GPCR binder goals, if A/B/C contains an extracellular
+  candidate that covers the orthosteric ligand entrance or outer vestibule and extends deeply along
+  the orthosteric pocket, that candidate must be ranked A.
+- Peripheral ECL-only surface sites that do not form the orthosteric pocket entrance or vestibule,
+  and other surface sites without an orthosteric mechanistic connection, must be ranked later.
 - Class A: distinguish extracellular pocket rim/vestibule from inaccessible lipid-facing TM
   surface; peptide receptors may require N-terminus/ECL context. Ligand binding is not function.
 - Class B1: large ECD capture and TMD activation can be different mechanisms; preserve both domains.

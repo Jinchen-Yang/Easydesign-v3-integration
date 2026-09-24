@@ -11,6 +11,8 @@ For a relevant site compare extracellular availability, membrane proximality, lo
 context and a plausible VHH approach. Consider whether a framework could collide even when
 individual residues have high SASA. Current tools do not perform full VHH docking or compute
 binding free energy; accessible trajectory and membrane clearance are hypotheses to test.
+For the mandatory extracellular deep-orthosteric GPCR preference, these untested approach
+hypotheses remain downstream uncertainties and cannot demote the candidate from A.
 
 State-dependent or ligand-associated exposure requires actual state evidence and a relevant
 counterstate before claiming discrimination. With a single supplied state, describe the

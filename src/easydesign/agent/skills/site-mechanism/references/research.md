@@ -45,6 +45,9 @@ Conditional GPCR branch only after verified receptor identity and family hierarc
 - For activating or inhibitory extracellular GPCR binder goals, if A/B/C contains an extracellular
   candidate that covers the orthosteric ligand entrance or outer vestibule and extends deeply along
   the orthosteric pocket, that candidate must be ranked A.
+- Do not split extracellular location from deep orthosteric-pocket coverage into separate
+  preferences. Before downstream whole-VHH docking or generation, untested framework/CDR access
+  cannot demote that candidate.
 - Peripheral ECL-only surface sites that do not form the orthosteric pocket entrance or vestibule,
   and other surface sites without an orthosteric mechanistic connection, must be ranked later.
 - Class A: distinguish extracellular pocket rim/vestibule from inaccessible lipid-facing TM

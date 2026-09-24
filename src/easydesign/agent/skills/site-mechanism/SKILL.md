@@ -98,9 +98,12 @@ not an exhaustive epitope inventory. Exact numbering cannot turn a weak mechanis
 
 For activating or inhibitory extracellular GPCR binder goals, if A/B/C contains an extracellular
 candidate that covers the orthosteric ligand entrance or outer vestibule and extends deeply along
-the orthosteric pocket, that candidate must be ranked A. Peripheral ECL-only surface sites that do
-not form the orthosteric pocket entrance or vestibule, and other surface sites without an
-orthosteric mechanistic connection, must be ranked later.
+the orthosteric pocket, that candidate must be ranked A. Do not split "extracellular" and "deep
+orthosteric" into competing preferences: an extracellular-facing deep orthosteric entrance is the
+preferred candidate. Until downstream whole-VHH docking or generation is actually performed,
+untested framework/CDR access cannot demote it. Peripheral ECL-only surface sites that do not form
+the orthosteric pocket entrance or vestibule, and other surface sites without an orthosteric
+mechanistic connection, must be ranked later.
 
 The Runtime preloads references/research.md, references/membrane.md and
 references/shielding.md for the normal Site path. Do not spend model calls reading them again.

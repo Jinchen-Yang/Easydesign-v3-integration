@@ -132,6 +132,69 @@ def test_runtime_compartment_block_is_removed_from_abc_but_retained_for_audit(si
     assert [entry.rank for entry in intent.portfolio] == ["A", "B", None]
 
 
+def test_extracellular_deep_orthosteric_gpcr_candidate_must_rank_a(site_bridge):
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {"status": "resolved"},
+            "membrane": {"status": "resolved", "reliable": True},
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = "Peripheral ECL-only surface"
+    shallow["research_hypothesis"]["rationale"] = (
+        "Extracellular but does not form the orthosteric entrance."
+    )
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "Deep extracellular orthosteric entrance"
+    deep["research_hypothesis"]["rationale"] = (
+        "Extends along the orthosteric outer pore; whole-VHH clearance is untested."
+    )
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
+        compile_site_decision(dossier, case["decision"])
+
+    corrected = case["decision"].model_copy(
+        update={
+            "candidates": [
+                case["decision"].candidates[1],
+                case["decision"].candidates[0],
+                *case["decision"].candidates[2:],
+            ]
+        }
+    )
+    intent = compile_site_decision(dossier, corrected)
+    assert intent.portfolio[0].candidate_id == deep["candidate_id"]
+    assert intent.portfolio[0].rank == "A"
+
+
 def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):
     case = setup_portfolio(site_bridge)
     dossier = deepcopy(case["dossier"])

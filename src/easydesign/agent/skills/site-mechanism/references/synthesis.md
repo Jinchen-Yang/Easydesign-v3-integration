@@ -13,8 +13,10 @@ relative preference order, with its own reason, mechanism, approach, supporting 
 risks, unresolved items and confidence. Runtime labels selectable entries A (Preferred),
 B (Alternative), C (Exploratory), and displays hard-invalid entries separately as Blocked.
 VALID candidates are ranked. INVALID candidates are blocked. Weak exposure, weak evidence,
-high scientific risk and unknown whole-binder access lower rank or confidence; they do not
-remove a candidate from consideration. A can be the best of three weak candidates. Make a
+high scientific risk and unknown whole-binder access normally lower rank or confidence; they do
+not remove a candidate from consideration. The mandatory extracellular deep-orthosteric GPCR
+preference below is the exception: untested whole-binder access cannot demote it from A. A can be
+the best of three weak candidates. Make a
 useful order from the available evidence and state why you might be wrong. Alternative means
 an option worth comparing, not proven feasibility. Do not create a winner-only verdict.
 Order candidates decisively when evidence distinguishes them. Only if you cannot distinguish
@@ -44,9 +46,12 @@ label such as "inhibit" is a computational hypothesis, not evidence of measured 
 
 For activating or inhibitory extracellular GPCR binder goals, if A/B/C contains an extracellular
 candidate that covers the orthosteric ligand entrance or outer vestibule and extends deeply along
-the orthosteric pocket, that candidate must be ranked A. Peripheral ECL-only surface sites that do
-not form the orthosteric pocket entrance or vestibule, and other surface sites without an
-orthosteric mechanistic connection, must be ranked later.
+the orthosteric pocket, that candidate must be ranked A. Treat extracellular-facing deep pocket
+entrance as one combined property, not as a deep candidate competing against a separate
+extracellular candidate. When approach_validation is not-performed, whole-VHH framework/CDR access
+is unresolved and cannot demote this candidate. Peripheral ECL-only surface sites that do not form
+the orthosteric pocket entrance or vestibule, and other surface sites without an orthosteric
+mechanistic connection, must be ranked later.
 
 For enzymes/PPI inhibition, distinguish direct competition from allostery, loss of integrity
 and assay interference. For sensors/chaperones, separate reporting a state from stabilizing or

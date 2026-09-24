@@ -102,7 +102,9 @@ class RankedSiteDecision(StrictDTO):
         description="Every supplied candidate exactly once, best first. Rank all hard-valid "
         "candidates relatively, even if all are weak. Include hard-invalid candidates last for "
         "explanation; Runtime displays them separately without a rank. Unknown accessibility, "
-        "weak evidence and scientific risks lower rank/confidence, never eligibility.",
+        "weak evidence and scientific risks normally lower rank/confidence, never eligibility. "
+        "For an extracellular deep-orthosteric GPCR candidate, untested whole-binder access "
+        "cannot demote it from A.",
     )
     avoid_residue_ids: list[CandidateId] = Field(
         default_factory=list,
@@ -694,6 +696,66 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
         if eligibility.get("status") == "BLOCKED":
             block = eligibility.get("cause") or "verified-compartment-conflict"
         return block
+
+    def mandatory_gpcr_a(candidate: dict[str, Any]) -> bool:
+        """Recognize a narrow model/runtime-consistency invariant, not a new epitope claim.
+
+        Research must itself identify the candidate as orthosteric. Runtime independently
+        supplies the extracellular outer-pore geometry. This prevents an unperformed whole-VHH
+        clearance guess from reversing the explicit GPCR ranking policy.
+        """
+        if runtime_block(candidate) is not None:
+            return False
+        hypothesis = candidate.get("research_hypothesis", {})
+        interpretation = " ".join(
+            str(hypothesis.get(key, "")) for key in ("name", "rationale")
+        ).casefold()
+        if "orthosteric" not in interpretation and "正构" not in interpretation:
+            return False
+        geometry = candidate.get("location", {}).get("membrane_geometry", [])
+        outer_pore = [
+            row
+            for row in geometry
+            if row.get("region") == "outer_pore"
+            and row.get("pore_lining") is True
+            and isinstance(row.get("axial_distance"), (int, float))
+            and not isinstance(row.get("axial_distance"), bool)
+            and row["axial_distance"] > 0
+        ]
+        return bool(outer_pore) and len(outer_pore) == len(geometry)
+
+    receptor_verified = any(
+        context.get("identity", {}).get("status") == "resolved"
+        and context.get("membrane", {}).get("reliable") is True
+        for context in dossier.get("receptor_context", [])
+    )
+    policy_applies = (
+        dossier.get("objective_requirements", {}).get("required_site_compartment")
+        == "extracellular"
+        and receptor_verified
+        and dossier.get("approach_validation", {}).get("status") == "not-performed"
+    )
+    mandatory_ids = {
+        candidate_id
+        for candidate_id, candidate in candidates.items()
+        if policy_applies and mandatory_gpcr_a(candidate)
+    }
+    first_selectable = next(
+        (
+            interpretation.candidate_id
+            for interpretation in decision.candidates
+            if runtime_block(candidates[interpretation.candidate_id]) is None
+        ),
+        None,
+    )
+    if mandatory_ids and first_selectable not in mandatory_ids:
+        raise ResearchConclusionMismatch(
+            "GPCR_ORTHOSTERIC_A_REQUIRED: rank one supplied extracellular deep-orthosteric "
+            "outer-pore candidate first: "
+            + ", ".join(sorted(mandatory_ids))
+            + ". approach_validation is not-performed, so speculative whole-VHH framework/CDR "
+            "access cannot demote it below a peripheral or shallow ECL candidate."
+        )
 
     # Ranked Site synthesis owns relative preference, not hard eligibility. In particular, a
     # model-authored not-binding suggestion for the default candidate must not silently remove a

@@ -3,7 +3,8 @@ import type { LabOrderDraft } from '../domain/labOrder';
 export const PHASES = ['goal', 'target', 'site', 'design', 'pilot', 'scale', 'candidates'] as const;
 export type WorkflowPhase = (typeof PHASES)[number];
 export type WorkflowStatus = 'complete' | 'current' | 'locked' | 'approval';
-export type ActivityStatus = 'waiting' | 'running' | 'complete';
+export type ActivityStatus = 'waiting' | 'running' | 'complete' | 'failed';
+export type ConversationActivityStatus = 'running' | 'complete' | 'failed' | 'blocked';
 export interface WorkflowTask {
   id: WorkflowPhase;
   label: string;
@@ -18,6 +19,17 @@ export interface ConversationItem {
   text: string;
   detail?: string;
   focus?: WorkflowPhase;
+  status?: ConversationActivityStatus;
+  retry_request_id?: string;
+}
+export interface SnapshotEvent<T> {
+  type: 'snapshot';
+  snapshot: T;
+}
+export interface SnapshotAdapter<T> {
+  load(): Promise<T>;
+  subscribe(cb: (event: SnapshotEvent<T>) => void): () => void;
+  dispose(): void;
 }
 export interface Specialist {
   name: string;

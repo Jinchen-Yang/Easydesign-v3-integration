@@ -24,6 +24,7 @@ import { Workflow } from '../features/workflow/Workflow';
 import { Conversation } from '../features/conversation/Conversation';
 import type {
   ActivityStatus,
+  ConversationActivityStatus,
   ConversationItem,
   DesignProject,
   WorkflowPhase,
@@ -107,6 +108,13 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
       text: e.summary || e.text || '',
       detail: [e.specialist || e.role, e.status].filter(Boolean).join(' · ') || e.type,
       focus: phaseOf(e.phase || v.project.phase),
+      status: (e.status === 'failed'
+        ? 'failed'
+        : e.status === 'running'
+          ? 'running'
+          : e.status === 'blocked'
+            ? 'blocked'
+            : 'complete') as ConversationActivityStatus,
     }));
   const firstChat = result.findIndex(
     (m) => !m.id.startsWith('native-') && m.id !== 'goal' && m.id !== 'current',
@@ -269,7 +277,9 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
       ? 'complete'
       : s.status === 'running'
         ? 'running'
-        : 'waiting') as ActivityStatus,
+        : s.status === 'failed'
+          ? 'failed'
+          : 'waiting') as ActivityStatus,
   }));
   const agentTasks = (v?.tasks || []).map((task) => ({
     id: task.task_id,

@@ -8,11 +8,13 @@ export function StructureViewer({
   roles,
   sites = [],
   selectedSite,
+  emptyMessage = 'Structure evidence is not available yet.',
 }: {
   artifact: Artifact | null;
   roles: Record<string, string>;
   sites?: Site[];
   selectedSite?: string;
+  emptyMessage?: string;
 }) {
   const host = useRef<HTMLDivElement>(null),
     viewer = useRef<GLViewer | null>(null),
@@ -201,7 +203,7 @@ export function StructureViewer({
           {status === 'loading'
             ? 'Loading verified coordinates…'
             : status === 'unavailable'
-              ? 'Structure evidence is not available yet.'
+              ? emptyMessage
               : status}
           {artifact && status !== 'loading' && (
             <button onClick={() => setRetry((r) => r + 1)}>Retry structure</button>

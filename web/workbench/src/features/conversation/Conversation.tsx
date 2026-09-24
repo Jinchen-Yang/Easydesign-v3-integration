@@ -4,6 +4,8 @@ import {
   ArrowUpRight,
   Check,
   ChevronDown,
+  CircleAlert,
+  Clock3,
   FileSearch,
   Sparkles,
   SkipForward,
@@ -56,8 +58,17 @@ function ToolCard({
   onFocus: (phase: WorkflowPhase) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const status = item.status || 'complete';
+  const state =
+    status === 'failed'
+      ? { icon: <CircleAlert size={11} />, label: 'Failed' }
+      : status === 'running'
+        ? { icon: <span className="tiny-loader" />, label: 'Running' }
+        : status === 'blocked'
+          ? { icon: <Clock3 size={11} />, label: 'Awaiting review' }
+          : { icon: <Check size={11} />, label: 'Completed' };
   return (
-    <div className={`tool-card ${open ? 'open' : ''}`}>
+    <div className={`tool-card ${status} ${open ? 'open' : ''}`}>
       <button className="tool-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="tool-icon">
           <FileSearch size={16} />
@@ -66,8 +77,8 @@ function ToolCard({
           <strong>{item.title}</strong>
           <span>{item.text}</span>
         </span>
-        <span className="tool-complete">
-          <Check size={11} /> Completed
+        <span className={`tool-complete ${status}`}>
+          {state.icon} {state.label}
         </span>
         <ChevronDown size={13} className="tool-chevron" />
       </button>

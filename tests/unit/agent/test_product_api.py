@@ -118,6 +118,66 @@ def test_failed_goal_bootstrap_is_retryable_without_recreating_project(bridge, t
     assert launched == [request.request_id]
 
 
+def test_goal_bootstrap_and_runtime_reentry_share_one_worker_event_loop(
+    bridge, tmp_path, monkeypatch
+):
+    from easydesign.agent.bootstrap import GoalTargetIntent
+
+    class LoopAffineModel:
+        def __init__(self):
+            self.loop = None
+            self.calls = 0
+
+        async def ainvoke(self, _messages):
+            loop = asyncio.get_running_loop()
+            if self.loop is None:
+                self.loop = loop
+            elif self.loop is not loop:
+                raise RuntimeError("async model client was reused across event loops")
+            self.calls += 1
+
+    model = LoopAffineModel()
+    runtime_calls = 0
+
+    async def resolve_goal_target(*, model, **_kwargs):
+        await model.ainvoke([])
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Provisional discovery input for NK2R.",
+            limitations=["Identity remains subject to native Stage 01 review."],
+        )
+
+    async def drive(_bridge, _config, models, _goal, **_kwargs):
+        nonlocal runtime_calls
+        await models["target"].ainvoke([])
+        runtime_calls += 1
+        if runtime_calls == 1:
+            return {"status": "incomplete-turn", "scientific_state": "target-preparing"}
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    monkeypatch.setattr("easydesign.agent.bootstrap.resolve_goal_target", resolve_goal_target)
+    monkeypatch.setattr("easydesign.agent.cli.run_session", drive)
+    service = service_for(bridge, tmp_path)
+    service.gateway.model_factory = lambda *a, **k: {role: model for role in ROLES}
+    request = CreateProject(
+        request_id=str(uuid4()),
+        title="Loop-safe NK2R target research",
+        goal="Design an inhibitory extracellular VHH binder against human NK2R.",
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+
+    result = service.request(request.request_id)
+    assert result["state"] == "succeeded", result
+    assert result["result"]["status"] == "awaiting-human-approval"
+    assert runtime_calls == 2
+    assert model.calls == 3
+    assert service.snapshot(accepted["project"])["decision"] is None
+
+
 def test_product_api_keeps_uploaded_structure_as_optional_seed(bridge, tmp_path):
     from easydesign.orchestration.config import LocalFileSourceConfig, load_run_config
     from easydesign.orchestration.local_project import project_config_path

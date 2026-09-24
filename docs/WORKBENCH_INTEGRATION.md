@@ -103,6 +103,14 @@ pnpm build
 pnpm format:check
 ```
 
+Release acceptance must also include one bounded real-provider smoke from a fresh
+natural-language Goal through the first native Gate. Synthetic providers validate
+contracts and deterministic state, but they cannot prove the lifecycle behavior of
+loop-affine SDK clients, live connection pools, credentials or provider transports.
+The smoke stops at the Gate and must not manufacture a Scientist approval. A live
+browser check then verifies the durable card, candidate evidence, truthful activity
+states and the expected structure placeholder or checksum-verified coordinates.
+
 `tests/product_replay.py` is an explicitly isolated browser acceptance driver. It
 uses the real Product API, background workers, v3 Runtime, Gate responses,
 artifact integrity checks and UI. Its providers and downstream compute are typed

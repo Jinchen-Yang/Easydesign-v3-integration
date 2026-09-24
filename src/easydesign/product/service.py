@@ -360,15 +360,16 @@ class ProductService:
             registered = journal.project(project)
         finally:
             journal.close()
-        if registered is not None and not (
-            self.context.projects_root / project / "PROJECT.yaml"
-        ).is_file():
+        if (
+            registered is not None
+            and not (self.context.projects_root / project / "PROJECT.yaml").is_file()
+        ):
             value = self._bootstrap_snapshot(registered)
         else:
             with self.gateway.session(project) as session:
-                value = workbench(
-                    session, self.catalog, self.title(session)
-                ).model_dump(mode="json")
+                value = workbench(session, self.catalog, self.title(session)).model_dump(
+                    mode="json"
+                )
             if registered is not None:
                 value["lifecycle"] = registered["state"]
                 if registered["state"] == "failed":
@@ -416,9 +417,10 @@ class ProductService:
             registered = journal.project(project)
         finally:
             journal.close()
-        if registered is not None and not (
-            self.context.projects_root / project / "PROJECT.yaml"
-        ).is_file():
+        if (
+            registered is not None
+            and not (self.context.projects_root / project / "PROJECT.yaml").is_file()
+        ):
             store = SessionStore(self.context.projects_root / project)
             try:
                 items = activity_rows(store, registered["thread"], after, limit)
@@ -702,9 +704,7 @@ class ProductService:
                     except ProductError:
                         pass
                     try:
-                        failed_store = SessionStore(
-                            self.context.projects_root / row["project"]
-                        )
+                        failed_store = SessionStore(self.context.projects_root / row["project"])
                         try:
                             self._activity(
                                 failed_store,
@@ -750,7 +750,13 @@ class ProductService:
 
         root = self.context.projects_root / project
         store = SessionStore(root)
+        # A real async provider client is loop-affine once its connection pool has
+        # been used.  Goal bootstrap, native Runtime entry and post-job re-entry are
+        # separate awaits in one product worker, so keep one Runner alive for all of
+        # them instead of repeatedly creating and closing loops with asyncio.run().
+        runner = asyncio.Runner()
         try:
+            runner.get_loop()
             config = self.gateway.config()
             thread = self._thread(request.request_id)
             store.thread(thread, fingerprint(config), request.goal)
@@ -809,7 +815,7 @@ class ProductService:
                         ),
                         specialist="target",
                     )
-                    intent = asyncio.run(
+                    intent = runner.run(
                         resolve_goal_target(
                             store=store,
                             thread=thread,
@@ -862,12 +868,8 @@ class ProductService:
             if request.input_id is not None and ref is None:
                 directory = self.root / "inputs" / request.input_id
                 ref = ArtifactRef.model_validate_json(confined_bytes(directory, "manifest.json"))
-            if (
-                ref is not None
-                and (
-                    loaded.source_path is None
-                    or sha256_file(loaded.source_path) != ref.sha256
-                )
+            if ref is not None and (
+                loaded.source_path is None or sha256_file(loaded.source_path) != ref.sha256
             ):
                 raise ProductError(
                     "input_changed", "Project source differs from the submitted structure", 409
@@ -876,7 +878,7 @@ class ProductService:
                 store.event(thread, "product-title", {"title": request.title})
             with (root / "metadata/agent-session.lock").open("a") as handle:
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                result = asyncio.run(
+                result = runner.run(
                     run_session(bridge, config, models, request.goal, user=self.actor)
                 )
                 deadline = time.monotonic() + 60 * 30
@@ -929,7 +931,7 @@ class ProductService:
                         result.get("scientific_state"),
                         len(store.events(thread)),
                     )
-                    result = asyncio.run(
+                    result = runner.run(
                         run_session(bridge, config, models, request.goal, user=self.actor)
                     )
                     current = (
@@ -945,9 +947,12 @@ class ProductService:
                         thread,
                         "gate.opened",
                         task_id="gate-1",
-                        title="Scientist structure decision",
+                        title="Scientist target decision",
                         status="blocked",
-                        summary="Target evidence is ready for an explicit Scientist decision.",
+                        summary=(
+                            "Target identity or structure evidence is ready for an explicit "
+                            "Scientist decision."
+                        ),
                         specialist="target",
                     )
                     self._activity(
@@ -976,7 +981,10 @@ class ProductService:
                     )
                 return result
         finally:
-            store.close()
+            try:
+                runner.close()
+            finally:
+                store.close()
 
     def _recover(self, project: str, request: ActionRequest) -> dict[str, Any]:
         import asyncio

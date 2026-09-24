@@ -76,6 +76,14 @@ export function LiveContext({
       String(c.target_intent?.target_label || '') ||
       String(c.target_source?.query || '') ||
       'Your target';
+  const emptyStructureMessage =
+    targetEvidence.decision_kind === 'identity-selection'
+      ? 'Approve the verified target identity before structure candidates are prepared.'
+      : targetEvidence.decision_kind === 'structure-selection'
+        ? 'Select and approve a verified structure candidate to load its coordinates.'
+        : v.lifecycle === 'failed'
+          ? 'Target research stopped before verified structure evidence was prepared. Retry Target Intelligence to continue.'
+          : 'Structure evidence is not available yet.';
   const site = c.sites.find((s) => s.id === siteId) || c.sites[0];
   const entries = state.candidates.items;
   const select = (candidate: Candidate) => void adapter.selectCandidate(candidate.id);
@@ -89,6 +97,7 @@ export function LiveContext({
       }
       sites={candidate ? [] : c.sites}
       selectedSite={siteId}
+      emptyMessage={!candidate && phase === 'target' ? emptyStructureMessage : undefined}
     />
   );
   const candidateMetrics = selected ? headlineMetrics(selected) : [];

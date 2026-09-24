@@ -18,7 +18,6 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
   await expect(page.getByRole('complementary', { name: 'Scientific Context' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
   await expect(page.getByText('Structure candidates', { exact: true })).toBeVisible();
-  await expect(page.getByText('7XWO chain B', { exact: true })).toBeVisible();
   await expect(page.getByText('Target Intelligence', { exact: true }).first()).toBeVisible();
 
   const before = await page.evaluate(async (projectID) => {
@@ -29,6 +28,15 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
   expect(before.scientific_context.target.decision_kind).toBe('structure-selection');
   expect(before.tasks.length).toBeGreaterThan(5);
   expect(before.recent_activity.length).toBeGreaterThan(5);
+  expect(before.scientific_context.target.options.length).toBeGreaterThan(0);
+  await expect(
+    page.getByText(String(before.scientific_context.target.options[0].label), { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Select and approve a verified structure candidate to load its coordinates.', {
+      exact: true,
+    }),
+  ).toBeVisible();
 
   await mkdir('docs/screenshots', { recursive: true });
   await page.screenshot({
@@ -39,7 +47,7 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
   const inspector = page.getByRole('complementary', { name: 'Agent Tasks' });
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText('Target Intelligence');
-  await expect(inspector).toContainText('Scientist structure decision');
+  await expect(inspector).toContainText(/Scientist (target|structure) decision/);
   await page.screenshot({
     path: 'docs/screenshots/goal-first-live-task-inspector.png',
     fullPage: true,

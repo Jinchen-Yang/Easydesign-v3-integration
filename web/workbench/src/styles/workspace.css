@@ -441,6 +441,15 @@
   gap: 3px;
   white-space: nowrap;
 }
+.tool-complete.failed {
+  color: #b85259;
+}
+.tool-complete.running {
+  color: #7051bd;
+}
+.tool-complete.blocked {
+  color: #92712d;
+}
 .tool-chevron {
   color: #817c89;
 }

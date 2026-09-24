@@ -70,6 +70,47 @@ or place a lab order. These results validate transport and product behavior only
 5. The original browser test and production-smoke entry points now select
    `?mode=demo` explicitly, because live mode is the product default.
 
+## Real-provider closure after first live launch
+
+The first production-provider Goal-only launch exposed a boundary that the typed
+synthetic replay could not reproduce. Goal interpretation completed, then the
+Product worker reused the same Anthropic-compatible asynchronous model client in a
+second `asyncio.run(...)`. The first call had already closed the client's event
+loop, so Target Intelligence failed with `RuntimeError: Event loop is closed`,
+reported by the adapter as `AnthropicConnectionError`.
+
+The worker now owns one Python 3.11 `asyncio.Runner` across Goal interpretation,
+initial Runtime entry and every post-job Runtime re-entry. A loop-affine model
+regression invokes the same client in all three positions and fails if any call
+moves to a different loop. Single-call approval, message and recovery workers keep
+their existing isolated lifecycle.
+
+Two real-provider receipts close the incident without granting scientific authority:
+
+- the original failed request `d6500195-3290-48c6-8fd5-61441a692b87` resumed in
+  place and reached its native Gate-1 identity decision;
+- a fresh project `workbench-0320d3bfe8c5952f924199da` executed Goal
+  interpretation and Target Intelligence in one worker and reached a native Gate-1
+  structure-selection card with verified candidates.
+
+No Gate was approved by the acceptance runner. Structure coordinates therefore
+remain intentionally unavailable until the Scientist selects and approves the
+current identity or structure option. The browser now explains that state directly;
+failed, running, completed and awaiting-review activity cards are also rendered as
+distinct states instead of labeling every card `Completed`.
+
+Follow-up verification:
+
+| Boundary | Result |
+| --- | --- |
+| Loop-affine Goal/Runtime regression | Passed; three calls retained one event loop |
+| Product API regression | **27 passed** |
+| Frontend unit regression | **45 passed** |
+| Frontend TypeScript, formatting and production build | Passed |
+| Original demo browser suite | **42 passed, 3 live-only skipped** |
+| Fresh real-provider Gate-1 browser check | **3 passed** across 1440, 1366 and 1728 px |
+| Gate/Site/Design/Phase 3/4/Product combined regression | **109 passed** |
+
 ## Evidence locations
 
 Browser acceptance outputs are intentionally kept outside Git in the local test

@@ -103,8 +103,13 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
       for (const [signature, id] of this.commands) {
         const { body } = JSON.parse(signature);
         // A completed turn may leave the same authorized step unfinished. A new
-        // explicit Resume is a new command; uncertain transport retries are not.
-        if (id === request.id && ['resume', 'message'].includes(body.action))
+        // explicit Resume, message, or project with the same goal is a new command;
+        // uncertain transport retries are not. Gate decisions stay deduplicated by
+        // their revision/card binding.
+        if (
+          id === request.id &&
+          (['resume', 'message'].includes(body.action) || body.title !== undefined)
+        )
           this.commands.delete(signature);
       }
     }

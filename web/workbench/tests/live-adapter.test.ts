@@ -240,4 +240,32 @@ describe('Live adapter preserves Runtime authority', () => {
       goal: 'Please design an inhibitory nanobody against NK2R.',
     });
   });
+  it('creates a new project when the scientist repeats the same goal', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const route = String(url);
+      if (init?.method === 'POST' && route.endsWith('/projects')) {
+        const body = JSON.parse(String(init.body));
+        bodies.push(body);
+        return Response.json({
+          id: body.request_id,
+          project: `workbench-goal-${bodies.length}`,
+          state: 'succeeded',
+          kind: 'create',
+        });
+      }
+      if (route.endsWith('/workbench')) return Response.json(snapshot());
+      if (route.includes('/projects?'))
+        return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+      return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+    });
+    const adapter = new LiveWorkbenchAdapter(fetcher as typeof fetch, 1000000);
+    adapters.push(adapter);
+    const title = 'NK2R inhibitory nanobody';
+    const goal = 'Please design an inhibitory nanobody against NK2R.';
+    await adapter.createProject(title, goal);
+    await adapter.createProject(title, goal);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0].request_id).not.toBe(bodies[1].request_id);
+  });
 });

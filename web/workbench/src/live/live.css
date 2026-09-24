@@ -327,11 +327,22 @@
   display: grid;
   gap: 8px;
 }
-.target-structure-options > div:not(.section-label) {
+.target-structure-options > button {
   padding: 10px 11px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(248, 246, 252, 0.72);
+  text-align: left;
+  cursor: pointer;
+}
+.target-structure-options > button[aria-pressed='true'] {
+  border-color: #8b7bea;
+  background: rgba(238, 234, 255, 0.82);
+  box-shadow: 0 0 0 1px rgba(139, 123, 234, 0.12);
+}
+.target-structure-options > button:disabled {
+  cursor: default;
+  opacity: 0.58;
 }
 .target-structure-options strong,
 .target-structure-options span {

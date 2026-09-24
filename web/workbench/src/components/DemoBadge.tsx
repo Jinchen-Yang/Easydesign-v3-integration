@@ -1,9 +1,15 @@
 import { FlaskConical } from 'lucide-react';
-export function DemoBadge({ short = false }: { short?: boolean }) {
+export function DemoBadge({
+  short = false,
+  mode = 'demo',
+}: {
+  short?: boolean;
+  mode?: 'demo' | 'live';
+}) {
   return (
     <span className="demo-badge">
       <FlaskConical size={12} />
-      {short ? 'Demo' : 'Demo fixture'}
+      {mode === 'live' ? 'Live workspace' : short ? 'Demo' : 'Demo fixture'}
     </span>
   );
 }

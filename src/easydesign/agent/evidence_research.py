@@ -1283,8 +1283,7 @@ class EvidenceResearch:
         canonical = [r for r in records if r.get("primaryAccession") == card["identifier"]]
         if len(canonical) != 1:
             raise AgentBoundaryError("Canonical source record is not unique")
-        loaded = self.bridge.validate_project()
-        inventory = inventory_structure(loaded.source_path)
+        inventory = inventory_structure(self.bridge.prepared_structure_path())
         protein_chain_ids = frozenset(inventory.protein_chain_ids)
         chains = [
             chain
@@ -1441,7 +1440,7 @@ class EvidenceResearch:
                     "reused": True,
                 }
 
-        path = self.bridge.validate_project().source_path
+        path = self.bridge.prepared_structure_path()
         analysis = analyze_structure(path, request.auth_chain, context["topology"])
         candidates = generate_candidates(analysis, context)
         from .site_evidence import receptor_candidate_mapping
@@ -1729,7 +1728,7 @@ class EvidenceResearch:
                 value = hard_facts.get("canonical_accession")
                 if isinstance(value, str) and value:
                     approved_accession = value
-                approved_source_path = self.bridge.validate_project().source_path
+                approved_source_path = self.bridge.prepared_structure_path()
                 approved_source_pdb_id = _verified_deposited_structure_id(approved_source_path)
                 selected_chain = hard_facts.get("selected_chain")
                 if isinstance(selected_chain, str) and selected_chain:

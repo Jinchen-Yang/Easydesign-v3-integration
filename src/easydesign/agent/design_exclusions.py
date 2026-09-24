@@ -141,7 +141,7 @@ def gpcr_design_exclusions(
                     analysis["approved_design_mapping"]["target_binding"] != target["binding"]
                     or analysis["identity"]["accession"] != hard["canonical_accession"]
                     or analysis["identity"]["receptor_chain"] != hard["selected_chain"]
-                    or analysis["structure"]["sha256"] != bridge.binding()["source_sha"]
+                    or analysis["structure"]["sha256"] != bridge.prepared_structure()[1].sha256
                 ):
                     raise AgentBoundaryError("GPCR exclusion analysis has a stale Target binding")
                 refs[ref["sha256"]] = ref
@@ -157,7 +157,7 @@ def gpcr_design_exclusions(
                         source_sha256=ref["sha256"],
                     )
                 if transducers is None:
-                    transducers = deposited_transducers(bridge.validate_project().source_path)
+                    transducers = deposited_transducers(bridge.prepared_structure_path())
                 for edge in analysis["chain_graph"]["edges"]:
                     receptor = hard["selected_chain"]
                     if receptor not in (edge["chain_a"], edge["chain_b"]):

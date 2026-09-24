@@ -5,6 +5,8 @@ import '@fontsource/inter/600.css';
 import { App } from './app/App';
 import { DemoAdapter } from './adapters/DemoAdapter';
 import './styles/global.css';
+import { LiveWorkbenchAdapter } from './adapters/LiveWorkbenchAdapter';
+import { LiveWorkbench } from './live/LiveWorkbench';
 
 let storage: Storage | undefined;
 try {
@@ -12,5 +14,11 @@ try {
 } catch {
   /* Private browsing can disable storage; the in-memory demo still works. */
 }
-const adapter = new DemoAdapter({ storage });
-createRoot(document.getElementById('root')!).render(<App adapter={adapter} />);
+const demo = new URLSearchParams(location.search).get('mode') === 'demo';
+createRoot(document.getElementById('root')!).render(
+  demo ? (
+    <App adapter={new DemoAdapter({ storage })} />
+  ) : (
+    <LiveWorkbench adapter={new LiveWorkbenchAdapter()} />
+  ),
+);

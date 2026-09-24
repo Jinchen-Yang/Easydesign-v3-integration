@@ -22,7 +22,13 @@ from easydesign.product.contracts import (
     WorkbenchProjection,
 )
 from easydesign.product.domain import DomainSession, NativeGateway, decision_view
-from easydesign.product.projection import activity, activity_rows, activity_tasks, workbench
+from easydesign.product.projection import (
+    activity,
+    activity_rows,
+    activity_tasks,
+    structure_candidate_previews,
+    workbench,
+)
 from easydesign.product.server import ProductServer
 from easydesign.product.service import ProductService
 from easydesign.workspace_context import WorkspaceContext
@@ -82,6 +88,46 @@ def test_goal_only_create_is_immediately_persistent_and_reloadable(bridge, tmp_p
     assert listed[project]["goal"] == request.goal
     assert restarted.rename(project, "NK2R program")["title"] == "NK2R program"
     assert restarted.snapshot(project)["project"]["title"] == "NK2R program"
+
+
+def test_gate1_remote_structure_candidates_have_checksum_bound_previews(tmp_path):
+    workspace = tmp_path / "workspace"
+    root = workspace / "runs" / "project" / "run"
+    retrieval = root / "01-target-preparation/attempt-0001/work/retrieval"
+    retrieval.mkdir(parents=True)
+    coordinates = b"data_preview\n#\n"
+    (retrieval / "rcsb-9W2J.cif").write_bytes(coordinates)
+    catalog = ArtifactCatalog(workspace, workspace / "catalog")
+    evidence = {
+        "run_id": "run",
+        "request_identity": "verified-request",
+        "options": [
+            {
+                "option_id": "pdb-9w2j-entity-4",
+                "label": "9W2J chain R",
+                "payload": {
+                    "action": "select-experimental",
+                    "pdb_id": "9W2J",
+                    "chain": "R",
+                },
+            },
+            {
+                "option_id": "unsafe",
+                "label": "Unsafe",
+                "payload": {
+                    "action": "select-experimental",
+                    "pdb_id": "../x",
+                },
+            },
+        ],
+    }
+    options, artifacts = structure_candidate_previews("project", catalog, root, evidence)
+    assert len(artifacts) == 1
+    assert options[0]["preview_artifact"]["candidate_id"] == "pdb-9w2j-entity-4"
+    assert "preview_artifact" not in options[1]
+    data, file_format = catalog.read(artifacts[0].id)
+    assert data == coordinates
+    assert file_format == "mmcif"
 
 
 def test_failed_goal_bootstrap_is_retryable_without_recreating_project(bridge, tmp_path):

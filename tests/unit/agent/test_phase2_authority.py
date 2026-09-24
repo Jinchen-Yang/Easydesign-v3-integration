@@ -2,6 +2,7 @@
 
 import json
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -173,6 +174,26 @@ def test_live187_compatible_disulfides_are_not_conflicting_facts() -> None:
     alternate["location"]["end"]["value"] = 184
     conflicting = disulfide_assignments([*record["features"], alternate])
     assert conflicting["multiple_partner_annotations"]["106"] == [184, 191]
+
+
+def test_phase2_uses_prepared_target_bundle_when_discovery_has_no_local_path(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.core import load_model
+    from easydesign.stages.s01_target_preparation.models import TargetBundle
+
+    original = site_bridge.validate_project()
+    monkeypatch.setattr(
+        site_bridge,
+        "validate_project",
+        lambda: replace(original, source_path=None),
+    )
+    path, ref = site_bridge.prepared_structure()
+    state = site_bridge.target_state()
+    bundle = load_model(state["bundle_path"], TargetBundle)
+    assert ref == bundle.target_structure
+    assert path == bundle.target_structure.verify(state["root"])
+    assert path.is_file()
 
 
 def test_live187_intracellular_domain_cannot_be_relabelled_by_scan_name() -> None:

@@ -10,12 +10,14 @@ const destinations = [
 
 export function ProjectSidebar({
   expanded,
+  mode = 'demo',
   page,
   onToggle,
   onClose,
   onNavigate,
   onHelp,
 }: {
+  mode?: 'demo' | 'live';
   expanded: boolean;
   page: WorkbenchPage;
   onToggle: () => void;
@@ -101,10 +103,20 @@ export function ProjectSidebar({
           ))}
         </nav>
         <div className="rail-bottom">
-          {expanded && <p className="project-storage-note">Demo projects · Saved on this device</p>}
-          <button aria-label="About this demo" title="About this demo" onClick={onHelp}>
+          {expanded && (
+            <p className="project-storage-note">
+              {mode === 'demo'
+                ? 'Demo projects · Saved on this device'
+                : 'Research projects · Saved in your workspace'}
+            </p>
+          )}
+          <button
+            aria-label={mode === 'demo' ? 'About this demo' : 'About EasyDesign'}
+            title={mode === 'demo' ? 'About this demo' : 'About EasyDesign'}
+            onClick={onHelp}
+          >
             <CircleHelp size={19} />
-            {expanded && <span>About this demo</span>}
+            {expanded && <span>{mode === 'demo' ? 'About this demo' : 'About EasyDesign'}</span>}
           </button>
           <div className="researcher-profile">
             <span className="user-avatar" title="Local researcher">
@@ -112,7 +124,7 @@ export function ProjectSidebar({
             </span>
             {expanded && (
               <span>
-                Research workspace<small>Local demo</small>
+                Research workspace<small>{mode === 'demo' ? 'Local demo' : 'Live workspace'}</small>
               </span>
             )}
           </div>

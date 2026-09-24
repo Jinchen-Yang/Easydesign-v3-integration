@@ -3,15 +3,25 @@ import type { WorkbenchSnapshot, WorkflowPhase } from '../../adapters/WorkbenchA
 import { labProgress, type LabOrderStep } from '../../domain/labOrder';
 export function Workflow({
   snapshot,
+  mode = 'demo',
   viewedPhase,
   onView,
   onLabOrder,
+  agentTasks = [],
+  onOpenTasks,
 }: {
-  snapshot: WorkbenchSnapshot;
+  mode?: 'demo' | 'live';
+  snapshot: Pick<WorkbenchSnapshot, 'tasks' | 'completed' | 'specialists'> &
+    Partial<Pick<WorkbenchSnapshot, 'labOrder'>>;
   viewedPhase: WorkflowPhase | 'lab-order';
   onView: (phase: WorkflowPhase) => void;
   onLabOrder: (step?: LabOrderStep) => void;
+  agentTasks?: { id: string; title: string; detail: string; status: string }[];
+  onOpenTasks?: () => void;
 }) {
+  const finishedTasks = agentTasks.filter((task) =>
+    ['complete', 'completed'].includes(task.status),
+  ).length;
   return (
     <aside className="workflow" aria-label="Workflow">
       <div className="workflow-top">
@@ -106,18 +116,31 @@ export function Workflow({
         </div>
       </nav>
       <div className="agent-tasks">
-        <span className="eyebrow">AGENT TASKS</span>
-        {snapshot.specialists.map((specialist) => (
-          <div className="specialist-row" key={specialist.name}>
-            <span className={`specialist-dot ${specialist.status}`} />
+        <div className="agent-task-heading">
+          <span className="eyebrow">AGENT TASKS</span>
+          <span>
+            {finishedTasks}/{agentTasks.length}
+          </span>
+        </div>
+        {(agentTasks.length
+          ? agentTasks.slice(0, 3)
+          : snapshot.specialists.map((specialist) => ({
+              id: specialist.name,
+              title: specialist.name,
+              detail: specialist.role,
+              status: specialist.status,
+            }))
+        ).map((task) => (
+          <div className="specialist-row" key={task.id}>
+            <span className={`specialist-dot ${task.status}`} />
             <div>
-              <strong>{specialist.name}</strong>
-              <small>{specialist.role}</small>
+              <strong>{task.title}</strong>
+              <small>{task.detail}</small>
             </div>
-            <span className={`activity-state ${specialist.status}`}>
-              {specialist.status === 'complete' ? (
+            <span className={`activity-state ${task.status}`}>
+              {['complete', 'completed'].includes(task.status) ? (
                 <Check size={12} />
-              ) : specialist.status === 'running' ? (
+              ) : ['running', 'retrying'].includes(task.status) ? (
                 <span className="tiny-loader" />
               ) : (
                 '—'
@@ -125,13 +148,20 @@ export function Workflow({
             </span>
           </div>
         ))}
+        {!!agentTasks.length && (
+          <button className="view-agent-tasks" type="button" onClick={onOpenTasks}>
+            View all tasks <ArrowUpRight size={12} />
+          </button>
+        )}
       </div>
       <div className="workflow-footer">
         <FlaskConical size={15} />
         <div>
-          <strong>A guided research demo</strong>
+          <strong>
+            {mode === 'demo' ? 'A guided research demo' : 'A guided research workspace'}
+          </strong>
           <p>
-            Simulated results.
+            {mode === 'demo' ? 'Simulated results.' : 'Evidence, clearly explained.'}
             <br />
             Your decisions shape the journey.
           </p>

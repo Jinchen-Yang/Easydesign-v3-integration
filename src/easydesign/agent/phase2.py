@@ -212,6 +212,22 @@ class Phase2Bridge(TargetBridge):
             "evidence": evidence,
         }
 
+    def prepared_structure(self) -> tuple[Path, ArtifactRef]:
+        """Return the immutable Stage 01 structure used by downstream science.
+
+        Goal-first projects intentionally keep their discovery source remote, so
+        ``validate_project().source_path`` remains ``None``.  Once Gate 1 has
+        completed, the Target Bundle—not the original discovery input—is the
+        canonical coordinate authority for Site and Design.
+        """
+        state = self.target_state()
+        bundle = load_model(state["bundle_path"], TargetBundle)
+        ref = bundle.target_structure
+        return confined(state["root"], ref.verify(state["root"])), ref
+
+    def prepared_structure_path(self) -> Path:
+        return self.prepared_structure()[0]
+
     def persist(self, kind: str, payload: Any) -> dict[str, Any]:
         """One immutable project evidence object, using the existing ArtifactRef validator."""
         encoded = compact(payload)

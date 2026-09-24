@@ -17,16 +17,18 @@ const labels: Record<DesignProject['status'], string> = {
 
 export function ProjectsPage({
   snapshot,
+  mode = 'demo',
   onNew,
   onOpen,
   onRename,
   onDelete,
 }: {
-  snapshot: WorkbenchSnapshot;
+  mode?: 'demo' | 'live';
+  snapshot: Pick<WorkbenchSnapshot, 'projects'>;
   onNew: () => void;
   onOpen: (id: string) => void;
-  onRename: (project: DesignProject) => void;
-  onDelete: (project: DesignProject) => void;
+  onRename?: (project: DesignProject) => void;
+  onDelete?: (project: DesignProject) => void;
 }) {
   const [query, setQuery] = useState('');
   const projects = snapshot.projects.filter((project) =>
@@ -36,7 +38,7 @@ export function ProjectsPage({
     <main className="platform-page" aria-label="Projects">
       <header className="platform-header">
         <span>Research, thoughtfully organized.</span>
-        <DemoBadge />
+        <DemoBadge mode={mode} />
       </header>
       <div className="platform-content">
         <div className="platform-title-row">
@@ -62,14 +64,18 @@ export function ProjectsPage({
             <button className="text-button" onClick={onNew}>
               Create your first project <ArrowRight size={15} />
             </button>
-            <small>Start with the guided lysozyme / VHH demo.</small>
+            <small>
+              {mode === 'demo'
+                ? 'Start with the guided lysozyme / VHH demo.'
+                : 'Start with a target and your research goal.'}
+            </small>
           </section>
         ) : (
           <>
             <div className="project-list-toolbar">
               <span>
                 {snapshot.projects.length} {snapshot.projects.length === 1 ? 'project' : 'projects'}{' '}
-                <i /> Saved on this device
+                <i /> {mode === 'demo' ? 'Saved on this device' : 'Saved in your workspace'}
               </span>
               <label className="project-search">
                 <Search size={15} />
@@ -89,14 +95,16 @@ export function ProjectsPage({
                       <span className="project-folder">
                         <FolderOpen size={20} />
                       </span>
-                      <button
-                        className="icon-button project-delete"
-                        title="Delete project"
-                        aria-label={`Delete project ${project.title}`}
-                        onClick={() => onDelete(project)}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {onDelete && (
+                        <button
+                          className="icon-button project-delete"
+                          title="Delete project"
+                          aria-label={`Delete project ${project.title}`}
+                          onClick={() => onDelete(project)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                     <span className={`project-status status-${project.status}`}>
                       <i />
@@ -123,14 +131,16 @@ export function ProjectsPage({
                     <strong>{project.phase}</strong>
                   </div>
                   <footer>
-                    <button
-                      className="icon-button"
-                      aria-label={`Rename project ${project.title}`}
-                      title="Rename project"
-                      onClick={() => onRename(project)}
-                    >
-                      <Pencil size={15} />
-                    </button>
+                    {onRename && (
+                      <button
+                        className="icon-button"
+                        aria-label={`Rename project ${project.title}`}
+                        title="Rename project"
+                        onClick={() => onRename(project)}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
                     <button
                       className="text-button"
                       aria-label={`Open project ${project.title}`}

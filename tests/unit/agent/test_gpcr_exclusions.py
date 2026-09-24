@@ -252,6 +252,11 @@ def test_only_identified_receptor_contacts_use_exact_source_mapping(role, matchi
     bridge.document = lambda r: analysis if r["sha256"] == "kernel" else original(r)
     bridge.binding = lambda: {"source_sha": "structure"}
     bridge.validate_project = lambda: SimpleNamespace(source_path=Path("synthetic.pdb"))
+    bridge.prepared_structure = lambda: (
+        Path("synthetic.pdb"),
+        SimpleNamespace(sha256="structure"),
+    )
+    bridge.prepared_structure_path = lambda: Path("synthetic.pdb")
     result = gpcr_design_exclusions(bridge, target, facts, site)
     assert (160 in result["label_seq_ids"]) == (role != "other_protein" and matching_model)
     assert 999 not in result["label_seq_ids"]

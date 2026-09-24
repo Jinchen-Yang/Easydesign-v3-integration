@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
   Check,
@@ -12,7 +12,7 @@ import {
 import { DemoBadge } from '../components/DemoBadge';
 import type { WorkflowPhase } from '../adapters/WorkbenchAdapter';
 import type { LiveWorkbenchPort } from '../adapters/LiveWorkbenchAdapter';
-import type { Candidate, LiveState, ProductSnapshot } from './contracts';
+import type { Artifact, Candidate, LiveState, ProductSnapshot } from './contracts';
 import { StructureViewer } from './StructureViewer';
 const show = (v: unknown) => (v == null ? 'Not available' : typeof v === 'object' ? '' : String(v));
 // Display priorities only: native thresholds and scientific ranking are untouched.
@@ -62,6 +62,7 @@ export function LiveContext({
   }, [phase, revealRequest]);
   const c = v.scientific_context,
     selected = state.selectedCandidate;
+  const [selectedTargetPreview, setSelectedTargetPreview] = useState('');
   const targetEvidence = c.target || {},
     targetFacts =
       typeof targetEvidence.hard_facts === 'object' && targetEvidence.hard_facts
@@ -76,6 +77,17 @@ export function LiveContext({
       String(c.target_intent?.target_label || '') ||
       String(c.target_source?.query || '') ||
       'Your target';
+  const defaultTargetPreview =
+      String(v.decision?.default_option_id || targetOptions[0]?.option_id || ''),
+    activeTargetPreview = targetOptions.some(
+      (option) => String(option.option_id) === selectedTargetPreview,
+    )
+      ? selectedTargetPreview
+      : defaultTargetPreview,
+    targetPreviewOption = targetOptions.find(
+      (option) => String(option.option_id) === activeTargetPreview,
+    ),
+    targetPreviewArtifact = (targetPreviewOption?.preview_artifact as Artifact | undefined) || null;
   const emptyStructureMessage =
     targetEvidence.decision_kind === 'identity-selection'
       ? 'Approve the verified target identity before structure candidates are prepared.'
@@ -89,7 +101,13 @@ export function LiveContext({
   const select = (candidate: Candidate) => void adapter.selectCandidate(candidate.id);
   const structure = (candidate?: Candidate | null) => (
     <StructureViewer
-      artifact={candidate ? candidate.artifacts.at(-1) || null : c.structure}
+      artifact={
+        candidate
+          ? candidate.artifacts.at(-1) || null
+          : phase === 'target'
+            ? c.structure || targetPreviewArtifact
+            : c.structure
+      }
       roles={
         candidate
           ? candidate.structure_roles
@@ -243,10 +261,16 @@ export function LiveContext({
                       <span>RCSB evidence</span>
                     </div>
                     {targetOptions.map((candidate) => (
-                      <div key={String(candidate.option_id)}>
+                      <button
+                        type="button"
+                        key={String(candidate.option_id)}
+                        aria-pressed={String(candidate.option_id) === activeTargetPreview}
+                        disabled={!candidate.preview_artifact}
+                        onClick={() => setSelectedTargetPreview(String(candidate.option_id))}
+                      >
                         <strong>{String(candidate.label || candidate.option_id)}</strong>
                         <span>{String(candidate.description || 'Verified candidate')}</span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}

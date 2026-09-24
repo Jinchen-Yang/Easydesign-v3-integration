@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from easydesign.agent.phase2 import Phase2Bridge
@@ -25,6 +27,9 @@ from .domain import GATES, DomainSession, decision_view, public_value
 from .preview import excerpt
 
 PHASES = ("target", "site", "design", "pilot", "scale", "candidates", "handoff")
+
+_PDB_ID = re.compile(r"[0-9A-Za-z]{4}")
+_ATTEMPT_ID = re.compile(r"attempt-[0-9]{4}")
 
 ROLE_ACTIVITY = {
     "target": (
@@ -658,6 +663,84 @@ def activity_tasks(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(latest.values())
 
 
+def structure_candidate_previews(
+    project: str,
+    catalog: ArtifactCatalog,
+    root: Path,
+    evidence: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[ArtifactView]]:
+    """Register only coordinates belonging to the current verified Gate 1 request.
+
+    Remote-source Stage 01 keeps downloaded candidates inside its bounded attempt
+    workspace until the Scientist chooses one.  Exposing those immutable bytes is
+    a preview capability only: it does not select a candidate or change authority.
+    """
+    options: list[dict[str, Any]] = []
+    artifacts: list[ArtifactView] = []
+    stage = root / "01-target-preparation"
+    attempts = (
+        sorted(
+            (
+                item
+                for item in stage.iterdir()
+                if item.is_dir() and _ATTEMPT_ID.fullmatch(item.name)
+            ),
+            reverse=True,
+        )
+        if stage.is_dir()
+        else []
+    )
+    for raw in evidence.get("options", []):
+        option = dict(raw)
+        payload = option.get("payload") if isinstance(option.get("payload"), dict) else {}
+        pdb_id = payload.get("pdb_id")
+        option_id = option.get("option_id")
+        if (
+            payload.get("action") != "select-experimental"
+            or not isinstance(pdb_id, str)
+            or _PDB_ID.fullmatch(pdb_id) is None
+            or not isinstance(option_id, str)
+        ):
+            options.append(option)
+            continue
+        name = f"rcsb-{pdb_id.upper()}.cif"
+        path = next(
+            (
+                candidate
+                for attempt in attempts
+                if (candidate := attempt / "work" / "retrieval" / name).is_file()
+                and not candidate.is_symlink()
+            ),
+            None,
+        )
+        if path is None:
+            options.append(option)
+            continue
+        path = path.resolve()
+        if not path.is_relative_to(root.resolve()):
+            options.append(option)
+            continue
+        ref = ArtifactRef.from_file(
+            run_root=root,
+            relative_path=path.relative_to(root.resolve()).as_posix(),
+            artifact_id=f"gate1-preview-{pdb_id.lower()}",
+            role="target-structure-preview",
+            file_format="mmcif",
+        )
+        preview = catalog.register(
+            project=project,
+            evidence=str(evidence.get("request_identity") or evidence.get("run_id") or "target"),
+            root=root,
+            ref=ref,
+            label=str(option.get("label") or f"PDB {pdb_id.upper()}"),
+            candidate_id=option_id,
+        )
+        artifacts.append(preview)
+        option["preview_artifact"] = preview.model_dump(mode="json")
+        options.append(option)
+    return options, artifacts
+
+
 def context_view(
     session: DomainSession, catalog: ArtifactCatalog
 ) -> tuple[dict[str, Any], list[ArtifactView]]:
@@ -709,19 +792,28 @@ def context_view(
             ],
         }
         return context, artifacts
+    target_options = evidence.get("options") or []
+    if evidence.get("decision_kind") == "structure-selection" and target_options:
+        root, _ = b.run()
+        target_options, previews = structure_candidate_previews(
+            session.project, catalog, root, evidence
+        )
+        artifacts.extend(previews)
     context["target"] = public_value(
         {
-            k: evidence.get(k)
-            for k in (
-                "status",
-                "decision_kind",
-                "hard_facts",
-                "target_interpretation",
-                "limitations",
-                "options",
-                "identity",
-                "provenance",
-            )
+            **{
+                k: evidence.get(k)
+                for k in (
+                    "status",
+                    "decision_kind",
+                    "hard_facts",
+                    "target_interpretation",
+                    "limitations",
+                    "identity",
+                    "provenance",
+                )
+            },
+            "options": target_options,
         }
     )
     if evidence["status"] != "succeeded" or evidence.get("request_identity"):

@@ -32,7 +32,7 @@ import { DecisionBar } from '../features/decisions/DecisionBar';
 import { LabOrderPage } from '../features/lab-order/LabOrderPage';
 import { createLabOrderDraft, type LabOrderStep } from '../domain/labOrder';
 
-function Modal({
+export function Modal({
   title,
   onClose,
   children,
@@ -92,14 +92,20 @@ function Modal({
   );
 }
 
-function Landing({
+export function Landing({
   snapshot,
   onStart,
   onResume,
   newDesign,
   focusInput,
+  mode = 'demo',
+  attachment,
 }: {
-  snapshot: WorkbenchSnapshot;
+  snapshot: Pick<WorkbenchSnapshot, 'started' | 'completed' | 'phase'> & {
+    project: Pick<WorkbenchSnapshot['project'], 'exampleGoal' | 'title'>;
+  };
+  mode?: 'demo' | 'live';
+  attachment?: React.ReactNode;
   onStart: (goal: string) => void;
   onResume: () => void;
   newDesign: boolean;
@@ -110,7 +116,7 @@ function Landing({
     <main className="landing">
       <header className="landing-header">
         <span>Research, thoughtfully designed.</span>
-        <DemoBadge />
+        <DemoBadge mode={mode} />
       </header>
       <div className="landing-center">
         <Brand />
@@ -132,7 +138,7 @@ function Landing({
             id="research-goal"
             autoFocus={focusInput}
             value={goal}
-            maxLength={2000}
+            maxLength={mode === 'demo' ? 2000 : 1500}
             rows={3}
             onChange={(e) => setGoal(e.target.value)}
             onKeyDown={(e) => {
@@ -147,6 +153,7 @@ function Landing({
             <span>
               <Atom size={15} /> Protein design
             </span>
+            {attachment}
             <button className="landing-submit" aria-label="Start design" disabled={!goal.trim()}>
               <ArrowUp size={21} />
             </button>
@@ -159,7 +166,9 @@ function Landing({
           <button
             onClick={() =>
               setGoal(
-                'Compare three accessible binding sites on hen egg-white lysozyme with a VHH demo.',
+                mode === 'demo'
+                  ? 'Compare three accessible binding sites on hen egg-white lysozyme with a VHH demo.'
+                  : 'Compare three candidate binding sites on hen egg-white lysozyme for VHH design.',
               )
             }
           >
@@ -168,7 +177,9 @@ function Landing({
           <button
             onClick={() =>
               setGoal(
-                'Explore a small two-arm VHH pilot against lysozyme, then review six demo finalists.',
+                mode === 'demo'
+                  ? 'Explore a small two-arm VHH pilot against lysozyme, then review six demo finalists.'
+                  : 'Explore a small two-arm VHH pilot against lysozyme, then review the candidate evidence.',
               )
             }
           >
@@ -176,7 +187,9 @@ function Landing({
           </button>
         </div>
         <p className="landing-demo-note">
-          A guided lysozyme / VHH demo. Simulated results, real interaction.
+          {mode === 'demo'
+            ? 'A guided lysozyme / VHH demo. Simulated results, real interaction.'
+            : 'Describe your goal and optionally attach a target structure to begin.'}
         </p>
         {snapshot.started && (
           <button className="resume-design" onClick={onResume}>

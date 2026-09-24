@@ -471,10 +471,19 @@ class ProductService:
             }
             if previous:
                 row, _ = journal.reserve(project, payload)
-                return self.public_request(row)
-            with self.gateway.session(project, write=request.action != "message") as session:
-                session.check_action(request)
-                row, created = journal.reserve(project, payload)
+                created = (
+                    journal.retry(request.request_id)
+                    if row["state"] in {"failed", "interrupted"}
+                    else False
+                )
+                if created:
+                    refreshed = journal.get(request.request_id)
+                    assert refreshed is not None
+                    row = refreshed
+            else:
+                with self.gateway.session(project, write=request.action != "message") as session:
+                    session.check_action(request)
+                    row, created = journal.reserve(project, payload)
         finally:
             journal.close()
         if created:
@@ -561,9 +570,7 @@ class ProductService:
 
     def retry(self, request_id: str) -> dict[str, Any]:
         row = self.request(request_id)
-        if row["state"] != "interrupted" and not (
-            row["state"] == "failed" and row["kind"] in {"conversation", "create"}
-        ):
+        if row["state"] not in {"interrupted", "failed"}:
             return row
         journal = self.journal()
         try:

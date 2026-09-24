@@ -744,6 +744,39 @@ def test_worker_interruption_journal_survives_service_restart(bridge, tmp_path):
     assert launched == [request_id]
 
 
+def test_failed_gate_action_resubmission_retries_same_request(site_bridge, tmp_path):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic failed Gate action")
+    service = service_for(b, tmp_path)
+    view = service.snapshot("target-test")
+    action = ActionRequest(
+        request_id=str(uuid4()),
+        revision=view["revision"],
+        action="approve",
+        card_id=view["decision"]["id"],
+        selected_option_id=view["decision"]["options"][0]["option_id"],
+    )
+    launched: list[str] = []
+    service.launcher = launched.append
+    assert service.submit("target-test", action)["state"] == "accepted"
+    journal = service.journal()
+    try:
+        journal.update(
+            action.request_id,
+            "failed",
+            {"code": "AgentBoundaryError", "message": "Retry retained Gate intent"},
+        )
+    finally:
+        journal.close()
+
+    retried = service.submit("target-test", action)
+    assert retried["state"] == "accepted"
+    assert retried["result"] == {"recovery": True}
+    assert launched == [action.request_id, action.request_id]
+
+
 def test_frozen_pilot_query_is_read_only(design_bridge, tmp_path):
     from easydesign.agent.phase34_runtime import Phase34Runtime
     from tests.unit.agent.test_design_runtime import design_card, propose_design

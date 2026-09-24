@@ -84,10 +84,7 @@ class RequestJournal:
             if row is None:
                 raise ProductError("not_found", "Unknown request", 404)
             conversation = row["payload"].get("operation") == "conversation"
-            bootstrap = row["payload"].get("operation") == "create"
-            if row["state"] != "interrupted" and not (
-                (conversation or bootstrap) and row["state"] == "failed"
-            ):
+            if row["state"] not in {"interrupted", "failed"}:
                 return False
             active = self.db.execute(
                 "SELECT id FROM requests WHERE project=? AND id<>? "

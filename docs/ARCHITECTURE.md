@@ -65,6 +65,27 @@ External Codex is a development and compatibility tool, not the product's scient
 backend can be used from VS Code/terminal without the Workbench UI; UI/Product API integration is a separate
 consumer of these same contracts.
 
+### Workbench product transport
+
+Workbench 是 v3 Runtime 的本地浏览器投影与人工 Gate 操作面，不是第二套科学 authority。
+默认 live 路径固定为：
+
+```text
+same-origin browser
+  → versioned Product API + idempotent request journal
+  → detached background worker + NativeGateway
+  → existing v3 Runtime / artifacts / Gate contracts
+```
+
+浏览器只提交带版本与幂等键的产品命令，并从 Runtime 的 typed state、Gate card 和已校验 artifact
+生成界面；不得从模型文字推断科学状态，也不得直接改写项目文件。刷新、断线和重试复用同一请求
+记录，不能重复批准或推进 Gate。模型原始推理、provider/tool payload、密钥和服务器路径不进入浏览器；
+界面仅展示结构化的安全进度、可审查依据和持久化的只读对话记录。Gate 1–5 的批准语义、revision
+binding、BLOCKED 边界及结构/site/YAML artifact 均继续由上述 canonical v3 contract 决定。
+
+旧的 deterministic demo 只能通过显式 `?mode=demo` 启用，不属于默认产品路径。接口、恢复、
+安全投影和部署约束见 [`WORKBENCH_INTEGRATION.md`](WORKBENCH_INTEGRATION.md)。
+
 ## Lower-level scientific kernel and compatibility path
 
 The sections below describe the durable kernel, data layout and the older `easydesign`/Codex compatibility

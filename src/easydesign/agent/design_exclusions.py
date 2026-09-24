@@ -75,18 +75,18 @@ def gpcr_design_exclusions(
             }
         )
 
-    def source_labels(source: dict[str, Any]) -> list[int]:
+    def prepared_labels(source: dict[str, Any]) -> list[int]:
         matches = [
             label
             for label, row in observed.items()
-            if row.get("source_author_chain_id") == source["auth_asym_id"]
-            and row.get("source_author_residue_id") == str(source["auth_seq_id"])
+            if row.get("author_chain_id") == source["auth_asym_id"]
+            and row.get("author_residue_id") == str(source["auth_seq_id"])
             and (row.get("insertion_code") or "") == (source.get("insertion_code") or "")
             and str(source["model_id"]) in row["model_presence"]
             and source["hetero_flag"] == "ATOM"
         ]
         if len(matches) > 1:
-            raise AgentBoundaryError("GPCR interface has ambiguous source mapping")
+            raise AgentBoundaryError("GPCR interface has ambiguous prepared-coordinate mapping")
         return matches
 
     add(
@@ -152,14 +152,14 @@ def gpcr_design_exclusions(
                             label
                             for region in analysis["residue_regions"]
                             if region["region"] in {"intracellular", "intracellular_tm_surface"}
-                            for label in source_labels(region["residue"])
+                            for label in prepared_labels(region["residue"])
                         ],
                         source_sha256=ref["sha256"],
                     )
                 if transducers is None:
                     transducers = deposited_transducers(bridge.prepared_structure_path())
                 for edge in analysis["chain_graph"]["edges"]:
-                    receptor = hard["selected_chain"]
+                    receptor = analysis["structure"]["receptor_chain"]
                     if receptor not in (edge["chain_a"], edge["chain_b"]):
                         continue
                     side = "a" if edge["chain_a"] == receptor else "b"
@@ -170,7 +170,7 @@ def gpcr_design_exclusions(
                         continue
                     labels = []
                     for contact in edge["contacts"]:
-                        labels.extend(source_labels(contact["residue_" + side]))
+                        labels.extend(prepared_labels(contact["residue_" + side]))
                     add(
                         role + "-facing receptor contacts",
                         labels,

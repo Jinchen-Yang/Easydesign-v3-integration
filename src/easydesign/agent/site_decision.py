@@ -286,6 +286,9 @@ def _compact_receptor_context(cards: list[dict[str, Any]]) -> list[dict[str, Any
             continue
         seen.add(context_key)
         receptor_chain = identity_facts.get("receptor_chain")
+        prepared_receptor_chain = identity_facts.get(
+            "prepared_receptor_chain", receptor_chain
+        )
         interfaces = card.get("complex_interfaces", {})
         receptor_edges = [
             {
@@ -302,7 +305,7 @@ def _compact_receptor_context(cards: list[dict[str, Any]]) -> list[dict[str, Any
                 )
             }
             for edge in interfaces.get("edges", [])
-            if receptor_chain in {edge.get("chain_a"), edge.get("chain_b")}
+            if prepared_receptor_chain in {edge.get("chain_a"), edge.get("chain_b")}
         ]
         self_occlusion = interfaces.get("self_occlusion", {})
         result.append(

@@ -221,12 +221,18 @@ def test_only_identified_receptor_contacts_use_exact_source_mapping(role, matchi
     target["evidence"]["hard_facts"] = {"canonical_accession": "P12345", "selected_chain": "R"}
     # Different canonical, source and design numbers; the source model also matters.
     row = facts["observed_facts"]["mapping"][-1]
-    row.update(source_author_chain_id="R", source_author_residue_id="999", model_presence=["2"])
+    row.update(
+        author_chain_id="A",
+        author_residue_id="999",
+        source_author_chain_id="R",
+        source_author_residue_id="42",
+        model_presence=["2"],
+    )
     for other in facts["observed_facts"]["mapping"][:-1]:
         other["model_presence"] = ["2"]
     contact = {
         "residue_b": {
-            "auth_asym_id": "R",
+            "auth_asym_id": "A",
             "auth_seq_id": 999,
             "model_id": "2" if matching_model else "1",
             "hetero_flag": "ATOM",
@@ -234,14 +240,18 @@ def test_only_identified_receptor_contacts_use_exact_source_mapping(role, matchi
     }
     analysis = {
         "approved_design_mapping": {"target_binding": "target"},
-        "identity": {"accession": "P12345", "receptor_chain": "R"},
-        "structure": {"sha256": "structure"},
+        "identity": {
+            "accession": "P12345",
+            "receptor_chain": "R",
+            "prepared_receptor_chain": "A",
+        },
+        "structure": {"sha256": "structure", "receptor_chain": "A"},
         "chain_graph": {
             "contact_cutoff": 5.0,
             "edges": [
                 {
                     "chain_a": "Z",
-                    "chain_b": "R",
+                    "chain_b": "A",
                     "interface_type": role,
                     "geometry_observed": True,
                     "contacts": [contact, contact],

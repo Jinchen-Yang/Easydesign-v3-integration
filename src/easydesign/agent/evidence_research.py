@@ -1392,6 +1392,25 @@ class EvidenceResearch:
                 "GPCR identity is not resolved; cannot select a family playbook"
             )
         target, facts, facts_ref = self.bridge.site_facts()
+        path, prepared_ref = self.bridge.prepared_structure()
+        prepared_chains = {
+            row.get("author_chain_id")
+            for row in facts.get("observed_facts", {}).get("mapping", [])
+            if row.get("coordinate_present", True)
+            and (
+                row.get("source_author_chain_id") == request.auth_chain
+                or (
+                    row.get("source_author_chain_id") is None
+                    and row.get("author_chain_id") == request.auth_chain
+                )
+            )
+            and row.get("author_chain_id")
+        }
+        if len(prepared_chains) != 1:
+            raise AgentBoundaryError(
+                "Approved source chain does not resolve to one prepared Target chain"
+            )
+        prepared_chain = next(iter(prepared_chains))
 
         def summary(value: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -1429,6 +1448,9 @@ class EvidenceResearch:
                 candidates = self.bridge.document(analysis_ref)
                 if (
                     candidates.get("identity", {}).get("receptor_chain") != request.auth_chain
+                    or candidates.get("identity", {}).get("prepared_receptor_chain")
+                    != prepared_chain
+                    or candidates.get("structure", {}).get("sha256") != prepared_ref.sha256
                     or candidates.get("approved_design_mapping", {}).get("target_binding")
                     != target["binding"]
                 ):
@@ -1440,9 +1462,16 @@ class EvidenceResearch:
                     "reused": True,
                 }
 
-        path = self.bridge.prepared_structure_path()
-        analysis = analyze_structure(path, request.auth_chain, context["topology"])
+        analysis = analyze_structure(path, prepared_chain, context["topology"])
         candidates = generate_candidates(analysis, context)
+        candidates = {
+            **candidates,
+            "identity": {
+                **candidates["identity"],
+                "receptor_chain": request.auth_chain,
+                "prepared_receptor_chain": prepared_chain,
+            },
+        }
         from .site_evidence import receptor_candidate_mapping
 
         hard_facts = target["evidence"]["hard_facts"]

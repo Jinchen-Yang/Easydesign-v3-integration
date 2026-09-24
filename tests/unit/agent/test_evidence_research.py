@@ -1053,6 +1053,102 @@ async def test_site_gpcr_context_atomically_runs_deterministic_receptor_analysis
     assert "approval" in result["automatic_receptor_analysis"]["authority"]
 
 
+def test_receptor_analysis_maps_approved_source_chain_to_prepared_target_chain(
+    research: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    from easydesign.agent.evidence_research import ReceptorAnalysis
+
+    context_ref = {"artifact_id": "gpcrdb-context", "sha256": "a" * 64}
+    context = {
+        "identity": {
+            "status": "resolved",
+            "accession": "P21452",
+            "entry_name": "nk2r_human",
+        },
+        "topology": {"residues": []},
+    }
+    research.snapshot = lambda **_kwargs: {
+        "queries": [
+            {
+                "cards": [
+                    {
+                        "card_id": "gpcrdb-nk2r",
+                        "provider": "GPCRdb",
+                        "context_ref": context_ref,
+                        "source_refs": [context_ref],
+                    }
+                ]
+            }
+        ]
+    }
+    research.bridge.document = lambda ref: context
+    research.bridge.site_facts = lambda: (
+        {
+            "binding": "target-binding",
+            "evidence": {
+                "hard_facts": {
+                    "canonical_accession": "P21452",
+                    "selected_chain": "R",
+                }
+            },
+        },
+        {
+            "observed_facts": {
+                "mapping": [
+                    {
+                        "author_chain_id": "A",
+                        "author_residue_id": "24",
+                        "source_author_chain_id": "R",
+                        "source_author_residue_id": "24",
+                    }
+                ]
+            }
+        },
+        {"artifact_id": "site-facts", "sha256": "b" * 64},
+    )
+    prepared = tmp_path / "target.cif"
+    research.bridge.prepared_structure = lambda: (
+        prepared,
+        SimpleNamespace(sha256="prepared-sha"),
+    )
+    captured: list[str] = []
+
+    def analyze(_path: Any, chain: str, _topology: Any) -> dict[str, Any]:
+        captured.append(chain)
+        return {
+            "identity": {"receptor_chain": chain},
+            "structure": {"sha256": "prepared-sha", "receptor_chain": chain},
+            "topology": {},
+            "membrane": {},
+            "state": {},
+            "chain_graph": {"edges": []},
+            "candidates": {},
+            "warnings": [],
+            "avoid": [],
+        }
+
+    monkeypatch.setattr("easydesign.agent.evidence_research.analyze_structure", analyze)
+    monkeypatch.setattr(
+        "easydesign.agent.evidence_research.generate_candidates",
+        lambda analysis, _context: {
+            **analysis,
+            "identity": {**analysis["identity"], "accession": "P21452"},
+        },
+    )
+    monkeypatch.setattr(
+        "easydesign.agent.site_evidence.receptor_candidate_mapping",
+        lambda _facts, _candidates, **kwargs: kwargs,
+    )
+
+    result = research.analyze_receptor(
+        ReceptorAnalysis(gpcrdb_card_id="gpcrdb-nk2r", auth_chain="R")
+    )
+    assert captured == ["A"]
+    assert result["identity"]["receptor_chain"] == "R"
+    assert result["identity"]["prepared_receptor_chain"] == "A"
+    assert result["approved_design_mapping"]["approved_auth_chain"] == "R"
+
+
 def test_acquisition_is_not_an_empty_search_and_failed_search_can_remain_unresolved(
     research: Any,
     monkeypatch: Any,

@@ -20,6 +20,7 @@ from easydesign.core import (
     DecisionRequest,
     EasyDesignError,
     ExecutionStatus,
+    ManifestStateError,
     RunManifest,
     StageManifest,
     canonical_model_sha256,
@@ -50,6 +51,7 @@ from easydesign.orchestration.local_project import (
 from easydesign.orchestration.research import target_approve, target_prepare
 from easydesign.orchestration.workspace import load_resolved_run_config
 from easydesign.reporting.target_viewer import resolve_latest_target_viewer_report
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s01_target_preparation.models import ResidueMapping, TargetBundle
 from easydesign.workspace_context import WorkspaceContext
 
@@ -624,7 +626,49 @@ class TargetBridge:
             "evidence_refs": refs,
         }
         if manifest.workflow_state is not None:
-            request, path = load_pending_decision(root)
+            try:
+                request, path = load_pending_decision(root)
+            except ManifestStateError as error:
+                # Human approval is persisted before the resumed Target worker publishes
+                # the next manifest revision.  During that short, valid transition the
+                # manifest still advertises a workflow state, while the latest request is
+                # already recorded and therefore no longer pending.  Snapshots must expose
+                # a retryable running state instead of turning this publication window into
+                # a product-level 500 response.
+                if str(error) != "LATEST decision 已有 record，不再是 pending":
+                    raise
+                relative = read_last_text_line(root / "decisions" / "LATEST")
+                path = confined(root, (root / relative).resolve())
+                request = load_model(path, DecisionRequest)
+                record_path = path.parent / f"record.v{request.revision:04d}.json"
+                verified_request, _ = load_decision_record_context(
+                    root, confined(root, record_path)
+                )
+                if verified_request != request:
+                    raise AgentBoundaryError(
+                        "Recorded Target decision does not match the latest request"
+                    )
+                refs.extend(
+                    [
+                        f"{path.relative_to(root).as_posix()}#sha256={sha256_file(path)}",
+                        (
+                            f"{record_path.relative_to(root).as_posix()}"
+                            f"#sha256={sha256_file(record_path)}"
+                        ),
+                    ]
+                )
+                result.update(
+                    status="running",
+                    request_identity=None,
+                    decision_kind=request.gate,
+                    decision_transition="recorded-awaiting-resume",
+                )
+                result["evidence_id"] = identity(
+                    {"run": manifest.run_id, "refs": refs, "request": None}
+                )
+                result["source_evidence_id"] = result["evidence_id"]
+                result["hard_facts"] = TargetFacts().model_dump(mode="json")
+                return result
             confined(root, path)
             allowed_gates = {
                 "identity-selection",

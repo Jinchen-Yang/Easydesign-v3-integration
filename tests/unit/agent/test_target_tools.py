@@ -19,6 +19,10 @@ def test_real_gate_then_old_bundle_and_mapping(bridge: Any) -> None:
     card = judge_card(bridge)
     bridge.store.respond(bridge.thread, card.card_id, "approve", "test-human")
     bridge.apply_decision(card)
+    transition = bridge.read_evidence()
+    assert transition["status"] == "running"
+    assert transition["request_identity"] is None
+    assert transition["decision_transition"] == "recorded-awaiting-resume"
     terminal(bridge)
     result = bridge.read_evidence()
     assert result["run_id"] == initial["run_id"]

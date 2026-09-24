@@ -1155,6 +1155,50 @@ def test_pending_citation_copy_block_is_exact_unescaped_and_hash_checked(
         guard._pending_citation_evidence_message()
 
 
+def test_pending_citation_copy_block_omits_oversized_passage_conservatively(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Bound oversized citation retry data")["execution_id"]
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    passage = "x" * 32_001
+    block = {
+        "card_id": "receptor-oversized",
+        "passage": passage,
+        "passage_sha256": hashlib.sha256(passage.encode("utf-8")).hexdigest(),
+        "passage_chars": len(passage),
+        "locations": [{"kind": "decision-question", "question_index": 0}],
+    }
+    b.store.event(
+        b.thread,
+        "rejected-submission",
+        {
+            "role": "site",
+            "execution_id": eid,
+            "diagnostic": "CITATION_MISMATCH",
+            "repair_contracts": ["SiteResearchHandoff:evidence-citation"],
+            "repair_already_counted": True,
+            "repair_findings": {"citation_copy_blocks": [block]},
+        },
+    )
+
+    message = guard._pending_citation_evidence_message()
+
+    assert isinstance(message, HumanMessage)
+    assert passage not in message.content
+    assert "PASSAGE_OMITTED[32001]" in message.content
+    assert '"delivery":"omitted-oversized"' in message.content
+    assert "Remove or downgrade this citation" in message.content
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("later_sources", [False, True])
 @pytest.mark.parametrize("scoped_read", [False, True])

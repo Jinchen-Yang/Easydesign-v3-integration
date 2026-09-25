@@ -37,7 +37,7 @@ def test_site_skill_requires_deep_extracellular_orthosteric_gpcr_candidate_as_a(
         assert "do not create, split, merge or change a candidate" in prompt
         assert "Among Runtime-selectable candidates" in prompt
         assert "orthosteric ligand entrance or outer vestibule" in prompt
-        assert "extends deeply along the orthosteric pocket" in prompt
+        assert "extending deeply along the orthosteric pocket" in prompt
         assert "must be ranked A" in prompt
         assert "Peripheral ECL-only sites" in prompt
         assert "rank later" in prompt

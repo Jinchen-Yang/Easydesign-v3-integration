@@ -65,6 +65,13 @@ const stepTitles: Record<string, string> = {
 };
 function dialogue(v: ProductSnapshot): ConversationItem[] {
   const phase = phaseOf(v.project.phase);
+  const recommendedTarget =
+    v.decision?.gate === 1
+      ? v.decision.options.find((option) => option.option_id === v.decision?.default_option_id)
+      : undefined;
+  const currentDecisionText = recommendedTarget
+    ? `Target Intelligence recommends ${recommendedTarget.label || recommendedTarget.option_id} as the prepared structure and chain. Review it, then approve the target or change the structure.`
+    : v.decision?.question || v.current_action.message;
   const result: ConversationItem[] = (v.conversation || []).map((m) => ({
     ...m,
     phase: phaseOf(m.phase || v.project.phase),
@@ -77,7 +84,7 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
       phase,
       kind: 'summary',
       title: stepTitles[v.project.phase] || 'Your research is in progress',
-      text: v.decision?.question || v.current_action.message,
+      text: currentDecisionText,
       focus: phase,
     });
   // Keep one current card per bounded task. Completion receipts replace their

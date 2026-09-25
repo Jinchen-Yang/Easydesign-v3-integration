@@ -19,6 +19,9 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
   await expect(page.getByText('Automatically selected structure', { exact: true })).toBeVisible();
   await expect(page.getByText('Recommended · selected', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/Target Intelligence recommends .* as the prepared structure/),
+  ).toBeVisible();
   await expect(page.getByText('Target Intelligence', { exact: true }).first()).toBeVisible();
 
   const before = await page.evaluate(async (projectID) => {

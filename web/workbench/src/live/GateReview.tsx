@@ -68,8 +68,16 @@ export function GateReview({
   return (
     <section className="live-gate" aria-label={`Gate ${decision.gate} decision`}>
       <div className="eyebrow">SCIENTIST DECISION · GATE {decision.gate}</div>
-      <h2>{decision.question}</h2>
-      <p>{decision.action_summary}</p>
+      <h2>
+        {decision.gate === 1
+          ? 'Review the automatically selected target structure'
+          : decision.question}
+      </h2>
+      <p>
+        {decision.gate === 1
+          ? 'Approve the recommended structure and chain, or choose a different option.'
+          : decision.action_summary}
+      </p>
       <fieldset disabled={busy}>
         <legend>
           {decision.gate === 1 ? 'Change the automatically selected structure' : 'Choose an option'}

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import gemmi
 import numpy as np
 
+from easydesign.core import ErrorInfo, TaskAttemptRecord, TaskRecord, TaskStatus
+from easydesign.orchestration.boltzgen_tasks import recover_completed_boltzgen_outputs
 from easydesign.stages.s04_pilot_generation import collect_boltzgen_candidates
 
 
@@ -82,3 +85,75 @@ def test_collector_requires_metric_original_and_refold_structure(
     assert candidates[0].refolded_structure.verify(tmp_path).is_file()
     assert candidates[0].design_mask_source is not None
     assert candidates[0].design_mask_source.verify(tmp_path).is_file()
+
+
+def test_collector_projects_design_mask_through_resolved_tokens(tmp_path: Path) -> None:
+    output = _output(tmp_path)
+    originals = output / "intermediate_designs_inverse_folded"
+    for candidate in ("backend_0", "backend_1"):
+        np.savez_compressed(
+            originals / f"{candidate}.npz",
+            design_mask=np.asarray((0, 0, 0, 0, 0, 1, 1, 0, 1, 0), dtype=np.float32),
+            token_resolved_mask=np.asarray(
+                (1, 0, 1, 0, 1, 1, 1, 1, 1, 1), dtype=np.float32
+            ),
+        )
+
+    candidates = collect_boltzgen_candidates(
+        run_root=tmp_path,
+        backend_output=output,
+        strategy_id="generic-strategy",
+        task_id="pilot-generic-strategy",
+        task_attempt_number=1,
+        stage_attempt_id="attempt-0001",
+        ordinal_start=1,
+        maximum_candidates=3,
+    )
+
+    assert len(candidates) == 2
+    assert candidates[0].designed_binder_residue_ids == (2, 3, 5)
+
+
+def test_resume_recovers_completed_output_rejected_by_old_collector(tmp_path: Path) -> None:
+    output = _output(tmp_path)
+    attempt = TaskAttemptRecord(
+        attempt_number=1,
+        status=TaskStatus.FAILED,
+        requested_candidates=1,
+        collected_candidates=0,
+        device=0,
+        command_sha256="a" * 64,
+        output_relative_path=output.relative_to(tmp_path).as_posix(),
+        started_at=datetime.now(UTC),
+        ended_at=datetime.now(UTC),
+        return_code=0,
+        error=ErrorInfo(
+            code="boltzgen-execution-error",
+            message="collector rejected a completed output",
+            retryable=True,
+        ),
+    )
+    task = TaskRecord(
+        task_id="pilot-generic-strategy",
+        strategy_id="generic-strategy",
+        requested_candidates=1,
+        collected_candidates=0,
+        status=TaskStatus.FAILED,
+        attempts=(attempt,),
+    )
+
+    recovered = recover_completed_boltzgen_outputs(
+        root=tmp_path,
+        task=task,
+        stage_attempt_id="attempt-0001",
+        producer_stage="04-pilot-generation",
+    )
+
+    assert recovered is not None
+    assert recovered.task.status is TaskStatus.SUCCEEDED
+    assert recovered.task.collected_candidates == 1
+    assert recovered.task.attempts[0].status is TaskStatus.FAILED
+    assert recovered.task.attempts[0].collected_candidates == 0
+    assert recovered.task.attempts[1].status is TaskStatus.SUCCEEDED
+    assert recovered.task.attempts[1].collected_candidates == 1
+    assert recovered.new_candidates[0].candidate_id == "generic-strategy-candidate-0001"

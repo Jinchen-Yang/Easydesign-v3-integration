@@ -53,6 +53,7 @@ from easydesign.stages.s04_pilot_generation import (
 from .boltzgen_tasks import (
     TaskTransition,
     execute_boltzgen_candidate_task,
+    recover_completed_boltzgen_outputs,
     recover_interrupted_boltzgen_task,
 )
 from .execution_targets import (
@@ -524,6 +525,28 @@ def execute_stage04(
             from_status=transition.from_status,
             to_status=transition.to_status,
             error=transition.error,
+        )
+
+    # A completed backend may have been rejected by an older deterministic
+    # collector. Revalidate immutable successful outputs after closing interrupted
+    # attempts and before spending any additional GPU time.
+    for task_id, task in tuple(tasks.items()):
+        transition = recover_completed_boltzgen_outputs(
+            root=root,
+            task=task,
+            stage_attempt_id=attempt_id,
+            producer_stage=str(StageId.PILOT_GENERATION),
+        )
+        if transition is None:
+            continue
+        tasks[task_id] = transition.task
+        candidates.extend(transition.new_candidates)
+        append_event(
+            event_type=transition.event_type,
+            message=transition.message,
+            task=transition.task,
+            from_status=transition.from_status,
+            to_status=transition.to_status,
         )
     with lock:
         for task_id, task in tuple(tasks.items()):

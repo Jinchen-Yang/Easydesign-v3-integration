@@ -117,6 +117,11 @@ def _design_mask_evidence(
             if "design_mask" not in payload.files:
                 raise ManifestStateError(f"BoltzGen NPZ 缺少 design_mask: {mask_path}")
             mask = np.asarray(payload["design_mask"], dtype=np.float64).reshape(-1)
+            resolved_mask = (
+                np.asarray(payload["token_resolved_mask"], dtype=np.float64).reshape(-1)
+                if "token_resolved_mask" in payload.files
+                else None
+            )
     except (OSError, ValueError) as error:
         raise ManifestStateError(f"BoltzGen design mask 无法读取: {mask_path}") from error
     if not np.isin(mask, (0.0, 1.0)).all():
@@ -136,9 +141,26 @@ def _design_mask_evidence(
     binder_index = matching_binders[0]
     token_count = sum(len(sequence) for _, sequence in chains)
     if len(mask) != token_count:
-        raise ManifestStateError(
-            f"design_mask token 数与 candidate residue 数不一致: {len(mask)} != {token_count}"
-        )
+        if resolved_mask is None or len(resolved_mask) != len(mask):
+            raise ManifestStateError(
+                f"design_mask token 数与 candidate residue 数不一致: {len(mask)} != "
+                f"{token_count}"
+            )
+        if not np.isin(resolved_mask, (0.0, 1.0)).all():
+            raise ManifestStateError(f"BoltzGen token_resolved_mask 不是二值 mask: {mask_path}")
+        resolved = resolved_mask.astype(bool)
+        if int(resolved.sum()) != token_count:
+            raise ManifestStateError(
+                "BoltzGen token_resolved_mask 与 candidate residue 数不一致: "
+                f"{int(resolved.sum())} != {token_count}"
+            )
+        if bool(mask[~resolved].any()):
+            raise ManifestStateError("BoltzGen 在未解析 token 上标记了 designed residue")
+        # BoltzGen's token arrays include unresolved polymer positions, while its
+        # candidate mmCIF contains only resolved residues. Project the official
+        # design mask through the equally official resolved-token mask before
+        # mapping chain offsets; no residue identity is inferred or fabricated.
+        mask = mask[resolved]
     offsets: list[int] = []
     current = 0
     for _, sequence in chains:

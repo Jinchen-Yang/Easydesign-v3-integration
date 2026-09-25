@@ -16,6 +16,7 @@ from easydesign.backends.boltzgen import (
 )
 from easydesign.core import (
     ErrorInfo,
+    ManifestStateError,
     TaskAttemptRecord,
     TaskHeartbeat,
     TaskRecord,
@@ -147,6 +148,106 @@ def recover_interrupted_boltzgen_task(
         from_status=TaskStatus.RUNNING,
         to_status=TaskStatus.PENDING,
         error=error,
+    )
+
+
+def recover_completed_boltzgen_outputs(
+    *,
+    root: Path,
+    task: TaskRecord,
+    stage_attempt_id: str,
+    producer_stage: str,
+    ordinal_offset: int = 0,
+) -> TaskTransition | None:
+    """Revalidate successful backend outputs rejected by an older collector.
+
+    A completed BoltzGen process can precede a deterministic collection failure. On
+    resume, re-read only immutable, return-code-zero attempt outputs and preserve the
+    original failed attempt/error record. This avoids recomputing a scientific product
+    after a collector compatibility fix.
+    """
+
+    if task.status is TaskStatus.SUCCEEDED:
+        return None
+    remaining = task.requested_candidates - task.collected_candidates
+    if remaining <= 0:
+        return None
+    attempts = list(task.attempts)
+    recovery_attempts: list[TaskAttemptRecord] = []
+    salvaged: list[CandidateRecord] = []
+    for attempt in attempts:
+        if (
+            attempt.status is not TaskStatus.FAILED
+            or attempt.return_code != 0
+            or attempt.collected_candidates != 0
+        ):
+            continue
+        try:
+            recovered = collect_boltzgen_candidates(
+                run_root=root,
+                backend_output=root / attempt.output_relative_path,
+                strategy_id=task.strategy_id,
+                task_id=task.task_id,
+                task_attempt_number=attempt.attempt_number,
+                stage_attempt_id=stage_attempt_id,
+                ordinal_start=ordinal_offset + task.collected_candidates + len(salvaged) + 1,
+                maximum_candidates=remaining - len(salvaged),
+                producer_stage=producer_stage,
+            )
+        except ManifestStateError:
+            # The original terminal failure remains authoritative when the current
+            # collector still cannot validate the immutable backend output.
+            continue
+        if not recovered:
+            continue
+        salvaged.extend(recovered)
+        recovered_at = datetime.now(UTC)
+        recovery_attempts.append(
+            TaskAttemptRecord(
+                attempt_number=len(attempts) + len(recovery_attempts) + 1,
+                status=TaskStatus.SUCCEEDED,
+                requested_candidates=len(recovered),
+                collected_candidates=len(recovered),
+                device=attempt.device,
+                command_sha256=_command_sha256(
+                    (
+                        "recover-completed-output",
+                        str(attempt.attempt_number),
+                        attempt.output_relative_path,
+                    )
+                ),
+                output_relative_path=attempt.output_relative_path,
+                started_at=recovered_at,
+                ended_at=recovered_at,
+                return_code=0,
+            )
+        )
+        if len(salvaged) >= remaining:
+            break
+    if not salvaged:
+        return None
+    candidate_ids = (*task.candidate_ids, *(item.candidate_id for item in salvaged))
+    complete = len(candidate_ids) >= task.requested_candidates
+    recovered_task = task.model_copy(
+        update={
+            "status": TaskStatus.SUCCEEDED if complete else TaskStatus.PENDING,
+            "collected_candidates": len(candidate_ids),
+            "candidate_ids": candidate_ids,
+            "attempts": (*attempts, *recovery_attempts),
+            "current_device": None,
+        }
+    )
+    return TaskTransition(
+        event_type="task-output-recovered",
+        message=(
+            f"Revalidated {len(salvaged)} candidate(s) from completed backend output."
+        ),
+        task=recovered_task,
+        new_candidates=tuple(salvaged),
+        attempt_number=recovery_attempts[-1].attempt_number,
+        device=recovery_attempts[-1].device,
+        from_status=task.status,
+        to_status=recovered_task.status,
     )
 
 

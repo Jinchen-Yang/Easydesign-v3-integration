@@ -19,6 +19,7 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
   await expect(page.getByText('Automatically selected structure', { exact: true })).toBeVisible();
   await expect(page.getByText('Recommended · selected', { exact: true })).toBeVisible();
+  await expect(page.getByText('Target chain highlighted', { exact: true })).toBeVisible();
   await expect(
     page.getByText(/Target Intelligence recommends .* as the prepared structure/),
   ).toBeVisible();
@@ -50,11 +51,10 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
     await disclosure.click();
     await expect(page.getByText(String(alternatives[0].label), { exact: true })).toBeVisible();
   }
-  await expect(
-    page.getByText('Select and approve a verified structure candidate to load its coordinates.', {
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Molecular structure' })).toHaveAttribute(
+    'data-status',
+    'ready',
+  );
 
   await mkdir('docs/screenshots', { recursive: true });
   await page.screenshot({

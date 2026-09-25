@@ -74,7 +74,10 @@ export function StructureViewer({
         )) {
           if (!instance.selectedAtoms({ chain }).length)
             throw new Error('Declared chain missing from structure');
-          instance.setStyle({ chain }, style(role === 'binder' ? '#8070d6' : '#b9bdc9'));
+          instance.setStyle(
+            { chain },
+            style(role === 'focus-target' ? '#6657e8' : role === 'binder' ? '#8070d6' : '#b9bdc9'),
+          );
         }
         for (const site of JSON.parse(sitesKey) as Site[]) {
           const selected = site.id === selectedSite;
@@ -219,7 +222,11 @@ export function StructureViewer({
             onChange={(e) => setChainMode(e.target.value)}
           >
             <option value="all">
-              {Object.values(roles).includes('binder') ? 'Target + VHH' : 'Target'}
+              {Object.values(roles).includes('binder')
+                ? 'Target + VHH'
+                : Object.values(roles).includes('focus-target')
+                  ? 'Target + partners'
+                  : 'Target'}
             </option>
             {Object.values(roles).includes('binder') && (
               <>
@@ -233,7 +240,9 @@ export function StructureViewer({
           {sites.length
             ? `Site ${sites.find((s) => s.id === selectedSite)?.rank || ''} highlighted`
             : artifact?.candidate_id
-              ? 'Candidate complex'
+              ? Object.values(roles).includes('focus-target')
+                ? 'Target chain highlighted'
+                : 'Candidate complex'
               : 'Target structure'}
         </span>
       </div>

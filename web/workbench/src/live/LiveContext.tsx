@@ -94,7 +94,15 @@ export function LiveContext({
     targetPreviewOption = targetOptions.find(
       (option) => String(option.option_id) === activeTargetPreview,
     ),
-    targetPreviewArtifact = (targetPreviewOption?.preview_artifact as Artifact | undefined) || null;
+    targetPreviewArtifact = (targetPreviewOption?.preview_artifact as Artifact | undefined) || null,
+    targetPreviewPayload =
+      typeof targetPreviewOption?.payload === 'object' && targetPreviewOption.payload
+        ? (targetPreviewOption.payload as Record<string, unknown>)
+        : {},
+    targetPreviewChain = String(targetPreviewPayload.chain || ''),
+    targetStructureRoles = targetPreviewChain
+      ? { [targetPreviewChain]: 'focus-target' }
+      : Object.fromEntries((c.chains || []).map((chain) => [chain, 'focus-target']));
   const emptyStructureMessage =
     targetEvidence.decision_kind === 'identity-selection'
       ? 'Approve the verified target identity before structure candidates are prepared.'
@@ -118,7 +126,9 @@ export function LiveContext({
       roles={
         candidate
           ? candidate.structure_roles
-          : Object.fromEntries((c.chains || []).map((chain) => [chain, 'target']))
+          : phase === 'target'
+            ? targetStructureRoles
+            : Object.fromEntries((c.chains || []).map((chain) => [chain, 'target']))
       }
       sites={candidate ? [] : c.sites}
       selectedSite={siteId}

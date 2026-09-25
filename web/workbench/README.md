@@ -20,7 +20,7 @@ easydesign-workbench \
   --env-file .env.local
 ```
 
-Open the access link printed by the server. It binds to `127.0.0.1`, serves the UI and API from one origin, and stores its local token with mode `0600`. The Python environment must include the repository's `agent` optional dependency and valid model configuration. See the repository-level [Workbench integration contract](../../docs/WORKBENCH_INTEGRATION.md).
+Open the access link printed by the server once in each browser profile. It binds to `127.0.0.1`, serves the UI and API from one origin, and stores its local token with mode `0600`. A successful login sets an origin-bound, HttpOnly, strict same-site cookie for seven days so ordinary browser restarts do not require the token again. Browser profiles do not share this cookie. The Python environment must include the repository's `agent` optional dependency and valid model configuration. See the repository-level [Workbench integration contract](../../docs/WORKBENCH_INTEGRATION.md).
 
 The UI requires Node.js 22 or newer and pnpm 11.19.0. For UI-only development:
 

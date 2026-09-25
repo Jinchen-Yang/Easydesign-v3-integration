@@ -28,6 +28,12 @@ from .domain import NativeGateway
 from .service import ProductService
 
 
+# Keep an authenticated local browser usable across ordinary browser restarts.
+# The cookie remains origin-bound, HttpOnly and strict same-site; the durable
+# workspace token is still required for the first login in each browser profile.
+SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+
+
 class ProductServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -150,7 +156,9 @@ class Handler(BaseHTTPRequestHandler):
                     200,
                     {"authenticated": True, "mode": "single-user-local"},
                     cookie=(
-                        f"easydesign_session={self.server.token}; HttpOnly; SameSite=Strict; Path=/"
+                        f"easydesign_session={self.server.token}; "
+                        f"Max-Age={SESSION_COOKIE_MAX_AGE_SECONDS}; "
+                        "HttpOnly; SameSite=Strict; Path=/"
                     ),
                 )
                 return

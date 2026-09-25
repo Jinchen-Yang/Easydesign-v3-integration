@@ -565,10 +565,11 @@ def test_http_auth_origin_and_artifact_integrity(bridge, tmp_path):
         assert client.get("/api/v1/artifacts/%2e%2e/config.yaml").status_code == 403
         session = client.post("/api/v1/session", json={"token": "test-product-access"})
         assert session.status_code == 200
-        assert (
-            "HttpOnly" in session.headers["set-cookie"]
-            and "SameSite=Strict" in session.headers["set-cookie"]
-        )
+        session_cookie = session.headers["set-cookie"]
+        assert "HttpOnly" in session_cookie
+        assert "SameSite=Strict" in session_cookie
+        assert "Path=/" in session_cookie
+        assert "Max-Age=604800" in session_cookie
         assert (
             client.post("/api/v1/projects", json={}, headers={"Authorization": ""}).status_code
             == 403

@@ -78,6 +78,18 @@ class StructuredOpinionUnavailable(AgentBoundaryError):
 class ReviewFactConflict(AgentBoundaryError):
     """An unresolved explicit fact conflict is never an unavailable-review fallback."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        retained_warnings: list[str] | None = None,
+        attempts: int = 1,
+    ):
+        super().__init__(message)
+        self.categories = ["FACT_CONFLICT"]
+        self.retained_warnings = retained_warnings or []
+        self.attempts = attempts
+
 
 def validate_review_facts(raw: dict[str, Any], facts: dict[str, Any]) -> None:
     """Check addressed JSON objects only; ordinary scientific prose stays unrestricted."""
@@ -362,5 +374,9 @@ async def structured_opinion(
         last_submission = submission
         categories.append(category)
     if "FACT_CONFLICT" in categories:
-        raise ReviewFactConflict("Independent review has an unresolved structured fact conflict")
+        raise ReviewFactConflict(
+            "Independent review has an unresolved structured fact conflict",
+            retained_warnings=list(dict.fromkeys(retained)),
+            attempts=len(categories),
+        )
     raise StructuredOpinionUnavailable(categories, list(dict.fromkeys(retained)))

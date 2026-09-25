@@ -98,7 +98,15 @@ class DownstreamReviewFailure(StrictDTO):
     availability: Literal["unavailable"] = "unavailable"
     retained_warnings: list[str] = Field(default_factory=list)
     attempts: int = Field(ge=1, le=3)
-    categories: list[Literal["MAX_TOKENS", "NO_SUBMISSION", "SCHEMA_ERROR", "PROVIDER_UNAVAILABLE"]]
+    categories: list[
+        Literal[
+            "MAX_TOKENS",
+            "NO_SUBMISSION",
+            "SCHEMA_ERROR",
+            "PROVIDER_UNAVAILABLE",
+            "FACT_CONFLICT",
+        ]
+    ]
     warning: str = (
         "Independent review unavailable; the Scientist must review the supplied evidence."
     )

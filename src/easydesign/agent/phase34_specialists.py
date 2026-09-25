@@ -13,7 +13,7 @@ from .contracts import AgentBoundaryError
 from .models import ModelConfig
 from .phase34_cards import final_card, pilot_card
 from .phase34_contracts import PilotEvidenceDossier
-from .phase34_model import StructuredOpinionUnavailable, structured_opinion
+from .phase34_model import ReviewFactConflict, StructuredOpinionUnavailable, structured_opinion
 from .phase34_opinions import (
     DownstreamJudgeOpinion,
     DownstreamReviewFailure,
@@ -206,7 +206,7 @@ def downstream_specialist(
                     "Runtime facts own exact values; cite fact_refs. Normal scientific language "
                     "is allowed. Keep each field short; this is not a manuscript review.",
                 )
-            except StructuredOpinionUnavailable as failure:
+            except (StructuredOpinionUnavailable, ReviewFactConflict) as failure:
                 binding = canonical_model_sha256(reviewed)
                 review = DownstreamReviewFailure.model_validate(
                     dict(
@@ -221,7 +221,7 @@ def downstream_specialist(
                         gate=gate,
                         categories=failure.categories,
                         retained_warnings=failure.retained_warnings,
-                        attempts=len(failure.categories),
+                        attempts=getattr(failure, "attempts", len(failure.categories)),
                     )
                 )
             still_current()

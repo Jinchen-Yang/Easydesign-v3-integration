@@ -53,6 +53,24 @@ def test_unavailable_judge_keeps_card_and_allows_explicit_scientist_selection(tm
         store.close()
 
 
+def test_judge_fact_conflict_is_visible_but_does_not_block_gate4():
+    dossier = _pilot_dossier()
+    review = DownstreamReviewFailure(
+        record_id="fact-conflict-review",
+        input_binding=canonical_model_sha256(dossier),
+        gate="pilot-promotion",
+        attempts=3,
+        categories=["FACT_CONFLICT"],
+        retained_warnings=["The critic's structured fact claim could not be verified."],
+    )
+    card = pilot_card(dossier, review)
+    state = card.scientific_summary["independent_review"]
+    assert state["availability"] == "unavailable"
+    assert state["categories"] == ["FACT_CONFLICT"]
+    assert card.option_id == dossier.proposed_interpretation.outcome
+    assert card.judge_status is None
+
+
 @pytest.mark.parametrize("gate", ["pilot-promotion", "wet-lab-handoff"])
 def test_runtime_hard_error_is_not_bypassed_by_unavailable_review(tmp_path, gate):
     dossier = _pilot_dossier() if gate == "pilot-promotion" else _final_review()[-1]

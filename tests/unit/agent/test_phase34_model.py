@@ -4,7 +4,11 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from easydesign.agent.contracts import AgentBoundaryError
-from easydesign.agent.phase34_model import StructuredOpinionUnavailable, structured_opinion
+from easydesign.agent.phase34_model import (
+    ReviewFactConflict,
+    StructuredOpinionUnavailable,
+    structured_opinion,
+)
 from easydesign.agent.phase34_opinions import DownstreamJudgeOpinion
 from easydesign.agent.session_store import SessionStore
 from tests.agent_support import scripted_config
@@ -117,8 +121,10 @@ async def test_hard_fact_conflict_cannot_turn_into_unavailable_review(runtime):
             AIMessage(content="failed"),
         ]
     )
-    with pytest.raises(AgentBoundaryError, match="unresolved structured fact conflict"):
+    with pytest.raises(ReviewFactConflict, match="unresolved structured fact conflict") as error:
         await call(runtime, model)
+    assert error.value.categories == ["FACT_CONFLICT"]
+    assert error.value.attempts == 3
 
 
 @pytest.mark.asyncio

@@ -195,6 +195,53 @@ def test_another_pilot_cannot_invent_parent_gate4(design_bridge):
         )
 
 
+@pytest.mark.asyncio
+async def test_validation_micro_remains_available_after_another_pilot_route(design_bridge):
+    from easydesign.agent.phase34_authority import plan_for_design
+    from easydesign.agent.phase34_execution import register_micro_plan
+
+    bridge = runtime_fixture(design_bridge)
+    models = {
+        role: DownstreamModel(role=role)
+        for role in (
+            "coordinator",
+            "target",
+            "site",
+            "binder",
+            "judge",
+            "pilot-diagnosis",
+            "final-selection",
+        )
+    }
+    await run_session(bridge, scripted_config(), models, "SYNTHETIC downstream control flow")
+    card = bridge.downstream_card()
+    assert card is not None
+    bridge.store.respond(
+        bridge.thread,
+        card.card_id,
+        "approve",
+        "synthetic-scientist",
+        selected_option_id="RUN_ANOTHER_PILOT",
+    )
+    bridge.apply_decision(card)
+    full = plan_for_design(
+        bridge, bridge.current_design(), prediction_backend="openfold3-af3-jax"
+    )
+    strategy = next(iter(full.production_allocations))
+    micro = plan_for_design(
+        bridge,
+        bridge.current_design(),
+        prediction_backend="openfold3-af3-jax",
+        mode="validation-micro",
+        execution_allocations={strategy: 1},
+    )
+    authority = register_micro_plan(
+        bridge, micro, reason="Synthetic validation after a completed scientific Pilot"
+    )
+    assert bridge.pilot_authority() == authority
+    assert next_action(bridge).stage == "pilot-dispatch"
+
+
 def test_new_pending_design_is_reviewed_before_old_frozen_pilot_plan(design_bridge):
     from tests.unit.agent.test_design_runtime import binder_intent, propose_design
 

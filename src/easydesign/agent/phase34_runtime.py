@@ -182,9 +182,11 @@ class Phase34Runtime(Phase34Bridge):
             raise AgentBoundaryError(
                 "Product execution cannot consume an unbound fixture authority"
             )
-        if plan.design_proposal_id != proposal[
-            "proposal_id"
-        ] or plan.parent_gate4_card_id != self.parent_pilot_card(proposal):
+        if plan.design_proposal_id != proposal["proposal_id"]:
+            return None
+        if isinstance(authority, ScientistPilotAuthority) and (
+            plan.parent_gate4_card_id != self.parent_pilot_card(proposal)
+        ):
             return None
         if isinstance(authority, ScientistPilotAuthority):
             verify_pilot_authority(self, authority)

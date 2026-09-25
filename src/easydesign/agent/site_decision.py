@@ -143,12 +143,11 @@ def verified_location_conflict(
     """Return a hard conflict only when verified sidedness is decisive.
 
     TM membership, point burial, low exposure and an uncertain whole-binder approach remain
-    ranking penalties. A block requires an explicit user compartment plus an explicit opposing
-    loop/domain annotation, or concordant canonical annotation and signed membrane geometry.
+    ranking penalties. A block requires an explicit user compartment plus unopposed canonical
+    topology on the wrong side, or concordant canonical annotation and signed membrane geometry.
     """
     if required_compartment not in {"extracellular", "intracellular"}:
         return None
-    segments = {str(value) for value in location.get("segments", [])}
     annotations = {
         str(annotation.get("description", "")).casefold()
         for row in location.get("sequence_topology", [])
@@ -163,9 +162,7 @@ def verified_location_conflict(
     signed = bool(axial) and all(isinstance(value, (int, float)) for value in axial)
 
     if required_compartment == "extracellular":
-        declared_conflict = bool(segments & {"ICL1", "ICL2", "ICL3", "C-term"}) and (
-            has_cyto and not has_extra
-        )
+        declared_conflict = has_cyto and not has_extra
         geometric_conflict = (
             bool(geometry)
             and regions
@@ -178,9 +175,7 @@ def verified_location_conflict(
         if declared_conflict or geometric_conflict:
             return "verified-compartment-conflict"
     else:
-        declared_conflict = bool(
-            segments & {"N-term", "ECD", "ECL1", "ECL2", "ECL3"}
-        ) and (has_extra and not has_cyto)
+        declared_conflict = has_extra and not has_cyto
         geometric_conflict = (
             bool(geometry)
             and regions

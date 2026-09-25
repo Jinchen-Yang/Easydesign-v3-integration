@@ -130,7 +130,7 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         ],
         "membrane_geometry": [],
     }
-    tm_only_without_geometry = {
+    tm_only_wrong_side_without_geometry = {
         "segments": ["TM2", "TM3"],
         "sequence_topology": [
             {
@@ -139,6 +139,24 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
                     {"type": "Topological domain", "description": "Cytoplasmic"}
                 ],
             }
+        ],
+        "membrane_geometry": [],
+    }
+    mixed_topology_without_geometry = {
+        "segments": ["TM2", "TM3"],
+        "sequence_topology": [
+            {
+                "canonical_position": 67,
+                "annotations": [
+                    {"type": "Topological domain", "description": "Cytoplasmic"}
+                ],
+            },
+            {
+                "canonical_position": 86,
+                "annotations": [
+                    {"type": "Topological domain", "description": "Extracellular"}
+                ],
+            },
         ],
         "membrane_geometry": [],
     }
@@ -156,7 +174,10 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
     assert verified_location_conflict(
         mixed_outer_without_geometry, "intracellular"
     ) == "verified-compartment-conflict"
-    assert verified_location_conflict(tm_only_without_geometry, "extracellular") is None
+    assert verified_location_conflict(
+        tm_only_wrong_side_without_geometry, "extracellular"
+    ) == "verified-compartment-conflict"
+    assert verified_location_conflict(mixed_topology_without_geometry, "extracellular") is None
     assert verified_location_conflict(inner, None) is None
 
 

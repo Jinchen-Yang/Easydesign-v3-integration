@@ -1352,7 +1352,8 @@ def _remote_selection(
             prepared,
             gate="structure-selection",
             message=(
-                "实验结构没有唯一 eligible 候选；请选择一个结构，或显式选择后端后预测。"
+                "已按确定性证据排序推荐首选实验结构；请审核并批准，"
+                "或选择其他结构/预测后端。"
             ),
             options=options,
             attempt_id=attempt_id,
@@ -1604,7 +1605,10 @@ def _sequence_selection(
     return _pause_for_decision(
         prepared,
         gate="structure-selection",
-        message="序列检索没有唯一 eligible 实验结构；请选择结构或确认预测。",
+        message=(
+            "序列检索已按确定性证据排序推荐首选实验结构；请审核并批准，"
+            "或选择其他结构/预测后端。"
+        ),
         options=options,
         attempt_id=attempt_id,
     )

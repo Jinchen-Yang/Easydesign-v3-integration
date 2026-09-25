@@ -400,12 +400,18 @@ async def test_actual_harness_uses_existing_repairs_for_fact_contract(site_bridg
     if repeat_bad:
         with pytest.raises(AgentBoundaryError, match="unresolved substantive findings"):
             await run_session(
-                site_bridge, scripted_config(), models, "SYNTHETIC review a structural site."
+                site_bridge,
+                scripted_config(),
+                models,
+                "SYNTHETIC obtain an independent review of a structural site.",
             )
         assert models["judge"].submissions == 3
     else:
         result = await run_session(
-            site_bridge, scripted_config(), models, "SYNTHETIC review a structural site."
+            site_bridge,
+            scripted_config(),
+            models,
+            "SYNTHETIC obtain an independent review of a structural site.",
         )
         assert result["status"] == "awaiting-human-approval"
         assert result["card"]["scientific_summary"]["independent_review"]["runtime_facts"]

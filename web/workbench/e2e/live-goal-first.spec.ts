@@ -17,7 +17,8 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
   await expect(page.getByRole('region', { name: 'Design Scientist conversation' })).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Scientific Context' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve target', exact: true })).toBeVisible();
-  await expect(page.getByText('Structure candidates', { exact: true })).toBeVisible();
+  await expect(page.getByText('Automatically selected structure', { exact: true })).toBeVisible();
+  await expect(page.getByText('Recommended · selected', { exact: true })).toBeVisible();
   await expect(page.getByText('Target Intelligence', { exact: true }).first()).toBeVisible();
 
   const before = await page.evaluate(async (projectID) => {
@@ -29,9 +30,23 @@ test('live goal-first workspace projects durable target activity and Gate 1', as
   expect(before.tasks.length).toBeGreaterThan(5);
   expect(before.recent_activity.length).toBeGreaterThan(5);
   expect(before.scientific_context.target.options.length).toBeGreaterThan(0);
-  await expect(
-    page.getByText(String(before.scientific_context.target.options[0].label), { exact: true }),
-  ).toBeVisible();
+  const recommended = before.scientific_context.target.options.find(
+    (option: { option_id: string }) => option.option_id === before.decision.default_option_id,
+  );
+  if (!recommended) throw new Error('Gate 1 default option is missing from target candidates');
+  await expect(page.getByText(String(recommended.label), { exact: true })).toBeVisible();
+  const alternatives = before.scientific_context.target.options.filter(
+    (option: { option_id: string }) => option.option_id !== before.decision.default_option_id,
+  );
+  if (alternatives.length) {
+    const disclosure = page.getByText(`View alternatives (${alternatives.length})`, {
+      exact: true,
+    });
+    await expect(disclosure).toBeVisible();
+    await expect(page.getByText(String(alternatives[0].label), { exact: true })).toBeHidden();
+    await disclosure.click();
+    await expect(page.getByText(String(alternatives[0].label), { exact: true })).toBeVisible();
+  }
   await expect(
     page.getByText('Select and approve a verified structure candidate to load its coordinates.', {
       exact: true,

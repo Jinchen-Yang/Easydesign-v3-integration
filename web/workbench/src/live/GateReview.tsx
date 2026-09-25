@@ -71,7 +71,9 @@ export function GateReview({
       <h2>{decision.question}</h2>
       <p>{decision.action_summary}</p>
       <fieldset disabled={busy}>
-        <legend>Choose an option</legend>
+        <legend>
+          {decision.gate === 1 ? 'Change the automatically selected structure' : 'Choose an option'}
+        </legend>
         <div className="live-options">
           {decision.options.map((o) => (
             <label
@@ -98,6 +100,9 @@ export function GateReview({
                 <small>
                   {o.eligible ? 'Selectable' : 'Blocked'}
                   {o.confidence ? ` · Confidence ${o.confidence}` : ''}
+                  {decision.gate === 1 && o.option_id === decision.default_option_id
+                    ? ' · Automatically recommended'
+                    : ''}
                 </small>
               </span>
             </label>

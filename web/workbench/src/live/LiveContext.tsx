@@ -77,8 +77,15 @@ export function LiveContext({
       String(c.target_intent?.target_label || '') ||
       String(c.target_source?.query || '') ||
       'Your target';
-  const defaultTargetPreview =
-      String(v.decision?.default_option_id || targetOptions[0]?.option_id || ''),
+  const defaultTargetPreview = String(
+      v.decision?.default_option_id || targetOptions[0]?.option_id || '',
+    ),
+    defaultTargetOption =
+      targetOptions.find((option) => String(option.option_id) === defaultTargetPreview) ||
+      targetOptions[0],
+    alternativeTargetOptions = targetOptions.filter(
+      (option) => String(option.option_id) !== String(defaultTargetOption?.option_id || ''),
+    ),
     activeTargetPreview = targetOptions.some(
       (option) => String(option.option_id) === selectedTargetPreview,
     )
@@ -257,21 +264,55 @@ export function LiveContext({
                 {!!targetOptions.length && (
                   <div className="target-structure-options">
                     <div className="section-label">
-                      <h3>Structure candidates</h3>
-                      <span>RCSB evidence</span>
+                      <h3>Automatically selected structure</h3>
+                      <span>Recommended for this target</span>
                     </div>
-                    {targetOptions.map((candidate) => (
+                    {defaultTargetOption && (
                       <button
                         type="button"
-                        key={String(candidate.option_id)}
-                        aria-pressed={String(candidate.option_id) === activeTargetPreview}
-                        disabled={!candidate.preview_artifact}
-                        onClick={() => setSelectedTargetPreview(String(candidate.option_id))}
+                        className="target-structure-card recommended"
+                        aria-label={`Preview recommended structure ${String(defaultTargetOption.label || defaultTargetOption.option_id)}`}
+                        aria-pressed={String(defaultTargetOption.option_id) === activeTargetPreview}
+                        disabled={!defaultTargetOption.preview_artifact}
+                        onClick={() =>
+                          setSelectedTargetPreview(String(defaultTargetOption.option_id))
+                        }
                       >
-                        <strong>{String(candidate.label || candidate.option_id)}</strong>
-                        <span>{String(candidate.description || 'Verified candidate')}</span>
+                        <span className="target-structure-badge">Recommended · selected</span>
+                        <strong>
+                          {String(defaultTargetOption.label || defaultTargetOption.option_id)}
+                        </strong>
+                        <span>
+                          {String(defaultTargetOption.description || 'Verified candidate')}
+                        </span>
                       </button>
-                    ))}
+                    )}
+                    <p className="target-selection-note">
+                      The structure and chain are already selected. Approve the target to continue;
+                      use Change structure only if you want to replace this recommendation.
+                    </p>
+                    {!!alternativeTargetOptions.length && (
+                      <details className="target-alternatives">
+                        <summary>View alternatives ({alternativeTargetOptions.length})</summary>
+                        <p>Previewing an alternative does not change the Gate 1 selection.</p>
+                        <div className="target-alternative-list">
+                          {alternativeTargetOptions.map((candidate) => (
+                            <button
+                              type="button"
+                              className="target-structure-card"
+                              key={String(candidate.option_id)}
+                              aria-label={`Preview alternative structure ${String(candidate.label || candidate.option_id)}`}
+                              aria-pressed={String(candidate.option_id) === activeTargetPreview}
+                              disabled={!candidate.preview_artifact}
+                              onClick={() => setSelectedTargetPreview(String(candidate.option_id))}
+                            >
+                              <strong>{String(candidate.label || candidate.option_id)}</strong>
+                              <span>{String(candidate.description || 'Verified candidate')}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                   </div>
                 )}
                 <div className="quiet-note">

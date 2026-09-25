@@ -556,7 +556,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                         : v.lifecycle === 'failed'
                           ? 'Target research needs a retry'
                           : decision?.gate === 1
-                            ? 'Continue with this target?'
+                            ? 'Approve the automatically selected target?'
                             : decision?.gate === 3
                               ? 'Ready to start the pilot?'
                               : decision
@@ -568,9 +568,11 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                       ? 'Validation only · not authorized for experiment'
                       : v.lifecycle === 'failed'
                         ? 'Verified evidence and recovery state were retained.'
-                        : decision
-                          ? 'Review the scientific context before continuing.'
-                          : 'Your conversations, decisions and results stay with this project.'}
+                        : decision?.gate === 1
+                          ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
+                          : decision
+                            ? 'Review the scientific context before continuing.'
+                            : 'Your conversations, decisions and results stay with this project.'}
                   </span>
                 </div>
                 {decision ? (
@@ -593,7 +595,11 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                       onClick={() => setModal('edit')}
                     >
                       <PencilLine size={14} />
-                      {decision.gate === 4 ? 'Revise' : 'Edit'}
+                      {decision.gate === 1
+                        ? 'Change structure'
+                        : decision.gate === 4
+                          ? 'Revise'
+                          : 'Edit'}
                     </button>
                     <button
                       className="primary-button"

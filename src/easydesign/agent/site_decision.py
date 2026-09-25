@@ -144,7 +144,7 @@ def verified_location_conflict(
 
     TM membership, point burial, low exposure and an uncertain whole-binder approach remain
     ranking penalties. A block requires an explicit user compartment plus unopposed canonical
-    topology on the wrong side, or concordant canonical annotation and signed membrane geometry.
+    topology on the wrong side, or complete and unopposed signed membrane geometry.
     """
     if required_compartment not in {"extracellular", "intracellular"}:
         return None
@@ -160,16 +160,26 @@ def verified_location_conflict(
     regions = {str(row.get("region", "")) for row in geometry}
     axial = [row.get("axial_distance") for row in geometry]
     signed = bool(axial) and all(isinstance(value, (int, float)) for value in axial)
+    candidate_positions = {
+        value
+        for value in location.get("canonical_positions", [])
+        if isinstance(value, int)
+    }
+    geometry_positions = {
+        row.get("canonical_position")
+        for row in geometry
+        if isinstance(row.get("canonical_position"), int)
+    }
+    complete_geometry = bool(candidate_positions) and candidate_positions <= geometry_positions
 
     if required_compartment == "extracellular":
         declared_conflict = has_cyto and not has_extra
         geometric_conflict = (
-            bool(geometry)
+            complete_geometry
             and regions
             <= {"inner_pore", "intracellular", "intracellular_tm_surface"}
             and signed
             and all(value < 0 for value in axial)
-            and has_cyto
             and not has_extra
         )
         if declared_conflict or geometric_conflict:
@@ -177,7 +187,7 @@ def verified_location_conflict(
     else:
         declared_conflict = has_extra and not has_cyto
         geometric_conflict = (
-            bool(geometry)
+            complete_geometry
             and regions
             <= {
                 "outer_pore",
@@ -187,7 +197,6 @@ def verified_location_conflict(
             }
             and signed
             and all(value > 0 for value in axial)
-            and has_extra
             and not has_cyto
         )
         if declared_conflict or geometric_conflict:

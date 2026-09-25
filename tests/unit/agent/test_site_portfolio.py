@@ -84,6 +84,23 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         "sequence_topology": [],
         "membrane_geometry": [{"region": "inner_pore", "axial_distance": -12.0}],
     }
+    complete_inner_geometry = {
+        "canonical_positions": [68, 72, 127],
+        "segments": ["TM2", "TM3"],
+        "sequence_topology": [],
+        "membrane_geometry": [
+            {
+                "canonical_position": position,
+                "region": "inner_pore",
+                "axial_distance": axial,
+            }
+            for position, axial in ((68, -19.0), (72, -12.1), (127, -10.5))
+        ],
+    }
+    incomplete_inner_geometry = deepcopy(complete_inner_geometry)
+    incomplete_inner_geometry["membrane_geometry"] = incomplete_inner_geometry[
+        "membrane_geometry"
+    ][:-1]
     mixed_inner = {
         "segments": ["TM5", "ICL3", "TM6"],
         "sequence_topology": [
@@ -165,6 +182,10 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
     )
     assert verified_location_conflict(outer_pore, "extracellular") is None
     assert verified_location_conflict(ambiguous, "extracellular") is None
+    assert verified_location_conflict(
+        complete_inner_geometry, "extracellular"
+    ) == "verified-compartment-conflict"
+    assert verified_location_conflict(incomplete_inner_geometry, "extracellular") is None
     assert verified_location_conflict(mixed_inner, "extracellular") == (
         "verified-compartment-conflict"
     )

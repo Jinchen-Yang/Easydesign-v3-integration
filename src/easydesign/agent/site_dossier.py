@@ -149,17 +149,27 @@ def demote_invalid_question_citations(
 def candidate_membrane_facts(
     mappings: list[dict[str, Any]], analyses: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Join existing kernel geometry by exact deposited identity, never design-label arithmetic."""
+    """Join kernel geometry by exact source or prepared identity, never residue arithmetic."""
     result = []
     for analysis in analyses:
         regions = analysis["residue_regions"]
         for mapping in mappings:
             for region in regions:
                 source = region["residue"]
+                source_identity = (
+                    source["auth_asym_id"] == mapping["source_author_chain_id"]
+                    and str(source["auth_seq_id"])
+                    == mapping["source_author_residue_id"]
+                )
+                prepared_identity = (
+                    source["auth_asym_id"] == mapping.get("author_chain_id")
+                    and str(source["auth_seq_id"])
+                    == mapping.get("author_residue_id")
+                )
                 if (
-                    source["auth_asym_id"] != mapping["source_author_chain_id"]
-                    or str(source["auth_seq_id"]) != mapping["source_author_residue_id"]
-                    or (source.get("insertion_code") or "") != (mapping.get("insertion_code") or "")
+                    not (source_identity or prepared_identity)
+                    or (source.get("insertion_code") or "")
+                    != (mapping.get("insertion_code") or "")
                     or str(source["model_id"]) not in mapping["model_presence"]
                     or source["hetero_flag"] != "ATOM"
                 ):
@@ -430,12 +440,12 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "source": "Approved Target correspondence joined to the same-receptor/chain "
             "kernel topology; unknowns retained.",
             "membrane_geometry": candidate_membrane_facts(mappings, membrane_analyses),
-            "geometry_scope": "Copied existing kernel region/axial/radial facts for exact source "
-            "chain, author residue, insertion code and model in the approved mapping. Empty means "
-            "not supplied. Topology segment annotations, signed spatial region and whole-VHH "
-            "approach are different: an extracellular TM surface is possible, and point geometry "
-            "does not establish framework/CDR clearance. Do not recalculate geometry from "
-            "centroids.",
+            "geometry_scope": "Copied existing kernel region/axial/radial facts for an exact "
+            "source or prepared author identity, insertion code and model in the approved Target "
+            "mapping. Empty means not supplied. Topology segment annotations, signed spatial "
+            "region and whole-VHH approach are different: an extracellular TM surface is possible, "
+            "and point geometry does not establish framework/CDR clearance. Do not recalculate "
+            "geometry from centroids.",
         }
         from .site_decision import verified_location_conflict
 

@@ -724,7 +724,7 @@ def test_zero_query_question_remains_typed_without_contradiction_search_gap(
         SITE_EVIDENCE.reset(token)
 
 
-def test_membrane_facts_use_exact_source_identity_not_design_or_canonical_numbers() -> None:
+def test_membrane_facts_use_exact_source_or_prepared_identity_without_number_arithmetic() -> None:
     from copy import deepcopy
 
     from easydesign.agent.site_dossier import candidate_membrane_facts
@@ -732,6 +732,8 @@ def test_membrane_facts_use_exact_source_identity_not_design_or_canonical_number
     mapping = {
         "label_seq_id": 414,
         "canonical_position": 286,
+        "author_chain_id": "X",
+        "author_residue_id": "41",
         "source_author_chain_id": "A",
         "source_author_residue_id": "901",
         "insertion_code": "B",
@@ -775,3 +777,18 @@ def test_membrane_facts_use_exact_source_identity_not_design_or_canonical_number
     assert "label_seq_id" not in rows[0]
     assert analyses == original
     assert candidate_membrane_facts([mapping], []) == []
+
+    prepared_region = deepcopy(region)
+    prepared_region["residue"].update({"auth_asym_id": "X", "auth_seq_id": 41})
+    rows = candidate_membrane_facts(
+        [mapping],
+        [
+            {
+                "card_id": "SYNTHETIC prepared kernel",
+                "residue_regions": [prepared_region],
+            }
+        ],
+    )
+    assert len(rows) == 1
+    assert rows[0]["canonical_position"] == 286
+    assert rows[0]["kernel_card_id"] == "SYNTHETIC prepared kernel"

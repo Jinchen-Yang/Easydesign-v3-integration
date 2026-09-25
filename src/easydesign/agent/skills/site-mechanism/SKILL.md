@@ -89,6 +89,8 @@ An unknown/conditional correspondence remains qualified. No coordinate means no 
 Use read_site_evidence with up to forty exact design labels for a complete focused patch, and
 evaluate_candidate_site for the chosen labels. A table's rows follow its declared columns, with
 nulls retained. Source identifiers and canonical/construct/design numbering are distinct.
+Comparative source passages do not transfer residue identities: preserve each receptor and species
+label exactly.
 
 Keep topology annotation, spatial membrane region, point exposure and whole-VHH access separate.
 A TM segment can contain an extracellular-facing surface. Kernel mode names/confidence are
@@ -96,14 +98,12 @@ computational hypotheses, not curated epitopes or demonstrated functional effect
 records may report folding/expression effects rather than a causal epitope. Scan candidates are
 not an exhaustive epitope inventory. Exact numbering cannot turn a weak mechanism into evidence.
 
-For activating or inhibitory extracellular GPCR binder goals, if A/B/C contains an extracellular
-candidate that covers the orthosteric ligand entrance or outer vestibule and extends deeply along
-the orthosteric pocket, that candidate must be ranked A. Do not split "extracellular" and "deep
-orthosteric" into competing preferences: an extracellular-facing deep orthosteric entrance is the
-preferred candidate. Until downstream whole-VHH docking or generation is actually performed,
-untested framework/CDR access cannot demote it. Peripheral ECL-only surface sites that do not form
-the orthosteric pocket entrance or vestibule, and other surface sites without an orthosteric
-mechanistic connection, must be ranked later.
+For activating or inhibitory extracellular GPCR binder goals, apply this preference only after
+evidence-backed candidates have been assembled; do not create, split, merge or change a candidate
+solely to satisfy it. Among Runtime-selectable candidates, an extracellular candidate covering the
+orthosteric ligand entrance or outer vestibule and extending deeply along the orthosteric pocket
+must be ranked A. Peripheral ECL-only sites outside the entrance or vestibule, and other sites
+without an orthosteric mechanism, rank later. Runtime BLOCKED candidates remain blocked.
 
 The Runtime preloads references/research.md, references/membrane.md and
 references/shielding.md for the normal Site path. Do not spend model calls reading them again.

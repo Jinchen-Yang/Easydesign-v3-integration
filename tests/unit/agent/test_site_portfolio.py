@@ -104,6 +104,44 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
             )
         ],
     }
+    mixed_inner_without_geometry = {
+        "segments": ["TM5", "ICL3", "TM6"],
+        "sequence_topology": [
+            {
+                "canonical_position": position,
+                "annotations": [
+                    {"type": "Topological domain", "description": "Cytoplasmic"}
+                ],
+            }
+            for position in (229, 231, 232)
+        ],
+        "membrane_geometry": [],
+    }
+    mixed_outer_without_geometry = {
+        "segments": ["TM6", "ECL3", "TM7"],
+        "sequence_topology": [
+            {
+                "canonical_position": position,
+                "annotations": [
+                    {"type": "Topological domain", "description": "Extracellular"}
+                ],
+            }
+            for position in (273, 274, 275)
+        ],
+        "membrane_geometry": [],
+    }
+    tm_only_without_geometry = {
+        "segments": ["TM2", "TM3"],
+        "sequence_topology": [
+            {
+                "canonical_position": 67,
+                "annotations": [
+                    {"type": "Topological domain", "description": "Cytoplasmic"}
+                ],
+            }
+        ],
+        "membrane_geometry": [],
+    }
     assert verified_location_conflict(inner, "extracellular") == (
         "verified-compartment-conflict"
     )
@@ -112,6 +150,13 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
     assert verified_location_conflict(mixed_inner, "extracellular") == (
         "verified-compartment-conflict"
     )
+    assert verified_location_conflict(
+        mixed_inner_without_geometry, "extracellular"
+    ) == "verified-compartment-conflict"
+    assert verified_location_conflict(
+        mixed_outer_without_geometry, "intracellular"
+    ) == "verified-compartment-conflict"
+    assert verified_location_conflict(tm_only_without_geometry, "extracellular") is None
     assert verified_location_conflict(inner, None) is None
 
 

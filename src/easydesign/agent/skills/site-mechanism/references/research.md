@@ -42,14 +42,12 @@ falsifier. Do not turn exposure, contact, curated state or a high model score in
 
 Conditional GPCR branch only after verified receptor identity and family hierarchy:
 
-- For activating or inhibitory extracellular GPCR binder goals, if A/B/C contains an extracellular
-  candidate that covers the orthosteric ligand entrance or outer vestibule and extends deeply along
-  the orthosteric pocket, that candidate must be ranked A.
-- Do not split extracellular location from deep orthosteric-pocket coverage into separate
-  preferences. Before downstream whole-VHH docking or generation, untested framework/CDR access
-  cannot demote that candidate.
-- Peripheral ECL-only surface sites that do not form the orthosteric pocket entrance or vestibule,
-  and other surface sites without an orthosteric mechanistic connection, must be ranked later.
+- For activating or inhibitory extracellular GPCR binder goals, apply this preference only after
+  evidence-backed candidates have been assembled; do not create, split, merge or change a candidate
+  solely to satisfy it. Among Runtime-selectable candidates, an extracellular candidate covering the
+  orthosteric ligand entrance or outer vestibule and extending deeply along the orthosteric pocket
+  must be ranked A. Peripheral ECL-only sites outside the entrance or vestibule, and other sites
+  without an orthosteric mechanism, rank later. Runtime BLOCKED candidates remain blocked.
 - Class A: distinguish extracellular pocket rim/vestibule from inaccessible lipid-facing TM
   surface; peptide receptors may require N-terminus/ECL context. Ligand binding is not function.
 - Class B1: large ECD capture and TMD activation can be different mechanisms; preserve both domains.

@@ -34,11 +34,15 @@ def test_site_skill_requires_deep_extracellular_orthosteric_gpcr_candidate_as_a(
 
     for prompt in (research, synthesis):
         assert "activating or inhibitory extracellular GPCR binder goals" in prompt
+        assert "do not create, split, merge or change a candidate" in prompt
+        assert "Among Runtime-selectable candidates" in prompt
         assert "orthosteric ligand entrance or outer vestibule" in prompt
         assert "extends deeply along the orthosteric pocket" in prompt
         assert "must be ranked A" in prompt
-        assert "Peripheral ECL-only surface sites" in prompt
-        assert "must be ranked later" in prompt
+        assert "Peripheral ECL-only sites" in prompt
+        assert "rank later" in prompt
+        assert "Runtime BLOCKED candidates remain blocked" in prompt
+        assert "Comparative source passages do not transfer residue identities" in prompt
         assert "whole-VHH approach" not in prompt
         assert "Pocket depth alone is insufficient" not in prompt
 

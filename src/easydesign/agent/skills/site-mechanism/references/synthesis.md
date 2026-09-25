@@ -30,6 +30,8 @@ Use strongest relevant primary evidence and important contradiction. A verified 
 proof of entailment. Preserve receptor/species/state/construct/valency/assay transfer limits;
 a cited earlier experiment is not the source paper's own experiment. Saturation is not global
 absence. If research missed a consequential question, state the gap and its effect on the decision.
+Comparative source passages do not transfer residue identities: preserve each receptor and species
+label exactly.
 
 Distinguish binding from desired function and whole-binder access from residue exposure. For
 extracellular membrane/GPCR work, distinguish extracellular loops/rims from intracellular
@@ -44,14 +46,12 @@ difference establishes a difference, not the experimental origin or intent of en
 Kernel hypotheses are not an exhaustive epitope inventory or database-curated epitopes; a mode
 label such as "inhibit" is a computational hypothesis, not evidence of measured inhibition.
 
-For activating or inhibitory extracellular GPCR binder goals, if A/B/C contains an extracellular
-candidate that covers the orthosteric ligand entrance or outer vestibule and extends deeply along
-the orthosteric pocket, that candidate must be ranked A. Treat extracellular-facing deep pocket
-entrance as one combined property, not as a deep candidate competing against a separate
-extracellular candidate. When approach_validation is not-performed, whole-VHH framework/CDR access
-is unresolved and cannot demote this candidate. Peripheral ECL-only surface sites that do not form
-the orthosteric pocket entrance or vestibule, and other surface sites without an orthosteric
-mechanistic connection, must be ranked later.
+For activating or inhibitory extracellular GPCR binder goals, apply this preference only after
+evidence-backed candidates have been assembled; do not create, split, merge or change a candidate
+solely to satisfy it. Among Runtime-selectable candidates, an extracellular candidate covering the
+orthosteric ligand entrance or outer vestibule and extending deeply along the orthosteric pocket
+must be ranked A. Peripheral ECL-only sites outside the entrance or vestibule, and other sites
+without an orthosteric mechanism, rank later. Runtime BLOCKED candidates remain blocked.
 
 For enzymes/PPI inhibition, distinguish direct competition from allostery, loss of integrity
 and assay interference. For sensors/chaperones, separate reporting a state from stabilizing or

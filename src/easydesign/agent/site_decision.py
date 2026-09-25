@@ -140,11 +140,11 @@ def candidate_name(candidate: dict[str, Any]) -> str:
 def verified_location_conflict(
     location: dict[str, Any], required_compartment: str | None
 ) -> str | None:
-    """Return a hard conflict only when independent verified sidedness agrees.
+    """Return a hard conflict only when verified sidedness is decisive.
 
     TM membership, point burial, low exposure and an uncertain whole-binder approach remain
-    ranking penalties. A block requires an explicit user compartment plus decisive topology or
-    concordant canonical annotation and signed membrane geometry.
+    ranking penalties. A block requires an explicit user compartment plus an explicit opposing
+    loop/domain annotation, or concordant canonical annotation and signed membrane geometry.
     """
     if required_compartment not in {"extracellular", "intracellular"}:
         return None
@@ -163,7 +163,9 @@ def verified_location_conflict(
     signed = bool(axial) and all(isinstance(value, (int, float)) for value in axial)
 
     if required_compartment == "extracellular":
-        declared_conflict = bool(segments) and segments <= {"ICL1", "ICL2", "ICL3", "C-term"}
+        declared_conflict = bool(segments & {"ICL1", "ICL2", "ICL3", "C-term"}) and (
+            has_cyto and not has_extra
+        )
         geometric_conflict = (
             bool(geometry)
             and regions
@@ -176,13 +178,9 @@ def verified_location_conflict(
         if declared_conflict or geometric_conflict:
             return "verified-compartment-conflict"
     else:
-        declared_conflict = bool(segments) and segments <= {
-            "N-term",
-            "ECD",
-            "ECL1",
-            "ECL2",
-            "ECL3",
-        }
+        declared_conflict = bool(
+            segments & {"N-term", "ECD", "ECL1", "ECL2", "ECL3"}
+        ) and (has_extra and not has_cyto)
         geometric_conflict = (
             bool(geometry)
             and regions

@@ -105,6 +105,63 @@ def test_worker_launch_detaches_and_uses_local_writable_roots(
     assert environment["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
+def test_preflight_failure_retries_same_job_and_preserves_failed_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _workspace(tmp_path, monkeypatch)
+    controller = LocalStepJobController(context)
+    project = context.projects_root / "example"
+    project.mkdir()
+    config = project / "config.yaml"
+    config.write_text("schema_version: '0.9'\n", encoding="utf-8")
+    failed = _job(context, step=3).model_copy(
+        update={
+            "status": "operational-failed",
+            "process_id": None,
+            "run_id": "pilot-exact-run",
+            # Stage 3 continuation retains the verified foundation as run_root;
+            # the requested Pilot run itself has not been published.
+            "run_root": context.runs_root / "example/foundation",
+            "run_manifest": None,
+            "error": "ConfigurationError: backend not registered",
+        }
+    )
+    controller.update(failed)
+    failed.log_path.parent.mkdir(parents=True, exist_ok=True)
+    failed.log_path.write_text("first failure\n", encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    class Process:
+        pid = 515151
+
+    def fake_popen(command: list[str], **kwargs: Any) -> Process:
+        captured["command"] = command
+        captured.update(kwargs)
+        return Process()
+
+    monkeypatch.setattr("easydesign.orchestration.local_jobs.subprocess.Popen", fake_popen)
+
+    retried = controller.retry_preflight_failure(failed.job_id)
+
+    assert retried.job_id == failed.job_id
+    assert retried.run_id == "pilot-exact-run"
+    assert retried.status == "running"
+    assert retried.process_id == 515151
+    assert retried.error is None
+    assert "retrying exact preflight-failed worker" in failed.log_path.read_text()
+    stored_revisions = sorted(
+        controller.path(failed.job_id)
+        .with_name(f"{failed.job_id}.json.revisions")
+        .glob("revision-*.json")
+    )
+    assert stored_revisions
+    assert any(
+        "operational-failed" in path.read_text()
+        for path in (controller.path(failed.job_id), *stored_revisions)
+    )
+    assert captured["start_new_session"] is True
+
+
 def test_ctrl_c_detaches_observer_without_stopping_worker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

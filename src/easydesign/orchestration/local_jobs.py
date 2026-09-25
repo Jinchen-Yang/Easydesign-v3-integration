@@ -200,6 +200,70 @@ class LocalStepJobController:
             )
         return self.update(record, status="running", process_id=process.pid)
 
+    def retry_preflight_failure(self, job_id: str) -> LocalStepJob:
+        """Rerun the exact original worker when it failed before publishing a run.
+
+        The job identity, immutable config revision and requested run ID are retained.
+        Earlier terminal receipts remain in the append-only revision history; this is
+        deliberately narrower than ordinary run resume, which requires a published
+        running manifest.
+        """
+
+        job = self.load(job_id)
+        current = self.latest(job.project_id)
+        if current is None or current.job_id != job.job_id:
+            raise ConfigurationError("只能重试项目最新的 preflight failure")
+        if any(
+            item.job_id != job.job_id and item.status in ACTIVE_JOB_STATUSES
+            for item in self.list(project_id=job.project_id)
+        ):
+            raise ConfigurationError("项目已有其他活动任务")
+        if (
+            job.operation != "run"
+            or job.status != "operational-failed"
+            or job.config_path is None
+            or job.run_id is None
+            or job.run_manifest is not None
+        ):
+            raise ConfigurationError("只有未发布 run 的原始 preflight failure 可以原位重试")
+        requested_run = self.context.runs_root / job.project_id / job.run_id
+        if requested_run.exists():
+            raise ConfigurationError("preflight retry 拒绝覆盖已经发布的 requested run")
+        if not job.config_path.is_file():
+            raise ConfigurationError("preflight retry 的 canonical config revision 不存在")
+
+        command = [
+            sys.executable,
+            "-m",
+            "easydesign.local_worker",
+            "--job-record",
+            str(self.path(job.job_id)),
+        ]
+        environment = os.environ.copy()
+        environment.update(self.context.child_environment())
+        environment.update(
+            {
+                "EASYDESIGN_LOCAL_DRAIN_FILE": str(job.drain_path),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+            }
+        )
+        job.log_path.parent.mkdir(parents=True, exist_ok=True)
+        with job.log_path.open("ab") as log:
+            log.write(b"\n--- retrying exact preflight-failed worker ---\n")
+            log.flush()
+            process = subprocess.Popen(
+                command,
+                cwd=self.context.root,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=(os.name != "nt"),
+            )
+        return self.update(job, status="running", process_id=process.pid, error=None)
+
     def request_drain(self, job_id: str) -> LocalStepJob:
         job = self.load(job_id)
         if job.status not in {"queued", "running"}:

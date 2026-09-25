@@ -3354,6 +3354,27 @@ def job_resume(
             job_id=observed.job_id,
             manifest=observed.run_manifest,
         )
+    if (
+        run_id is not None
+        and latest is not None
+        and latest.run_id == run_id
+        and latest.operation == "run"
+        and latest.status == "operational-failed"
+        and latest.run_manifest is None
+    ):
+        observed = wait_or_detach(
+            controller,
+            controller.retry_preflight_failure(latest.job_id),
+            detach=detach,
+        )
+        return CommandResult(
+            status=observed.status,
+            phase=_phase_for_internal_step(observed.step),
+            project_id=observed.project_id,
+            run_id=observed.run_id,
+            job_id=observed.job_id,
+            manifest=observed.run_manifest,
+        )
     run = _run_by_id(root, run_id) if run_id else _runs(root)[-1]
     if run.status != "running":
         raise ConfigurationError("只有 running 长任务可 resume")

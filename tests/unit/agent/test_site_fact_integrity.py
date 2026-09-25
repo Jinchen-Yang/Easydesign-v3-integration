@@ -368,7 +368,6 @@ async def test_actual_harness_uses_existing_repairs_for_fact_contract(site_bridg
     from langchain_core.messages import AIMessage
 
     from easydesign.agent.cli import run_session
-    from easydesign.agent.contracts import AgentBoundaryError
     from easydesign.agent.phase2_tools import PHASE2_ALLOWED
     from tests.agent_support import scripted_config
     from tests.unit.agent.test_site_harness import SiteModel
@@ -398,13 +397,18 @@ async def test_actual_harness_uses_existing_repairs_for_fact_contract(site_bridg
 
     models = {role: FactModel(role=role) for role in PHASE2_ALLOWED}
     if repeat_bad:
-        with pytest.raises(AgentBoundaryError, match="unresolved substantive findings"):
-            await run_session(
-                site_bridge,
-                scripted_config(),
-                models,
-                "SYNTHETIC obtain an independent review of a structural site.",
-            )
+        result = await run_session(
+            site_bridge,
+            scripted_config(),
+            models,
+            "SYNTHETIC obtain an independent review of a structural site.",
+        )
+        assert result["status"] == "awaiting-human-approval"
+        assert result["card"]["assessment_id"] is None
+        assert (
+            result["card"]["scientific_summary"]["independent_review"]["availability"]
+            == "unavailable"
+        )
         assert models["judge"].submissions == 3
     else:
         result = await run_session(

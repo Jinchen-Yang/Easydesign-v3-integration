@@ -184,6 +184,56 @@ async def test_binder_complete_packet_closes_reads_and_forces_final_submission(
 
 
 @pytest.mark.asyncio
+async def test_gate3_new_native_proposal_retires_stale_checkpoint_without_approval(
+    design_bridge: Any,
+) -> None:
+    """A historical interrupt cannot overrule a newer native Gate 3 proposal."""
+
+    bridge = design_bridge
+    models = {role: DesignModel(role=role) for role in DESIGN_ALLOWED}
+    goal = "SYNTHETIC recover a replaced Gate 3 proposal without approval."
+    pending = await run_session(bridge, scripted_config(), models, goal)
+    card = bridge.store.card(bridge.thread, pending["card"]["card_id"])
+    proposal = bridge.current_design()
+    assert proposal is not None
+    bridge.store.event(
+        bridge.thread,
+        "design-proposal",
+        {**proposal, "proposal_id": "synthetic-recovered-proposal"},
+    )
+    assert not bridge.decision_card_is_current(card)
+    # Simulate a first retirement whose tool return was lost before LangGraph
+    # checkpoint publication. The still-present interrupt must re-arm safely.
+    bridge.store.event(
+        bridge.thread,
+        "checkpoint-card-superseded",
+        {"card_id": card.card_id, "gate_type": card.gate_type, "execution_id": "lost"},
+    )
+    bridge.store.event(
+        bridge.thread,
+        "checkpoint-card-retired",
+        {"card_id": card.card_id, "gate_type": card.gate_type},
+    )
+
+    recovered = await run_session(bridge, scripted_config(), models, goal)
+    assert recovered["status"] == "awaiting-human-approval"
+    assert recovered["card"]["gate_type"] == "design-specification"
+    assert recovered["card"]["card_id"] != card.card_id
+    assert bridge.store.response(bridge.thread, card.card_id) is None
+    events = bridge.store.events(bridge.thread)
+    assert sum(
+        event["kind"] == "checkpoint-card-superseded"
+        and event["payload"]["card_id"] == card.card_id
+        for event in events
+    ) >= 2
+    assert any(
+        event["kind"] == "checkpoint-card-retired"
+        and event["payload"]["card_id"] == card.card_id
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
 async def test_gate3_revision_restart_preserves_target_hotspot_and_goal(design_bridge: Any) -> None:
     bridge = design_bridge
     models = {r: DesignModel(role=r) for r in DESIGN_ALLOWED}

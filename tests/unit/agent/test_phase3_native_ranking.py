@@ -13,10 +13,12 @@ from easydesign.agent.phase3_native import (
 from easydesign.agent.phase3_ranking import bind_native_ranking, native_working_set
 from easydesign.agent.phase34_cards import pilot_card
 from easydesign.agent.phase34_contracts import ExecutionProjection, PilotMeasurement
+from easydesign.agent.phase34_measurement import attach_prediction_metrics
 from easydesign.agent.phase34_opinions import PilotDiagnosisOpinion
 from easydesign.agent.phase34_plan import PilotArmIntent
 from easydesign.core import ArtifactRef, canonical_model_sha256
 from easydesign.stages.s04_pilot_generation import CandidateRecord
+from easydesign.stages.s05_pilot_filtering import FullTargetPredictionRecord
 from tests.unit.agent.test_phase34_contracts import _pilot_dossier
 
 
@@ -118,7 +120,13 @@ def population(
 def opinion_for(measurement, arms):
     packet = native_working_set(measurement, arms)
     good = [a for a, f in packet["scientific_arms"].items() if f["mode"] == "PROMOTION"]
-    strategies = [s for a in arms if a.arm_id in good for s in a.strategy_ids]
+    strategies = sorted(
+        {
+            fact["strategy_id"]
+            for fact in packet["pass_candidates"].values()
+            if fact["arm_id"] in good
+        }
+    )
     return PilotDiagnosisOpinion(
         key_observations=["Synthetic measured values"],
         arm_findings=[
@@ -187,13 +195,62 @@ def test_native_source_mutation_is_detected_on_read(tmp_path):
         verify_native_measurement(tmp_path, measured)
 
 
+def test_independent_prediction_enriches_without_replacing_native_authority(tmp_path):
+    measured, _, _, _ = population(tmp_path, per_strategy=1)
+    candidate = measured.candidates[0]
+    ref = candidate.lineage.original_structure
+    prediction = FullTargetPredictionRecord(
+        candidate_id=candidate.lineage.candidate_id,
+        strategy_id=candidate.lineage.strategy_id,
+        predicted_structure=ref,
+        summary_confidence=ref,
+        full_confidence=ref,
+        pairwise_iptm=0.72,
+        minimum_interface_pae_angstrom=2.4,
+        binder_ptm=0.84,
+        binder_pose_rmsd_angstrom=3.1,
+        target_ca_rmsd_angstrom=1.7,
+        severe_clash_count=0,
+        moderate_clash_count=0,
+        structure_gate_decisions=(),
+        structure_gate_pass=True,
+        confidence_reference_pass=True,
+        confidence_label="reference-supported",
+    )
+
+    enriched = attach_prediction_metrics(measured, (prediction,))
+
+    assert enriched.native_evidence == measured.native_evidence
+    assert enriched.source_filter_report_sha256 == measured.source_filter_report_sha256
+    metrics = {m.metric_id: m for m in enriched.candidates[0].metrics}
+    assert metrics["independent-prediction-pairwise_iptm"].value == 0.72
+    assert metrics["independent-prediction-binder_pose_rmsd_angstrom"].value == 3.1
+
+
 def test_scale_allocation_obeys_existing_scaffold_executor(tmp_path):
-    measured, arms, _, _ = population(tmp_path)
+    measured, arms, _, _ = population(tmp_path, (("arm-a", (1, 1)),))
     opinion = opinion_for(measured, arms)
     allocations = {**opinion.scale_allocations, arms[0].strategy_ids[0]: 20}
     with pytest.raises(AgentBoundaryError, match="equal selected-scaffold"):
         bind_native_ranking(
             measured, arms, opinion.model_copy(update={"scale_allocations": allocations})
+        )
+
+
+def test_selected_scaffold_requires_its_own_native_pass_support(tmp_path):
+    measured, arms, _, _ = population(tmp_path, (("arm-a", (1, 0)),))
+    opinion = opinion_for(measured, arms)
+    unsupported = arms[0].strategy_ids[1]
+    with pytest.raises(AgentBoundaryError, match="exact strategy"):
+        bind_native_ranking(
+            measured,
+            arms,
+            opinion.model_copy(
+                update={
+                    "selected_strategy_ids": [unsupported],
+                    "scale_allocations": {unsupported: 10},
+                }
+            ),
         )
 
 

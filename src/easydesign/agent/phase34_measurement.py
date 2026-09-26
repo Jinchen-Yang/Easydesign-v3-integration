@@ -6,7 +6,7 @@ import fcntl
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from easydesign.backends.executors import NvidiaSmiProbe
 from easydesign.core import (
@@ -17,17 +17,11 @@ from easydesign.core import (
     dump_model,
     load_model,
 )
-from easydesign.filtering import METRIC_DEFINITION_VERSION, evaluate_pilot_candidates_v1_6
-from easydesign.filtering.nanobody_v1_6 import (
-    PROFILE_SOURCE_SHA256_V1_6,
-    PROFILE_SOURCE_SHA256_V1_7,
-    PilotProfileId,
-)
+from easydesign.filtering import METRIC_DEFINITION_VERSION
 from easydesign.orchestration.application import _complex_prediction_adapter_builder
 from easydesign.orchestration.config import stage05_config_for_backend
 from easydesign.orchestration.profile import load_runtime_profile_by_identity
 from easydesign.orchestration.stage05 import (
-    _batch_structure_metrics,
     _load_upstream,
     _predict_selected_candidates,
 )
@@ -37,11 +31,9 @@ from easydesign.stages.s04_pilot_generation import PilotPlan, TaskTable
 from easydesign.stages.s05_pilot_filtering import (
     FullTargetExecutionState,
     FullTargetPredictionRecord,
-    PilotFilterReportV1_6,
 )
 
 from .contracts import AgentBoundaryError
-from .phase3 import project_pilot_measurement
 from .phase34_contracts import (
     ExecutionProjection,
     FrozenContract,
@@ -55,7 +47,7 @@ from .phase34_partial_reference import (
 )
 from .session_store import confined
 
-MEASUREMENT_VERSION = "verified-prediction-missingness-v2"
+MEASUREMENT_VERSION = "native-plus-independent-prediction-v3"
 
 
 class PilotPredictionEvidence(FrozenContract):
@@ -311,32 +303,6 @@ def measure_execution(
         runtime = work_root / "runtime"
         artifacts.mkdir(exist_ok=True)
         runtime.mkdir(exist_ok=True)
-        report_path = artifacts / "pilot-filter-report.json"
-        if report_path.exists():
-            report = load_model(report_path, PilotFilterReportV1_6)
-            if report.candidate_index_sha256 != upstream.candidate_index_ref.sha256:
-                raise AgentBoundaryError("Pilot metric report refers to another population")
-        else:
-            metrics = _batch_structure_metrics(
-                root=root,
-                upstream=upstream,
-                candidates=index.candidates,
-                runtime_root=runtime,
-                phase="v3-pilot-structure-metrics",
-                created_at=now,
-            )
-            report = evaluate_pilot_candidates_v1_6(
-                candidates=index.candidates,
-                structural_metrics=metrics,
-                candidate_index_sha256=upstream.candidate_index_ref.sha256,
-                maximum_tier_a_strategies=config.maximum_tier_a_strategies,
-                generated_at=now,
-                profile_id=cast(PilotProfileId, config.filter_profile),
-                profile_sha256=PROFILE_SOURCE_SHA256_V1_7
-                if config.filter_profile.endswith("v1.7")
-                else PROFILE_SOURCE_SHA256_V1_6,
-            )
-        report_ref = _save_exact(root, report_path, report, "v3-pilot-filter-report")
         partial_reference = partial_reference_required(root, upstream)
         prediction_path = artifacts / "predictions-v2.json"
         legacy_prediction_path = artifacts / "predictions.json"
@@ -430,15 +396,24 @@ def measure_execution(
                 }
             )
         prediction_ref = _save_exact(root, prediction_path, evidence, "v3-pilot-predictions")
-        measured = project_pilot_measurement(
-            candidate_index=index,
-            candidate_index_sha256=upstream.candidate_index_ref.sha256,
-            filter_report=report,
-            filter_report_sha256=report_ref.sha256,
-            execution=projection,
-            planned_by_strategy=allocations,
-            predicted_candidate_ids=frozenset(p.candidate_id for p in evidence.predictions),
+        # Independent AFO prediction is an enrichment of the authoritative
+        # BoltzGen-native Pilot population, not a replacement for it.  The old
+        # adapter projected a second legacy measurement here; doing so discarded
+        # NativePilotEvidence and silently moved Gate 4 onto the legacy ranking
+        # path whenever AFO was enabled.  Start from the exact native measurement
+        # and append the independent metrics so eligibility, filter provenance,
+        # contact metrics, and the complete PASS population remain intact.
+        from .phase3_native import measure_native_execution
+
+        native_result = measure_native_execution(
+            bridge,
+            authority_id=authority_id,
+            plan=plan,
+            execution=execution,
+            allocations=allocations,
+            projection=projection,
         )
+        measured = native_result["measurement"]
         measured = attach_prediction_metrics(measured, evidence.predictions)
         generation_tasks = load_model(upstream.pilot_bundle.task_table.verify(root), TaskTable)
         prediction_state = load_latest_runtime_model(
@@ -488,10 +463,10 @@ def measure_execution(
             "status": "measured",
             "measurement": measured,
             "sources": {
+                **native_result["sources"],
                 "authority": authority_id,
                 "run_id": execution["run_id"],
                 "candidate_index": upstream.candidate_index_ref.model_dump(mode="json"),
-                "filter_report": report_ref.model_dump(mode="json"),
                 "predictions": prediction_ref.model_dump(mode="json"),
             },
         }

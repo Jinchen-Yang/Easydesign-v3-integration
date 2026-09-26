@@ -1055,6 +1055,22 @@ class Phase2Bridge(TargetBridge):
         current = self.current_site()
         return bool(current and current["request_identity"] == card.request_identity)
 
+    def decision_card_is_current(self, card: DecisionCard) -> bool:
+        if card.gate_type == "target-structure":
+            return super().decision_card_is_current(card)
+        if card.gate_type != "site-hotspot":
+            return False
+        state = self.scientific_state()
+        current = self.current_site()
+        if (
+            state.get("scientific_state") != "awaiting-human-approval"
+            or state.get("gate_type") != "site-hotspot"
+            or current is None
+            or current["request_identity"] != card.request_identity
+        ):
+            return False
+        return self.site_snapshot(current)["evidence_id"] == card.evidence_id
+
     def decision_card(self, args: ApplyDecision) -> DecisionCard:
         # An interrupted Gate tool may replay after its response was already applied.
         # Preserve the original review-record identity before reading current stage state.

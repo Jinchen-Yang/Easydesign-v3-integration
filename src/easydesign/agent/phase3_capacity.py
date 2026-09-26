@@ -247,7 +247,8 @@ def ranking_decision_view(packet: dict[str, Any]) -> dict[str, Any]:
         [
             row[0],
             strategy_rows[row[1]][1],
-            *row[1:4],
+            strategy_rows[row[1]][0],
+            *row[2:4],
             *[row[4 + start : 4 + start + 6] for start in range(0, len(variable_columns), 6)],
         ]
         for row in rows
@@ -281,7 +282,7 @@ def ranking_decision_view(packet: dict[str, Any]) -> dict[str, Any]:
         "candidate_columns": [
             "candidate_id",
             "arm_id",
-            "strategy_index",
+            "strategy_id",
             "profile_index",
             "sequence_group",
             *[g["column"] for g in metric_groups],
@@ -309,7 +310,8 @@ def ranking_decision_view(packet: dict[str, Any]) -> dict[str, Any]:
         "view_semantics": (
             "All PASS rows retained. Short candidate IDs resolve in sorted canonical PASS order "
             "under measurement_sha256; Runtime expands before validation/publishing. "
-            "Indices are zero-based. metrics_N values/directions follow metric_groups names. "
+            "profile_index is zero-based; strategy_id is exact and must be copied verbatim. "
+            "metrics_N values/directions follow metric_groups names. "
             "Inherit candidate_common_metrics; null means unavailable. metric_value_tables "
             "indices resolve exact strings. sequence_group = exact full-binder equality. "
             "Profiles follow sorted source IDs bound by filter_profile_binding; "
@@ -376,8 +378,10 @@ def ranking_repair_context(
     context: dict[str, Any] = {}
     if packet is not None:
         by_arm: dict[str, list[str]] = {}
+        by_strategy: dict[str, list[str]] = {}
         for row in packet.get("candidates", []):
             by_arm.setdefault(row[1], []).append(row[0])
+            by_strategy.setdefault(row[2], []).append(row[0])
         strategy_arms = {row[0]: row[1] for row in packet.get("strategies", [])}
         selected = submission.get("selected_strategy_ids", [])
         allowed = {i for ids in by_arm.values() for i in ids}
@@ -396,6 +400,18 @@ def ranking_repair_context(
             )
             context["selected_arms_missing_support"] = {
                 a: {"allowed_candidate_refs": by_arm.get(a, [])} for a in missing_arms
+            }
+            supporting_strategies = {
+                strategy
+                for strategy, refs in by_strategy.items()
+                if set(refs) & {i for i in support if isinstance(i, str)}
+            }
+            missing_strategies = sorted(
+                {s for s in selected if isinstance(s, str)} - supporting_strategies
+            )
+            context["selected_strategies_missing_support"] = {
+                strategy: {"allowed_candidate_refs": by_strategy.get(strategy, [])}
+                for strategy in missing_strategies
             }
         if isinstance(order, list) and any(isinstance(i, str) and i in allowed for i in order):
             supplied = {i for i in order if isinstance(i, str)}

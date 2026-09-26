@@ -18,9 +18,11 @@ class Responses:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
+        self.tool_choices = []
 
     def bind_tools(self, tools, **kwargs):
         assert tools == [DownstreamJudgeOpinion]
+        self.tool_choices.append(kwargs.get("tool_choice"))
         return self
 
     async def ainvoke(self, messages):
@@ -71,6 +73,7 @@ async def test_real_contract_submission_and_truncation_recovery(runtime):
     result = await call(runtime, model)
     assert result.brief_rationale.startswith("Extracellular")
     assert len(model.calls) == 2
+    assert model.tool_choices == ["auto", "DownstreamJudgeOpinion"]
     assert "Return ONLY" in model.calls[1][-1].content
     assert await call(runtime, Responses([])) == result
     assert len([e for e in runtime.store.events(runtime.thread) if e["kind"] == "model-call"]) == 2

@@ -101,7 +101,11 @@ def dispatch_batch(bridge: Any, journal: ScaleBatchStore, batch: ScaleBatchPlan)
                 )
         bridge.store.update(command["id"], "submitted", job_id=job.job_id, run_id=run_id)
         return {
-            "status": job.status,
+            # _launch(..., detach=True) returns the command-facing "detached"
+            # acknowledgement before the durable job controller refreshes it to
+            # queued/running.  Detached is successful dispatch, never a terminal
+            # worker failure.
+            "status": "queued" if job.status == "detached" else job.status,
             "job_id": job.job_id,
             "run_id": run_id,
             "config_sha256": config_sha,

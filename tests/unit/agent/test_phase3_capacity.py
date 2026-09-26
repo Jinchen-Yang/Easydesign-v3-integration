@@ -195,6 +195,11 @@ def test_sixty_pass_projection_keeps_every_id_value_context_and_source(tmp_path)
             if metric_view[key] is not None:
                 metric_view[key] = table[metric_view[key]]
         c = native[references[row[0]]]
+        assert d["strategy_id"] == next(
+            item.lineage.strategy_id
+            for item in measured.candidates
+            if item.lineage.candidate_id == c.candidate_id
+        )
         original = {**c.metrics, **c.additional_metrics}
         for key in [*METRIC_DIRECTIONS, *CONTEXT_METRICS]:
             assert metric_view[key] == original.get(key)

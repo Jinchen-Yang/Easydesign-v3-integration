@@ -171,7 +171,6 @@ async def structured_opinion(
     retained = [w for p in previous for w in p.get("retained_warnings", [])]
     diagnostic = previous[-1].get("diagnostic") if previous else None
     last_submission = previous[-1].get("submission") if previous else None
-    call_model = ranking_submission_model(model, config) if native_decision else model
     for attempt in range(len(previous), 3):
         use_patch = (
             delta_repair
@@ -235,6 +234,24 @@ async def structured_opinion(
             SystemMessage(content=prompt),
             HumanMessage(content=compact({**packet, **recovery})),
         ]
+        # Keep the first call's configured reasoning mode for ordinary downstream
+        # science.  Once that call fails to produce a valid typed submission, the
+        # remaining bounded attempts are submission recovery, not another request
+        # for an unconstrained reasoning trace.  DeepSeek's Anthropic-compatible
+        # endpoint can otherwise consume the complete output allowance before (or
+        # while only partially) emitting tool arguments.  Reuse the exact same
+        # scientific model and output allowance, disable extended thinking only for
+        # recovery, and require the sole offered schema.  Native Pilot ranking is
+        # already tool-first for the same transport reason.
+        force_submission = native_decision or attempt > 0
+        if native_decision or (force_submission and role == "pilot-diagnosis"):
+            call_model = ranking_submission_model(model, config)
+        elif force_submission:
+            from .models import compact_submission_model
+
+            call_model = compact_submission_model(model, config, role=role)
+        else:
+            call_model = model
         usage = context_usage(
             model,
             config,
@@ -255,6 +272,8 @@ async def structured_opinion(
                 "structured_output_tool": schema.__name__,
                 "offered_action_tools": [],
                 "delta_repair": use_patch,
+                "compact_submission_recovery": force_submission and not native_decision,
+                "tool_choice": schema.__name__ if force_submission else "auto",
                 "submission_protocol": SUBMISSION_PROTOCOL if native_decision else None,
             },
         )
@@ -263,7 +282,7 @@ async def structured_opinion(
         category = "NO_SUBMISSION"
         try:
             response = await call_model.bind_tools(
-                [wire_schema], tool_choice=schema.__name__ if native_decision else "auto"
+                [wire_schema], tool_choice=schema.__name__ if force_submission else "auto"
             ).ainvoke(messages)
         except (
             AnthropicConnectionError,

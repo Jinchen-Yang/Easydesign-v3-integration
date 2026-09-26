@@ -580,6 +580,24 @@ class TargetBridge:
             == self.store.card(self.thread, outcome.card_id).request_identity
         )
 
+    def decision_card_is_current(self, card: DecisionCard) -> bool:
+        """Return whether an interrupted Gate card still owns the native state.
+
+        LangGraph checkpoints are transport state, not scientific authority.  A
+        crash or an administrative recovery may apply the exact persisted human
+        response before the graph has consumed its interrupt.  Reopening that
+        checkpoint must therefore compare the card with current native evidence
+        instead of presenting the historical interrupt as a fresh decision.
+        """
+
+        if card.gate_type != "target-structure":
+            return False
+        current = self.read_evidence(card.run_id)
+        return bool(
+            current["request_identity"] == card.request_identity
+            and current["evidence_id"] == card.evidence_id
+        )
+
     @staticmethod
     def _ref(ref: ArtifactRef) -> str:
         return f"{ref.relative_path}#sha256={ref.sha256}"
@@ -647,7 +665,7 @@ class TargetBridge:
                 if verified_request != request:
                     raise AgentBoundaryError(
                         "Recorded Target decision does not match the latest request"
-                    )
+                    ) from error
                 refs.extend(
                     [
                         f"{path.relative_to(root).as_posix()}#sha256={sha256_file(path)}",
@@ -1314,6 +1332,53 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
     ) -> str:
         if role != "coordinator":
             raise AgentBoundaryError("Only coordinator can present a decision")
+        # A native recovery can advance the scientific state after a Gate card was
+        # interrupted but before LangGraph persisted the tool result.  run_session
+        # records the exact stale checkpoint card before resuming it.  Retire only
+        # that marked interrupt; never manufacture a response or consume a current
+        # card merely because it has the same Gate/option label.
+        superseded = None
+        retired_cards: set[str] = set()
+        for event in reversed(bridge.store.events(bridge.thread)):
+            card_id = event["payload"].get("card_id")
+            if event["kind"] == "checkpoint-card-retired" and card_id:
+                retired_cards.add(card_id)
+            elif (
+                event["kind"] == "checkpoint-card-superseded"
+                and card_id
+                and card_id not in retired_cards
+            ):
+                superseded = event
+                break
+        if superseded is not None:
+            previous = bridge.store.card(bridge.thread, superseded["payload"]["card_id"])
+            if previous.option_id != option_id or (
+                previous.assessment_id is not None
+                and previous.assessment_id != assessment_id
+            ):
+                raise AgentBoundaryError(
+                    "Checkpoint retirement does not match the interrupted scientific card"
+                )
+            bridge.store.event(
+                bridge.thread,
+                "checkpoint-card-retired",
+                {
+                    "card_id": previous.card_id,
+                    "gate_type": previous.gate_type,
+                    "reason": "native scientific state advanced before checkpoint delivery",
+                },
+            )
+            return bridge.store.offload(
+                bridge.thread,
+                {
+                    "status": "review-superseded",
+                    "card_id": previous.card_id,
+                    "reason": (
+                        "Runtime state already advanced; continue from the current scientific "
+                        "authority. No Scientist response was created."
+                    ),
+                },
+            )
         card = bridge.decision_card(
             ApplyDecision(
                 assessment_id=assessment_id,

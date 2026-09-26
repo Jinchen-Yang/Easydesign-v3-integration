@@ -28,9 +28,11 @@ uncertainties and a discriminating experiment. Unexecuted hypotheses stay UNRESO
 
 If any PROMOTION Arm exists, propose PROMOTE_TO_SCALE with selected_strategy_ids, positive
 scale_allocations and PASS supporting_candidate_ids. EVERY selected Arm needs support from
-its own arm_id (one candidate per Arm suffices). Explain every supporting ID. Selected
-scaffolds within an Arm require equal counts; different Arms may differ. Another failed Arm
-does not veto promotion. Scientist can still STOP/revise; a proposal launches nothing.
+its own arm_id. EVERY selected strategy/scaffold also needs a supporting native-PASS candidate
+from that exact strategy; never infer scaffold identity from a short candidate alias. Explain
+every supporting ID. Selected scaffolds within an Arm require equal counts; different Arms may
+differ. Another failed Arm does not veto promotion. Scientist can still STOP/revise; a proposal
+launches nothing.
 
 Only complete/evaluable zero-PASS RECOVERY Arms receive arm_recovery and a minimal next action.
 Material Site changes require REVISE_SITE + changes_approved_site=true. An approved-Site

@@ -127,8 +127,6 @@ async def run_session(
     from langgraph.types import Command
 
     from .harness import create_harness, fingerprint
-    from .phase34_runtime import Phase34Runtime
-
     store, thread = bridge.store, bridge.thread
     goal = store.thread(thread, fingerprint(config, harness_variant), goal)
     if decision is None and any(
@@ -201,18 +199,42 @@ async def run_session(
         )
         interrupts = [i for task in state.tasks for i in task.interrupts]
         superseded_card = None
-        if len(interrupts) == 1 and isinstance(bridge, Phase34Runtime):
+        if len(interrupts) == 1:
             pending_card = DecisionCard.model_validate(interrupts[0].value)
-            if pending_card.gate_type in {"pilot-promotion", "wet-lab-handoff"}:
-                current_card = bridge.downstream_card()
-                if current_card is None or current_card.card_id != pending_card.card_id:
-                    store.card(thread, pending_card.card_id)
-                    if decision is not None or store.response(thread, pending_card.card_id):
-                        raise AgentBoundaryError(
-                            "Downstream evidence changed; stale card cannot be approved"
+            if not bridge.decision_card_is_current(pending_card):
+                store.card(thread, pending_card.card_id)
+                saved = store.response(thread, pending_card.card_id)
+                if decision is not None or (saved is not None and not saved["delivered"]):
+                    raise AgentBoundaryError(
+                        "Scientific state changed; stale card cannot be approved"
+                    )
+                superseded_card = pending_card
+                interrupts = []
+                if pending_card.gate_type not in {"pilot-promotion", "wet-lab-handoff"}:
+                    markers = [
+                        e
+                        for e in history
+                        if e["kind"]
+                        in {"checkpoint-card-superseded", "checkpoint-card-retired"}
+                        and e["payload"].get("card_id") == pending_card.card_id
+                    ]
+                    # If the tool returned but the process died before LangGraph
+                    # checkpointed that return, the last durable marker is "retired"
+                    # while the interrupt still exists. Re-arm the exact same card;
+                    # the tool result is idempotent and creates no Scientist outcome.
+                    if not markers or markers[-1]["kind"] != "checkpoint-card-superseded":
+                        store.event(
+                            thread,
+                            "checkpoint-card-superseded",
+                            {
+                                "card_id": pending_card.card_id,
+                                "gate_type": pending_card.gate_type,
+                                "execution_id": execution["execution_id"] if execution else None,
+                                "reason": (
+                                    "native scientific state advanced before checkpoint delivery"
+                                ),
+                            },
                         )
-                    superseded_card = pending_card
-                    interrupts = []
         if interrupts:
             if new_message is not None:
                 raise AgentBoundaryError(

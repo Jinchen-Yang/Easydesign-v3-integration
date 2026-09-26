@@ -76,7 +76,7 @@ def test_scale_exact_batch_dispatch_resume_and_config_tampering(design_bridge, m
             config_path=config_path,
             step=3,
             run_id=run_id,
-            status="running",
+            status="detached",
         )
         jobs.insert(0, job)
         launched.append(job)
@@ -85,6 +85,7 @@ def test_scale_exact_batch_dispatch_resume_and_config_tampering(design_bridge, m
     monkeypatch.setattr("easydesign.agent.phase34_scale_execution._launch", launch)
     bridge.controller = SimpleNamespace(list=lambda **_: jobs)
     first = dispatch_batch(bridge, journal, batch)
+    assert first["status"] == "queued"
     assert dispatch_batch(bridge, journal, batch) == first
     assert len(launched) == 1
     resumed = SimpleNamespace(

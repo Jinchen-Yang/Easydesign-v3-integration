@@ -124,6 +124,7 @@ from .config import (
     ResolvedProtenixMsaProviderConfig,
     Stage05Config,
 )
+from .sequence_prediction import load_msa_cache, store_msa_cache
 from .stage04 import _atomic_text
 from .task_tracking import (
     TaskEventJournal,
@@ -696,6 +697,41 @@ def _prepare_target_msa(
     )
     errors: list[str] = []
     for provider in providers:
+        cached = load_msa_cache(
+            sequence_sha256=target_sha256,
+            sequence=target_sequence,
+            provider=provider,
+        )
+        if cached is not None:
+            cache_root = work / "target-msa" / str(provider.provider) / "workspace-cache"
+            source = cache_root / "target.a3m"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            if source.exists():
+                if sha256_file(source) != sha256_file(cached):
+                    raise ManifestStateError("Stage 05 local MSA cache copy checksum 不一致")
+            else:
+                temporary = source.with_name(f".{source.name}.tmp-{os.getpid()}")
+                with cached.open("rb") as source_handle, temporary.open("xb") as target_handle:
+                    shutil.copyfileobj(source_handle, target_handle)
+                    target_handle.flush()
+                    os.fsync(target_handle.fileno())
+                temporary.rename(source)
+            depth, query = _a3m_depth_and_query(source)
+            if query != target_sequence:
+                raise ManifestStateError("Stage 05 workspace MSA cache query 不一致")
+            source_sha256 = sha256_file(source)
+            dump_model(
+                _TargetMsaState(
+                    provider=provider,
+                    source_relative_path=source.relative_to(work).as_posix(),
+                    target_sequence_sha256=target_sha256,
+                    a3m_sha256=source_sha256,
+                    depth=depth,
+                ),
+                state_path,
+            )
+            publish_copy(source, source_sha256)
+            return destination, depth, provider
         for attempt in range(1, provider.max_attempts + 1):
             provider_root = work / "target-msa" / str(provider.provider) / f"attempt-{attempt:04d}"
             input_json = provider_root / "input.json"
@@ -720,6 +756,12 @@ def _prepare_target_msa(
                 if query != target_sequence:
                     raise ManifestStateError("target MSA query 与 target sequence 不一致")
                 source_sha256 = sha256_file(source)
+                store_msa_cache(
+                    sequence_sha256=target_sha256,
+                    sequence=target_sequence,
+                    provider=provider,
+                    source=source,
+                )
                 dump_model(
                     _TargetMsaState(
                         provider=provider,

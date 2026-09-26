@@ -343,6 +343,19 @@ class Phase34Runtime(Phase34Bridge):
             )
         return False
 
+    def decision_card_is_current(self, card: DecisionCard) -> bool:
+        action = self.next_downstream_action()
+        if (
+            action is not None
+            and action.tool == "request_downstream_decision"
+            and action.arguments == {"card_id": card.card_id}
+        ):
+            return True
+        if card.gate_type in {"pilot-promotion", "wet-lab-handoff"}:
+            current = self.downstream_card()
+            return bool(current is not None and current.card_id == card.card_id)
+        return super().decision_card_is_current(card)
+
     def frozen_pilot_card(self) -> DecisionCard:
         approved = self.approved_design()
         if approved is None:

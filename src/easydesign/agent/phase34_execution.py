@@ -253,7 +253,10 @@ def execute_pilot(
         previous = bridge.project_latest("phase34-pilot-execution")
         if previous is None or any(previous.get(k) != v for k, v in payload.items()):
             bridge.store.event(bridge.thread, "phase34-pilot-execution", payload)
-        return {"status": job.status, **payload}
+        # A detached acknowledgement means the background worker was accepted;
+        # the durable controller will shortly expose queued/running.  Never leak
+        # it as a terminal status to orchestration callers.
+        return {"status": "queued" if job.status == "detached" else job.status, **payload}
 
 
 def register_micro_plan(

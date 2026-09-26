@@ -13,7 +13,7 @@ from .contracts import AgentBoundaryError
 from .phase34_contracts import PilotMeasurement
 from .phase34_plan import PilotArmIntent
 
-NATIVE_RANKING_POLICY = "native-ranking-first-v2"
+NATIVE_RANKING_POLICY = "native-ranking-first-v3"
 
 # Direction organizes observations; it is neither a cutoff nor a fitness equation.
 METRIC_DIRECTIONS = {
@@ -274,6 +274,16 @@ def bind_native_ranking(
     if set(opinion.supporting_candidate_ids) - set(candidates):
         raise AgentBoundaryError(
             "Scientific promotion support must reference native PASS candidates"
+        )
+    supported_strategies = {
+        candidates[candidate_id]["strategy_id"]
+        for candidate_id in opinion.supporting_candidate_ids
+    }
+    unsupported_strategies = set(opinion.selected_strategy_ids) - supported_strategies
+    if opinion.recommended_action == "PROMOTE_TO_SCALE" and unsupported_strategies:
+        raise AgentBoundaryError(
+            "Each selected Scale strategy needs native-PASS support from that exact strategy; "
+            f"unsupported={sorted(unsupported_strategies)}"
         )
     if opinion.recommended_action == "PROMOTE_TO_SCALE" and any(
         not set(arm_facts[a]["pass_candidate_ids"]) & set(opinion.supporting_candidate_ids)

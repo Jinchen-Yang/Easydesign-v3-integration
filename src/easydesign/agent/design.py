@@ -756,6 +756,20 @@ class DesignBridge(Phase2Bridge):
         proposal = self.current_design()
         return bool(proposal and proposal["request_identity"] == card.request_identity)
 
+    def decision_card_is_current(self, card: DecisionCard) -> bool:
+        if card.gate_type != "design-specification":
+            return super().decision_card_is_current(card)
+        state = self.scientific_state()
+        proposal = self.current_design()
+        if (
+            state.get("scientific_state") != "awaiting-human-approval"
+            or state.get("gate_type") != "design-specification"
+            or proposal is None
+            or proposal["request_identity"] != card.request_identity
+        ):
+            return False
+        return self.design_snapshot(proposal)["evidence_id"] == card.evidence_id
+
     def terminal_result(self, message: str) -> dict[str, Any]:
         if self.approved_site() is None or self.pending_site() is not None:
             return super().terminal_result(message)

@@ -200,7 +200,7 @@ def _publish_explicit_msa(
     )
 
 
-def _msa_cache_paths(
+def msa_cache_paths(
     *,
     sequence_sha256: str,
     provider: ResolvedProtenixMsaProviderConfig,
@@ -221,13 +221,16 @@ def _msa_cache_paths(
     return root / "target.a3m", root / "manifest.json"
 
 
-def _load_msa_cache(
+def load_msa_cache(
     *,
-    prepared: PreparedSequenceRun,
+    sequence_sha256: str,
+    sequence: str,
     provider: ResolvedProtenixMsaProviderConfig,
 ) -> Path | None:
-    a3m, manifest_path = _msa_cache_paths(
-        sequence_sha256=prepared.loaded_config.target.sequence_sha256,
+    """Return only a checksum- and query-verified workspace MSA cache entry."""
+
+    a3m, manifest_path = msa_cache_paths(
+        sequence_sha256=sequence_sha256,
         provider=provider,
     )
     cache_root = a3m.parent
@@ -247,34 +250,42 @@ def _load_msa_cache(
     except (OSError, json.JSONDecodeError):
         return None
     expected = {
-        "query_sequence_sha256": prepared.loaded_config.target.sequence_sha256,
+        "query_sequence_sha256": sequence_sha256,
         "a3m_sha256": sha256_file(a3m),
         "provider": str(provider.provider),
         "server_mode": provider.server_mode,
+        "endpoint_sha256": hashlib.sha256(provider.endpoint.encode()).hexdigest(),
     }
     if any(manifest.get(key) != value for key, value in expected.items()):
         return None
-    _validated_a3m(
-        source=a3m,
-        expected_query=prepared.loaded_config.target.sequence,
-    )
+    _validated_a3m(source=a3m, expected_query=sequence)
     return a3m
 
 
-def _store_msa_cache(
+def _load_msa_cache(
     *,
     prepared: PreparedSequenceRun,
     provider: ResolvedProtenixMsaProviderConfig,
-    evidence: _MsaEvidence,
-) -> None:
-    if (
-        evidence.sha256 is None
-        or evidence.depth is None
-        or evidence.published_a3m is None
-    ):
-        raise ManifestStateError("remote MSA cache 不能保存空 evidence")
-    legacy_a3m, _legacy_manifest = _msa_cache_paths(
+) -> Path | None:
+    return load_msa_cache(
         sequence_sha256=prepared.loaded_config.target.sequence_sha256,
+        sequence=prepared.loaded_config.target.sequence,
+        provider=provider,
+    )
+
+
+def store_msa_cache(
+    *,
+    sequence_sha256: str,
+    sequence: str,
+    provider: ResolvedProtenixMsaProviderConfig,
+    source: Path,
+) -> Path:
+    """Publish a validated immutable A3M revision and return the cached file."""
+
+    a3m_sha256, depth = _validated_a3m(source=source, expected_query=sequence)
+    legacy_a3m, _legacy_manifest = msa_cache_paths(
+        sequence_sha256=sequence_sha256,
         provider=provider,
     )
     cache_root = legacy_a3m.parent
@@ -282,20 +293,20 @@ def _store_msa_cache(
     revisions.mkdir(parents=True, exist_ok=True)
     revision_id = (
         datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        + f"-{evidence.sha256[:12]}"
+        + f"-{a3m_sha256[:12]}"
     )
     revision = revisions / revision_id
     revision.mkdir()
     a3m = revision / "target.a3m"
     manifest_path = revision / "manifest.json"
-    _exclusive_copy(evidence.published_a3m, a3m)
+    _exclusive_copy(source, a3m)
     _exclusive_text(
         json.dumps(
             {
                 "schema_version": "0.1",
-                "query_sequence_sha256": prepared.loaded_config.target.sequence_sha256,
-                "a3m_sha256": evidence.sha256,
-                "depth": evidence.depth,
+                "query_sequence_sha256": sequence_sha256,
+                "a3m_sha256": a3m_sha256,
+                "depth": depth,
                 "provider": str(provider.provider),
                 "server_mode": provider.server_mode,
                 "endpoint_sha256": hashlib.sha256(
@@ -313,6 +324,27 @@ def _store_msa_cache(
     _atomic_pointer(
         revision.relative_to(cache_root).as_posix(),
         cache_root / "CURRENT",
+    )
+    return a3m
+
+
+def _store_msa_cache(
+    *,
+    prepared: PreparedSequenceRun,
+    provider: ResolvedProtenixMsaProviderConfig,
+    evidence: _MsaEvidence,
+) -> None:
+    if (
+        evidence.sha256 is None
+        or evidence.depth is None
+        or evidence.published_a3m is None
+    ):
+        raise ManifestStateError("remote MSA cache 不能保存空 evidence")
+    store_msa_cache(
+        sequence_sha256=prepared.loaded_config.target.sequence_sha256,
+        sequence=prepared.loaded_config.target.sequence,
+        provider=provider,
+        source=evidence.published_a3m,
     )
 
 

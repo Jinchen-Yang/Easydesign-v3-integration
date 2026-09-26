@@ -453,7 +453,9 @@ def main(argv: list[str] | None = None) -> int:
         port=args.port,
         web_root=web_root,
     )
-    print(f"Workbench: http://127.0.0.1:{server.server_port}/#access={server.token}", flush=True)
+    # The token is written to the owner-only state file.  Never duplicate it in
+    # process logs, shell history, or service-manager output.
+    print(f"Workbench: http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

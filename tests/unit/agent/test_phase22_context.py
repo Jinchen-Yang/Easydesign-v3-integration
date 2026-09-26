@@ -216,7 +216,9 @@ async def test_large_owner_snapshot_keeps_counterevidence_and_uses_shared_hard_g
     from tests.agent_support import ScriptedModel, scripted_config
 
     execution = bridge.store.begin_execution(bridge.thread, "Challenge complete evidence")
-    value = {"contradictory_evidence": [{"passage": "counterevidence " * 4000}]}
+    # Keep this fixture above the configured 250,000-character hard guard.  The
+    # previous 4,000-token fixture was below the newer 120k/250k soft/hard policy.
+    value = {"contradictory_evidence": [{"passage": "counterevidence " * 15500}]}
     shown = output_message(
         bridge,
         role,

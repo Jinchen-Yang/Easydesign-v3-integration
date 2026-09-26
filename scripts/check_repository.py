@@ -17,7 +17,6 @@ STAGES = (
 )
 FORBIDDEN_PATHS = (
     "src/easydesign/ui",
-    "web/workbench",
     "src/easydesign/managed_protocol.py",
     "src/easydesign/backends/executors/ssh_remote.py",
     "src/easydesign/orchestration/remote_execution.py",
@@ -50,6 +49,8 @@ REQUIRED_LOCAL_FILES = (
     "src/easydesign/setup_worker.py",
     "src/easydesign/reporting/evidence_viewer.py",
     "src/easydesign/reporting/stage02_overlay.py",
+    "src/easydesign/product/server.py",
+    "web/workbench/package.json",
     "web/target-viewer/package.json",
     "examples/apoe-ui-demo/README.md",
     ".agents/skills/easydesign-research/SKILL.md",
@@ -173,8 +174,9 @@ def main() -> int:
     if project.get("scripts") != {
         "easydesign": "easydesign.cli:main",
         "easydesign-agent": "easydesign.agent.cli:main",
+        "easydesign-workbench": "easydesign.product.server:main",
     }:
-        errors.append("终端入口必须保留 easydesign，并提供独立 easydesign-agent")
+        errors.append("终端入口必须保留 CLI、Agent 和本地 Workbench")
     if "ui" in project.get("optional-dependencies", {}):
         errors.append("local 产品禁止 FastAPI/Uvicorn UI extra")
     package_data = document.get("tool", {}).get("setuptools", {}).get("package-data", {})

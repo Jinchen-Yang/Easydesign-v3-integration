@@ -18,10 +18,9 @@ def test_repository_local_product_contract() -> None:
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
-def test_remote_and_ui_surfaces_are_absent() -> None:
+def test_remote_surfaces_are_absent_and_workbench_is_in_tree() -> None:
     forbidden = (
         "src/easydesign/ui",
-        "web/workbench",
         "src/easydesign/managed_protocol.py",
         "src/easydesign/backends/executors/ssh_remote.py",
         "src/easydesign/orchestration/remote_execution.py",
@@ -29,6 +28,8 @@ def test_remote_and_ui_surfaces_are_absent() -> None:
         "scripts/local_ui_release.py",
     )
     assert all(not (ROOT / item).exists() for item in forbidden)
+    assert (ROOT / "web/workbench/package.json").is_file()
+    assert (ROOT / "src/easydesign/product/server.py").is_file()
 
 
 def test_editable_metadata_is_redirected_out_of_the_source_tree() -> None:

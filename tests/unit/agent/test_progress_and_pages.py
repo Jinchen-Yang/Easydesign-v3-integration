@@ -793,6 +793,7 @@ def test_reference_comparison_rejects_nonprotein_auth_chain(
             water_count=0,
         ),
     )
+    monkeypatch.setattr(b, "prepared_structure_path", lambda: b.project / "synthetic-prepared.cif")
 
     with pytest.raises(AgentBoundaryError, match="protein auth chain"):
         research.compare_reference(

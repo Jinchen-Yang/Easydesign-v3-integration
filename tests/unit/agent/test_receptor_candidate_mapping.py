@@ -17,11 +17,14 @@ def examples() -> tuple[dict[str, Any], dict[str, Any]]:
             "canonical_position": canonical,
             "label_seq_id": design,
             "construct_position": construct,
+            "author_chain_id": "A",
+            "source_author_chain_id": "A",
             "canonical_residue": "N",
             "amino_acid": residue,
             "mapping_status": "ambiguous",
             "edit_type": "native" if residue == "N" else "substitution",
             "model_presence": ["1"] if present else [],
+            "coordinate_present": present,
             "source_author_residue_id": None,
             "insertion_code": None,
         }
@@ -109,6 +112,8 @@ def test_receptor_tool_persists_and_delivers_approved_correspondence(
 
     facts, receptor = examples()
     receptor["identity"]["entry_name"] = "synthetic"
+    _, prepared_ref = site_bridge.prepared_structure()
+    receptor["structure"] = {"sha256": prepared_ref.sha256}
     receptor.update(topology={}, membrane={}, state={}, chain_graph={}, warnings=[], avoid=[])
     context = site_bridge.persist(
         "synthetic-gpcr-source",

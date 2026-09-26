@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LiveWorkbenchAdapter } from '../src/adapters/LiveWorkbenchAdapter';
-import type { ProductSnapshot } from '../src/live/contracts';
+import type { ProductLabOrder, ProductLabOrderDraft, ProductSnapshot } from '../src/live/contracts';
 const project = {
   id: 'native-project',
   title: 'Native project',
@@ -55,6 +55,33 @@ function snapshot(): ProductSnapshot {
       required_fields: { revise: ['instruction'] },
       summary: {},
     },
+  };
+}
+function labOrder(): ProductLabOrder {
+  return {
+    schema_version: '1',
+    mode: 'simulation',
+    provider: 'mock-lab-v1',
+    project_id: project.id,
+    handoff_sha256: 'b'.repeat(64),
+    handoff_status: 'validation-only-not-authorized-for-experiment',
+    ordering_status: 'not-ordered',
+    revision: 'c'.repeat(64),
+    candidates: [
+      {
+        id: 'candidate-1',
+        selection_class: 'primary',
+        selection_rank: 1,
+        sequence_length: 120,
+        sequence_sha256: 'd'.repeat(64),
+        sequence_ready: true,
+      },
+    ],
+    draft: null,
+    quote: null,
+    receipt: null,
+    capabilities: { save: true, quote: false, submit: false, real_order: false },
+    disclaimer: 'Simulation only.',
   };
 }
 const adapters: LiveWorkbenchAdapter[] = [];
@@ -267,5 +294,56 @@ describe('Live adapter preserves Runtime authority', () => {
     await adapter.createProject(title, goal);
     expect(bodies).toHaveLength(2);
     expect(bodies[0].request_id).not.toBe(bodies[1].request_id);
+  });
+  it('connects the live UI to the server-owned simulated order with retry identity', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const { adapter, setCurrent } = fixture(async (body) => {
+      bodies.push(body);
+      if (bodies.length === 1) throw new TypeError('Connection lost after simulated save');
+      const order = labOrder();
+      order.draft = body.draft as ProductLabOrderDraft;
+      order.capabilities = { save: true, quote: true, submit: false, real_order: false };
+      order.revision = 'e'.repeat(64);
+      return Response.json({ order });
+    });
+    const current = snapshot();
+    current.current_action.stage = 'handoff-complete';
+    current.lab_order = labOrder();
+    setCurrent(current);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    let observed = await adapter.load();
+    adapter.subscribe((event) => {
+      observed = event.snapshot;
+    });
+    const draft: ProductLabOrderDraft = {
+      schema_version: '1',
+      candidate_ids: ['candidate-1'],
+      requirements: {
+        format: 'VHH',
+        amount: '1 mg',
+        host: 'E. coli',
+        buffer: 'PBS',
+        profile: 'simulation-lab',
+        preferred_date: '',
+        purchase_order: '',
+        sds_purity: '',
+        sec_purity: '',
+        endotoxin: '',
+        concentration: '',
+        notes: 'Simulation only.',
+      },
+      reviewed: true,
+    };
+    await expect(adapter.applyLabOrder('save', draft)).rejects.toThrow('Connection lost');
+    await adapter.applyLabOrder('save', draft);
+    expect(bodies[0].request_id).toBe(bodies[1].request_id);
+    expect(bodies[1]).toMatchObject({
+      action: 'save',
+      revision: 'c'.repeat(64),
+      draft,
+    });
+    expect(observed.snapshot?.lab_order?.draft?.candidate_ids).toEqual(['candidate-1']);
+    expect(observed.snapshot?.lab_order?.capabilities.real_order).toBe(false);
   });
 });

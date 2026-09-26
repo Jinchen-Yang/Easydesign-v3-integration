@@ -23,6 +23,7 @@ import { ProjectsPage } from '../features/projects/ProjectsPage';
 import { LiveResources } from '../features/compute/LiveResources';
 import { Workflow } from '../features/workflow/Workflow';
 import { Conversation } from '../features/conversation/Conversation';
+import { LiveLabOrderPage } from '../features/lab-order/LiveLabOrderPage';
 import type {
   ActivityStatus,
   ConversationActivityStatus,
@@ -100,6 +101,7 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
     .filter(
       (e) =>
         e.visible !== false &&
+        !(v.current_action.stage === 'handoff-complete' && e.type === 'gate.awaiting') &&
         e.type !== 'runtime.record' &&
         !['assistant.summary', 'scientist.message'].includes(e.type) &&
         Boolean(e.summary || e.text),
@@ -143,7 +145,8 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
     [workflowOpen, setWorkflowOpen] = useState(false),
     [tasksOpen, setTasksOpen] = useState(false),
     [compare, setCompare] = useState(false),
-    [reveal, setReveal] = useState(0);
+    [reveal, setReveal] = useState(0),
+    [labOrderOpen, setLabOrderOpen] = useState(false);
   const [site, setSite] = useState(''),
     [error, setError] = useState(''),
     [token, setToken] = useState(''),
@@ -179,6 +182,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
     phase = phaseOf(v?.project.phase || 'goal');
   useEffect(() => {
     setViewedPhase(phase);
+    setLabOrderOpen(false);
     setSite(
       v?.decision?.default_option_id ||
         v?.scientific_context.approved_site?.selected_candidate_id ||
@@ -196,6 +200,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
     setContextOpen(false);
     setWorkflowOpen(false);
     setTasksOpen(false);
+    setLabOrderOpen(false);
     closeProjects();
   };
   const open = (id: string) => {
@@ -213,6 +218,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
     setContextOpen(true);
     setWorkflowOpen(false);
     setReveal((n) => n + 1);
+    setLabOrderOpen(false);
   };
   const closeContext = () => {
     setContextOpen(false);
@@ -289,18 +295,20 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
           ? 'failed'
           : 'waiting') as ActivityStatus,
   }));
-  const agentTasks = (v?.tasks || []).map((task) => ({
-    id: task.task_id,
-    title: task.title || task.task_id.replace(/[-_]/g, ' '),
-    detail:
-      task.summary ||
-      [task.specialist || task.role, task.progress?.label].filter(Boolean).join(' · ') ||
-      'Execution state recorded by the backend',
-    status: task.status || 'pending',
-    progress: task.progress,
-  }));
   const completed = v?.current_action.stage === 'handoff-complete';
-  const decision = v?.decision;
+  const agentTasks = (v?.tasks || [])
+    .filter((task) => !(completed && task.type === 'gate.awaiting'))
+    .map((task) => ({
+      id: task.task_id,
+      title: task.title || task.task_id.replace(/[-_]/g, ' '),
+      detail:
+        task.summary ||
+        [task.specialist || task.role, task.progress?.label].filter(Boolean).join(' · ') ||
+        'Execution state recorded by the backend',
+      status: task.status || 'pending',
+      progress: task.progress,
+    }));
+  const decision = completed ? null : v?.decision;
   const option =
     decision?.options.find((o) => o.option_id === site) ||
     decision?.options.find((o) => o.option_id === decision.default_option_id);
@@ -491,6 +499,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                 aria-label="Open scientific context"
                 aria-expanded={contextOpen}
                 aria-controls="scientific-context"
+                hidden={labOrderOpen}
                 onClick={() => (contextOpen ? closeContext() : focus(viewedPhase))}
               >
                 <PanelRight size={17} />
@@ -505,153 +514,181 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
               snapshot={{ tasks, completed, specialists }}
               agentTasks={agentTasks}
               onOpenTasks={() => setTasksOpen(true)}
-              viewedPhase={viewedPhase}
+              viewedPhase={labOrderOpen ? 'lab-order' : viewedPhase}
               onView={focus}
-              onLabOrder={() => setModal('handoff')}
+              labOrderComplete={Boolean(v.lab_order?.receipt)}
+              onLabOrder={() => {
+                if (v.lab_order) {
+                  setLabOrderOpen(true);
+                  setContextOpen(false);
+                  setWorkflowOpen(false);
+                } else setModal('handoff');
+              }}
             />
-            <div className="research-main">
-              <Conversation
-                key={v.project.id}
-                mode="live"
-                snapshot={{
-                  messages: dialogue(v),
-                  completed,
-                  phase,
-                  busy: v.project.status === 'running',
-                }}
-                viewedPhase={viewedPhase}
-                onFocus={focus}
-                onSkip={() => {}}
-                onRetry={(id) => run(() => adapter.retryRequest(id))}
-                disabled={state?.connection !== 'connected'}
-                sending={answering}
+            {labOrderOpen && v.lab_order ? (
+              <LiveLabOrderPage
+                order={v.lab_order}
+                busy={busy}
                 error={error}
-                onSend={async (text) => {
-                  setError('');
-                  try {
-                    await adapter.sendMessage(text, viewedPhase);
-                  } catch (e) {
-                    setError((e as Error).message);
-                    throw e;
-                  }
-                }}
+                onApply={(action, draft, acknowledgement) =>
+                  adapter.applyLabOrder(action, draft, acknowledgement)
+                }
               />
-              <LiveContext
-                snapshot={v}
-                state={state!}
-                adapter={adapter}
-                phase={viewedPhase}
-                siteId={site}
-                onSite={setSite}
-                compare={compare}
-                onClose={closeContext}
-                revealRequest={reveal}
-              />
-              <footer
-                className={`decision-bar ${completed ? 'completed' : ''}`}
-                role="region"
-                aria-label={decision ? `Gate ${decision.gate} decision` : 'Research status'}
-              >
-                <span className="decision-icon">
-                  <Check size={17} />
-                </span>
-                <div className="decision-copy">
-                  <strong>
-                    {decision?.gate === 2
-                      ? `Continue with Site ${rank || ''}?`
-                      : completed
-                        ? 'Panel finalized'
-                        : v.lifecycle === 'failed'
-                          ? 'Target research needs a retry'
-                          : decision?.gate === 1
-                            ? 'Approve the automatically selected target?'
-                            : decision?.gate === 3
-                              ? 'Ready to start the pilot?'
-                              : decision
-                                ? 'Ready for your review'
-                                : stepTitles[v.project.phase] || 'Research in progress'}
-                  </strong>
-                  <span>
-                    {v.project.validation_only
-                      ? 'Validation only · not authorized for experiment'
-                      : v.lifecycle === 'failed'
-                        ? 'Verified evidence and recovery state were retained.'
-                        : decision?.gate === 1
-                          ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
-                          : decision
-                            ? 'Review the scientific context before continuing.'
-                            : 'Your conversations, decisions and results stay with this project.'}
+            ) : (
+              <div className="research-main">
+                <Conversation
+                  key={v.project.id}
+                  mode="live"
+                  snapshot={{
+                    messages: dialogue(v),
+                    completed,
+                    phase,
+                    busy: v.project.status === 'running',
+                  }}
+                  viewedPhase={viewedPhase}
+                  onFocus={focus}
+                  onSkip={() => {}}
+                  onRetry={(id) => run(() => adapter.retryRequest(id))}
+                  disabled={state?.connection !== 'connected'}
+                  sending={answering}
+                  error={error}
+                  onSend={async (text) => {
+                    setError('');
+                    try {
+                      await adapter.sendMessage(text, viewedPhase);
+                    } catch (e) {
+                      setError((e as Error).message);
+                      throw e;
+                    }
+                  }}
+                />
+                <LiveContext
+                  snapshot={v}
+                  state={state!}
+                  adapter={adapter}
+                  phase={viewedPhase}
+                  siteId={site}
+                  onSite={setSite}
+                  compare={compare}
+                  onClose={closeContext}
+                  revealRequest={reveal}
+                />
+                <footer
+                  className={`decision-bar ${completed ? 'completed' : ''}`}
+                  role="region"
+                  aria-label={decision ? `Gate ${decision.gate} decision` : 'Research status'}
+                >
+                  <span className="decision-icon">
+                    <Check size={17} />
                   </span>
-                </div>
-                {decision ? (
-                  <div className="decision-actions">
-                    {[2, 5].includes(decision.gate) && (
+                  <div className="decision-copy">
+                    <strong>
+                      {decision?.gate === 2
+                        ? `Continue with Site ${rank || ''}?`
+                        : completed
+                          ? 'Panel finalized'
+                          : v.lifecycle === 'failed'
+                            ? 'Target research needs a retry'
+                            : decision?.gate === 1
+                              ? 'Approve the automatically selected target?'
+                              : decision?.gate === 3
+                                ? 'Ready to start the pilot?'
+                                : decision
+                                  ? 'Ready for your review'
+                                  : stepTitles[v.project.phase] || 'Research in progress'}
+                    </strong>
+                    <span>
+                      {v.project.validation_only
+                        ? 'Validation only · not authorized for experiment'
+                        : v.lifecycle === 'failed'
+                          ? 'Verified evidence and recovery state were retained.'
+                          : decision?.gate === 1
+                            ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
+                            : decision
+                              ? 'Review the scientific context before continuing.'
+                              : 'Your conversations, decisions and results stay with this project.'}
+                    </span>
+                  </div>
+                  {decision ? (
+                    <div className="decision-actions">
+                      {[2, 5].includes(decision.gate) && (
+                        <button
+                          className="secondary-button"
+                          onClick={() => {
+                            setCompare((c) => !c);
+                            focus(phase);
+                          }}
+                        >
+                          <Columns2 size={14} />
+                          Compare
+                        </button>
+                      )}
                       <button
                         className="secondary-button"
-                        onClick={() => {
-                          setCompare((c) => !c);
-                          focus(phase);
-                        }}
+                        disabled={busy}
+                        onClick={() => setModal('edit')}
                       >
-                        <Columns2 size={14} />
-                        Compare
+                        <PencilLine size={14} />
+                        {decision.gate === 1
+                          ? 'Change structure'
+                          : decision.gate === 4
+                            ? 'Revise'
+                            : 'Edit'}
                       </button>
-                    )}
-                    <button
-                      className="secondary-button"
-                      disabled={busy}
-                      onClick={() => setModal('edit')}
-                    >
-                      <PencilLine size={14} />
-                      {decision.gate === 1
-                        ? 'Change structure'
-                        : decision.gate === 4
-                          ? 'Revise'
-                          : 'Edit'}
-                    </button>
+                      <button
+                        className="primary-button"
+                        disabled={
+                          busy ||
+                          !v.capabilities.decide ||
+                          !option?.eligible ||
+                          !(
+                            option.actions.includes('approve') ||
+                            option.actions.includes('override')
+                          )
+                        }
+                        onClick={() =>
+                          option?.actions.includes('approve')
+                            ? run(() =>
+                                decide({ action: 'approve', selected_option_id: option.option_id }),
+                              )
+                            : setModal('edit')
+                        }
+                      >
+                        {approveLabel}
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  ) : failedCreate ? (
                     <button
                       className="primary-button"
-                      disabled={
-                        busy ||
-                        !v.capabilities.decide ||
-                        !option?.eligible ||
-                        !(option.actions.includes('approve') || option.actions.includes('override'))
-                      }
-                      onClick={() =>
-                        option?.actions.includes('approve')
-                          ? run(() =>
-                              decide({ action: 'approve', selected_option_id: option.option_id }),
-                            )
-                          : setModal('edit')
-                      }
+                      disabled={busy}
+                      onClick={() => run(() => adapter.retryRequest(failedCreate.id))}
                     >
-                      {approveLabel}
-                      <ArrowRight size={15} />
+                      Retry Target Intelligence <ArrowRight size={15} />
                     </button>
-                  </div>
-                ) : failedCreate ? (
-                  <button
-                    className="primary-button"
-                    disabled={busy}
-                    onClick={() => run(() => adapter.retryRequest(failedCreate.id))}
-                  >
-                    Retry Target Intelligence <ArrowRight size={15} />
-                  </button>
-                ) : v.capabilities.resume ? (
-                  <button
-                    className="primary-button"
-                    disabled={busy}
-                    onClick={() => run(() => adapter.resume())}
-                  >
-                    Continue research <ArrowRight size={15} />
-                  </button>
-                ) : completed ? (
-                  <button className="secondary-button" onClick={() => setModal('handoff')}>
-                    Review handoff <ArrowRight size={15} />
-                  </button>
-                ) : null}
-              </footer>
-            </div>
+                  ) : v.capabilities.resume ? (
+                    <button
+                      className="primary-button"
+                      disabled={busy}
+                      onClick={() => run(() => adapter.resume())}
+                    >
+                      Continue research <ArrowRight size={15} />
+                    </button>
+                  ) : completed ? (
+                    <button
+                      className="primary-button"
+                      disabled={!v.lab_order}
+                      onClick={() => {
+                        setLabOrderOpen(true);
+                        setContextOpen(false);
+                      }}
+                    >
+                      Open simulated Lab Order <ArrowRight size={15} />
+                    </button>
+                  ) : null}
+                </footer>
+              </div>
+            )}
             {tasksOpen && (
               <aside className="task-inspector" aria-label="Agent Tasks" aria-modal="true">
                 <header>

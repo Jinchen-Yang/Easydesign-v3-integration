@@ -4,6 +4,8 @@ import type {
   GateInput,
   LiveState,
   Page,
+  ProductLabOrder,
+  ProductLabOrderDraft,
   ProductSnapshot,
   Project,
   RequestState,
@@ -30,6 +32,11 @@ export interface LiveWorkbenchPort extends SnapshotAdapter<LiveState> {
   resume(): Promise<void>;
   sendMessage(text: string, phase?: string): Promise<void>;
   retryRequest(id: string): Promise<void>;
+  applyLabOrder(
+    action: 'save' | 'quote' | 'submit',
+    draft?: ProductLabOrderDraft,
+    acknowledgement?: 'SIMULATED_ORDER_ONLY',
+  ): Promise<void>;
 }
 const emptyPage = <T>(): Page<T> => ({ items: [], total: 0, offset: 0, limit: 20 });
 /** Poll serially after a response. A slow Runtime never accumulates overlapping GETs. */
@@ -52,6 +59,7 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
   private generation = 0;
   private projectsAt = 0;
   private commands = new Map<string, string>();
+  private labCommands = new Map<string, string>();
   constructor(
     private transport: typeof fetch = (input, init) => fetch(input, init),
     private interval = 2000,
@@ -301,5 +309,43 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
   async retryRequest(id: string) {
     await this.post('/requests/' + id + '/resume', {});
     await this.refresh();
+  }
+  async applyLabOrder(
+    action: 'save' | 'quote' | 'submit',
+    draft?: ProductLabOrderDraft,
+    acknowledgement?: 'SIMULATED_ORDER_ONLY',
+  ) {
+    const snapshot = this.state.snapshot;
+    const order = snapshot?.lab_order;
+    if (!snapshot || !order) throw new Error('The Gate 5 handoff is not ready for simulation.');
+    if (!order.capabilities[action]) throw new Error('Refresh the current simulated order.');
+    const body = {
+      revision: order.revision,
+      action,
+      ...(draft ? { draft } : {}),
+      ...(acknowledgement ? { acknowledgement } : {}),
+    };
+    const signature = JSON.stringify({ project: snapshot.project.id, body });
+    const request_id = this.labCommands.get(signature) || crypto.randomUUID();
+    this.labCommands.set(signature, request_id);
+    this.emit({ pending: true, error: null });
+    try {
+      const response = await this.post<{ order: ProductLabOrder }>(
+        `/projects/${snapshot.project.id}/lab-order`,
+        { request_id, ...body },
+      );
+      this.labCommands.delete(signature);
+      this.emit({
+        snapshot: { ...snapshot, lab_order: response.order },
+        connection: 'connected',
+        error: null,
+      });
+    } catch (error) {
+      this.emit({ error: (error as Error).message });
+      if (error instanceof ApiError && error.status < 500) this.labCommands.delete(signature);
+      throw error;
+    } finally {
+      this.emit({ pending: false });
+    }
   }
 }

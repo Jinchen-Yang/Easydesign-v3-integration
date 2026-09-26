@@ -108,6 +108,80 @@ export interface RequestState {
   created: number;
   updated: number;
 }
+export interface ProductLabOrderRequirements {
+  format: 'VHH' | 'VHH-Fc';
+  amount: string;
+  host: string;
+  buffer: string;
+  profile: 'simulation-lab';
+  preferred_date: string;
+  purchase_order: string;
+  sds_purity: string;
+  sec_purity: string;
+  endotoxin: string;
+  concentration: string;
+  notes: string;
+}
+export interface ProductLabOrderDraft {
+  schema_version: '1';
+  candidate_ids: string[];
+  requirements: ProductLabOrderRequirements;
+  reviewed: true;
+}
+export interface ProductLabOrderCandidate {
+  id: string;
+  selection_class: string;
+  selection_rank: number;
+  sequence_length: number;
+  sequence_sha256: string;
+  sequence_ready: boolean;
+}
+export interface ProductLabOrderQuote {
+  quote_id: string;
+  provider: 'mock-lab-v1';
+  environment: 'simulation';
+  draft_sha256: string;
+  sample_count: number;
+  illustrative_total: number;
+  currency: 'USD';
+  turnaround: 'simulation-only';
+  non_binding: true;
+  external_request_sent: false;
+}
+export interface ProductLabOrderReceipt {
+  receipt_id: string;
+  order_id: string;
+  provider: 'mock-lab-v1';
+  environment: 'simulation';
+  status: 'simulated-accepted';
+  project_id: string;
+  handoff_sha256: string;
+  quote_id: string;
+  candidate_ids: string[];
+  candidate_sequence_sha256: Record<string, string>;
+  submitted_at: string;
+  financial_commitment: false;
+  external_request_sent: false;
+  experiment_authorized: false;
+  ordering_status: 'simulation-only-not-ordered';
+  receipt_sha256: string;
+}
+export interface ProductLabOrder {
+  schema_version: '1';
+  mode: 'simulation';
+  provider: 'mock-lab-v1';
+  project_id: string;
+  handoff_sha256: string;
+  handoff_status: string;
+  ordering_status: string;
+  revision: string;
+  candidates: ProductLabOrderCandidate[];
+  draft: ProductLabOrderDraft | null;
+  quote: ProductLabOrderQuote | null;
+  receipt: ProductLabOrderReceipt | null;
+  capabilities: { save: boolean; quote: boolean; submit: boolean; real_order: false };
+  disclaimer: string;
+}
 export interface ProductSnapshot {
   schema_version: '1';
   mode: 'live';
@@ -188,6 +262,7 @@ export interface ProductSnapshot {
   event_cursor: number;
   candidates: { total: number; counts: Record<string, number>; url: string };
   capabilities: Record<string, boolean>;
+  lab_order?: ProductLabOrder | null;
   requests: RequestState[];
   connection: string;
 }

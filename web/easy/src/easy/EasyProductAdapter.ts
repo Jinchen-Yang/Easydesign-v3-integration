@@ -60,6 +60,7 @@ export class EasyProductAdapter implements EasyProductPort {
   private generation = 0;
   private projectsAt = 0;
   private commands = new Map<string, string>();
+  private labCommands = new Map<string, string>();
   constructor(
     private transport: typeof fetch = (input, init) => fetch(input, init),
     private interval = 2000,
@@ -320,16 +321,33 @@ export class EasyProductAdapter implements EasyProductPort {
   private async applyLabOrder(action: 'save' | 'quote' | 'submit', draft?: LabOrderDraftInput) {
     const id = this.state.selectedProject;
     if (!id) throw new Error('Select a project first.');
-    const current = await this.labOrder();
-    const result = await this.post<{ order: LabOrderView }>(`/projects/${id}/lab-order`, {
-      request_id: crypto.randomUUID(),
+    const current = this.state.snapshot?.lab_order || (await this.labOrder());
+    const body = {
       revision: current.revision,
       action,
       ...(draft ? { draft } : {}),
-      ...(action === 'submit' ? { acknowledgement: 'SIMULATED_ORDER_ONLY' } : {}),
-    });
-    await this.refresh();
-    return result.order;
+      ...(action === 'submit' ? { acknowledgement: 'SIMULATED_ORDER_ONLY' as const } : {}),
+    };
+    const signature = JSON.stringify({ project: id, body });
+    const request_id = this.labCommands.get(signature) || crypto.randomUUID();
+    this.labCommands.set(signature, request_id);
+    this.emit({ pending: true, error: null });
+    try {
+      const result = await this.post<{ order: LabOrderView }>(`/projects/${id}/lab-order`, {
+        request_id,
+        ...body,
+      });
+      this.labCommands.delete(signature);
+      if (this.state.snapshot?.project.id === id)
+        this.emit({ snapshot: { ...this.state.snapshot, lab_order: result.order }, error: null });
+      return result.order;
+    } catch (error) {
+      this.emit({ error: (error as Error).message });
+      if (error instanceof ApiError && error.status < 500) this.labCommands.delete(signature);
+      throw error;
+    } finally {
+      this.emit({ pending: false });
+    }
   }
 
   saveLabOrder(draft: LabOrderDraftInput) {

@@ -360,11 +360,17 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
           `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`,
         );
       }
-      const loaded = await adapter.load();
-      setState(loaded);
       const requested = params.get('project');
-      const project = requested || loaded.projects.items[0]?.id;
-      if (project) await adapter.selectProject(project);
+      if (requested) {
+        // A shared/deep link must not wait for every historical project card to
+        // project before the requested scientific workspace becomes visible.
+        await Promise.all([adapter.selectProject(requested), adapter.load()]);
+      } else {
+        const loaded = await adapter.load();
+        setState(loaded);
+        const project = loaded.projects.items[0]?.id;
+        if (project) await adapter.selectProject(project);
+      }
     })().catch((reason) => setError((reason as Error).message));
     return () => {
       unsubscribe();
@@ -372,6 +378,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     };
   }, [adapter]);
   const snapshot = state?.snapshot || null;
+  const completed = snapshot?.current_action.stage === 'handoff-complete';
   useEffect(() => {
     const defaultSite = snapshot?.scientific_context.approved_site?.selected_candidate_id;
     setSelectedSite(defaultSite || snapshot?.decision?.default_option_id || undefined);
@@ -388,7 +395,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     null;
   const roles = state?.selectedCandidate?.structure_roles || {};
   const activity = (snapshot?.recent_activity || [])
-    .filter((item) => item.visible !== false)
+    .filter((item) => item.visible !== false && !(completed && item.type === 'gate.awaiting'))
     .slice(-8)
     .reverse();
   const projects = state?.projects.items || [];
@@ -405,6 +412,17 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     try {
       const goal = productGoal(input);
       await adapter.createProject(input.name.trim() || inputLabel(input).slice(0, 80), goal, file);
+      const created = await adapter.load();
+      if (created.selectedProject) {
+        const params = new URLSearchParams(location.search);
+        params.delete('token');
+        params.set('project', created.selectedProject);
+        history.replaceState(
+          {},
+          '',
+          `${location.pathname}?${params.toString()}${location.hash}`,
+        );
+      }
       setFile(null);
     } catch (reason) {
       setError((reason as Error).message);
@@ -608,7 +626,15 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
             </div>
             <div className="easy-live-workspace">
               <div className="easy-live-center">
-                {snapshot.decision ? (
+                {completed ? (
+                  <section className="easy-live-progress-card easy-live-complete-card">
+                    <Check size={22} />
+                    <div>
+                      <h3>设计闭环已完成</h3>
+                      <p>Gate 5 已记录；实验与真实下单仍未授权。</p>
+                    </div>
+                  </section>
+                ) : snapshot.decision ? (
                   <GatePanel
                     key={snapshot.decision.id}
                     snapshot={snapshot}

@@ -260,6 +260,73 @@
   color: #a27c43;
   margin-top: 12px;
 }
+
+.live-lab-order {
+  grid-column: 2 / -1;
+  min-width: 0;
+}
+
+.live-lab-disclaimer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 22px;
+}
+
+.live-lab-receipt {
+  align-content: start;
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+}
+
+.live-lab-receipt > svg {
+  color: #6754df;
+}
+
+.live-lab-receipt h2 {
+  margin: 5px 0 8px;
+}
+
+.live-lab-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.live-lab-fields header {
+  grid-column: 1 / -1;
+}
+
+.live-lab-fields label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.live-lab-fields input,
+.live-lab-fields select {
+  width: 100%;
+}
+
+.lab-hash {
+  overflow-wrap: anywhere;
+}
+
+.lab-sample small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-muted);
+  font-weight: 450;
+}
+
+@media (max-width: 760px) {
+  .live-lab-fields {
+    grid-template-columns: 1fr;
+  }
+}
 .lab-review-values {
   margin: 0 0 12px;
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EasyProductAdapter } from '../src/easy/EasyProductAdapter';
-import type { ProductSnapshot } from '../src/easy/product-contracts';
+import type { LabOrderView, ProductSnapshot } from '../src/easy/product-contracts';
 
 const project = {
   id: 'native-project',
@@ -53,6 +53,25 @@ function snapshot(): ProductSnapshot {
       required_fields: {},
       summary: {},
     },
+  };
+}
+
+function labOrder(): LabOrderView {
+  return {
+    schema_version: '1',
+    mode: 'simulation',
+    provider: 'mock-lab-v1',
+    project_id: project.id,
+    handoff_sha256: 'b'.repeat(64),
+    handoff_status: 'validation-only-not-authorized-for-experiment',
+    ordering_status: 'not-ordered',
+    revision: 'c'.repeat(64),
+    candidates: [],
+    draft: { reviewed: true },
+    quote: null,
+    receipt: null,
+    capabilities: { save: true, quote: true, submit: false, real_order: false },
+    disclaimer: 'Simulation only',
   };
 }
 
@@ -161,5 +180,32 @@ describe('Easy live adapter preserves Product API authority', () => {
     await adapter.selectProject(project.id);
     await adapter.quoteLabOrder();
     expect(bodies.at(-1)).toMatchObject({ action: 'quote', revision: 'order-revision' });
+  });
+
+  it('reuses the exact simulated-order identity after an uncertain transport failure', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const current = snapshot();
+    current.lab_order = labOrder();
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      if (init?.method === 'POST' && path.endsWith('/lab-order')) {
+        const body = JSON.parse(String(init.body));
+        bodies.push(body);
+        if (bodies.length === 1) throw new TypeError('Connection lost after quote');
+        return Response.json({ order: labOrder() });
+      }
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 20, items: [project] });
+      return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await expect(adapter.quoteLabOrder()).rejects.toThrow('Connection lost');
+    await adapter.quoteLabOrder();
+    expect(bodies[0].request_id).toBe(bodies[1].request_id);
+    expect(bodies[1]).toMatchObject({ action: 'quote', revision: 'c'.repeat(64) });
   });
 });

@@ -7,6 +7,7 @@ export function Workflow({
   viewedPhase,
   onView,
   onLabOrder,
+  labOrderComplete = false,
   agentTasks = [],
   onOpenTasks,
 }: {
@@ -16,6 +17,7 @@ export function Workflow({
   viewedPhase: WorkflowPhase | 'lab-order';
   onView: (phase: WorkflowPhase) => void;
   onLabOrder: (step?: LabOrderStep) => void;
+  labOrderComplete?: boolean;
   agentTasks?: { id: string; title: string; detail: string; status: string }[];
   onOpenTasks?: () => void;
 }) {
@@ -27,7 +29,11 @@ export function Workflow({
       <div className="workflow-top">
         <span className="eyebrow">WORKFLOW</span>
         <span className="workflow-count">
-          {snapshot.completed ? '7' : snapshot.tasks.filter((x) => x.status === 'complete').length}{' '}
+          {snapshot.completed
+            ? labOrderComplete
+              ? '8'
+              : '7'
+            : snapshot.tasks.filter((x) => x.status === 'complete').length}{' '}
           / 8
         </span>
       </div>
@@ -77,7 +83,7 @@ export function Workflow({
           </div>
         ))}
         <div
-          className={`workflow-step lab-workflow-step ${viewedPhase === 'lab-order' ? 'viewed' : ''} ${snapshot.completed ? '' : 'locked'}`}
+          className={`workflow-step lab-workflow-step ${viewedPhase === 'lab-order' ? 'viewed' : ''} ${labOrderComplete ? 'complete' : ''} ${snapshot.completed ? '' : 'locked'}`}
         >
           <button
             onClick={() => onLabOrder()}
@@ -85,7 +91,10 @@ export function Workflow({
             aria-current={viewedPhase === 'lab-order' ? 'step' : undefined}
             data-testid="phase-lab-order"
           >
-            <span className="step-indicator" aria-label="Pending submission">
+            <span
+              className={`step-indicator ${labOrderComplete ? 'complete' : ''}`}
+              aria-label={labOrderComplete ? 'Simulation complete' : 'Pending submission'}
+            >
               <Check size={13} />
             </span>
             <span>Lab Order</span>

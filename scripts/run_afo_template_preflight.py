@@ -19,6 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from easydesign.agent.phase34_measurement import MEASUREMENT_VERSION
+from easydesign.agent.phase34_partial_reference import (
+    partial_reference_required,
+    recover_partial_reference_predictions,
+)
 from easydesign.core import (
     ManifestStateError,
     canonical_model_sha256,
@@ -183,31 +187,48 @@ def _run_case(
     )
     plan = load_model(upstream.pilot_bundle.pilot_plan.verify(source_run), PilotPlan)
     selected_ids = {item.candidate_id for item in upstream.candidate_index.candidates}
-    predictions, prediction_refs, msa_refs = _predict_selected_candidates(
-        root=source_run,
-        artifacts=artifacts,
-        work=work,
-        runtime=runtime,
-        upstream=upstream,
-        candidates=upstream.candidate_index.candidates,
-        selected_ids=selected_ids,
-        providers=prediction.target_msa.resolved_providers(),
-        prediction_config=prediction,
-        adapter_builder=_complex_prediction_adapter_builder(
-            profile.profile,
-            prediction,
-        ),
-        devices=plan.devices,
-        maximum_attempts=generation.executor.max_task_attempts,
-        created_at=datetime.now(UTC),
-    )
+    adapter_builder = _complex_prediction_adapter_builder(profile.profile, prediction)
+    partial_reference = partial_reference_required(source_run, upstream)
+    try:
+        predictions, prediction_refs, msa_refs = _predict_selected_candidates(
+            root=source_run,
+            artifacts=artifacts,
+            work=work,
+            runtime=runtime,
+            upstream=upstream,
+            candidates=upstream.candidate_index.candidates,
+            selected_ids=selected_ids,
+            providers=prediction.target_msa.resolved_providers(),
+            prediction_config=prediction,
+            adapter_builder=adapter_builder,
+            devices=plan.devices,
+            maximum_attempts=(
+                1 if partial_reference else generation.executor.max_task_attempts
+            ),
+            created_at=datetime.now(UTC),
+        )
+    except ManifestStateError:
+        if not partial_reference:
+            raise
+        predictions, prediction_refs = recover_partial_reference_predictions(
+            root=source_run,
+            work=work,
+            runtime=runtime,
+            artifacts=artifacts,
+            upstream=upstream,
+            prediction_config=prediction,
+            adapter_builder=adapter_builder,
+            devices=plan.devices,
+        )
+        msa_refs = ()
     state = load_latest_runtime_model(
         runtime / "full-target-state.json",
         FullTargetExecutionState,
     )
     if (
         len(predictions) != len(selected_ids)
-        or state.progress.status != "phase-succeeded"
+        or state.progress.status
+        not in ({"incomplete"} if partial_reference else {"phase-succeeded"})
     ):
         raise ManifestStateError("AFO template preflight prediction 未全部成功")
     target_receipt_path = (
@@ -258,6 +279,7 @@ def _run_case(
         "authority_id": authority_id,
         "candidate_count": len(selected_ids),
         "prediction_count": len(predictions),
+        "partial_reference_recovery": partial_reference,
         "runtime_profile_sha256": profile_sha256,
         "target_template_count": target_receipt.template_count,
         "target_template_receipt": str(target_receipt_path.relative_to(source_run)),

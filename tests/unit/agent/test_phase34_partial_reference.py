@@ -17,7 +17,20 @@ from easydesign.agent.phase34_partial_reference import (
     verified_chain,
 )
 from easydesign.backends.structure_prediction import ComplexConfidenceMetrics
-from easydesign.core import ArtifactRef, ProgressSnapshot, TaskRecord, TaskStatus, dump_model
+from easydesign.core import (
+    ArtifactRef,
+    ProgressSnapshot,
+    TaskRecord,
+    TaskStatus,
+    dump_model,
+    sha256_file,
+)
+from easydesign.orchestration.afo_template_protocol import (
+    PROTOCOL_ID,
+    AfoBinderTemplateReceipt,
+    AfoTargetTemplateReceipt,
+    AfoTemplateMappingAudit,
+)
 from easydesign.orchestration.config import stage05_config_for_backend
 from easydesign.orchestration.stage05 import _TargetMsaState
 from easydesign.stages.s05_pilot_filtering import FullTargetExecutionState
@@ -39,7 +52,7 @@ def cif(rows):
     return structure.make_mmcif_document().as_string()
 
 
-def setup_partial(tmp_path):
+def setup_partial(tmp_path, *, template_protocol=False):
     runtime, artifacts, work = (tmp_path / name for name in ("runtime", "artifacts", "work"))
     for path in (runtime, artifacts, work):
         path.mkdir()
@@ -86,6 +99,8 @@ def setup_partial(tmp_path):
     msa.write_text(">query\nAAAAA\n>homolog\nAAAAA\n")
     msa_sha = hashlib.sha256(msa.read_bytes()).hexdigest()
     config = stage05_config_for_backend("openfold3-af3-jax").full_target_prediction
+    if not template_protocol:
+        config = config.model_copy(update={"template_protocol": "disabled"})
     provider = config.target_msa.resolved_providers()[0]
     dump_model(
         _TargetMsaState(
@@ -106,6 +121,59 @@ def setup_partial(tmp_path):
     predicted, summary, full = (output / p.name for p in (predicted, summary, full))
     input_path = candidate_root / "input.json"
     input_path.write_text(json.dumps({"candidate": "candidate-a"}))
+    target_receipt_sha256 = None
+    if template_protocol:
+        target_root = work / "afo-template-protocol/de-novo/target"
+        target_root.mkdir(parents=True)
+        target_data = target_root / "target-templates.json"
+        target_data.write_text('[{"queryIndices":[0]}]\n')
+        target_receipt = AfoTargetTemplateReceipt(
+            target_sequence_sha256=hashlib.sha256(b"AAAAA").hexdigest(),
+            target_unpaired_a3m_sha256=msa_sha,
+            target_paired_a3m_sha256="a" * 64,
+            source_input_json_sha256="b" * 64,
+            processed_json_sha256="c" * 64,
+            template_data_sha256=sha256_file(target_data),
+            template_count=1,
+            templates=(
+                AfoTemplateMappingAudit(
+                    template_index=0,
+                    inline_mmcif_sha256="d" * 64,
+                    mapped_residues=1,
+                    minimum_query_index=0,
+                    maximum_query_index=0,
+                ),
+            ),
+            component_receipt_sha256="e" * 64,
+            hmmer_version="3.4",
+            hmmbuild_sha256="f" * 64,
+            hmmsearch_sha256="1" * 64,
+            hmmalign_sha256="2" * 64,
+            seqres_database_version="test",
+            seqres_database_sha256="3" * 64,
+            mmcif_database_version="test",
+            mmcif_manifest_sha256="4" * 64,
+            max_template_date="2022-09-28",
+        )
+        target_receipt_path = target_root / "target-template-receipt.json"
+        dump_model(target_receipt, target_receipt_path)
+        target_receipt_sha256 = sha256_file(target_receipt_path)
+        binder_root = candidate_root / "binder-template-protocol"
+        binder_root.mkdir()
+        binder_data = binder_root / "binder-template.json"
+        binder_data.write_text('[{"queryIndices":[0,1,2]}]\n')
+        dump_model(
+            AfoBinderTemplateReceipt(
+                source_stage1_complex_sha256="5" * 64,
+                source_chain_id="B",
+                binder_sequence_sha256=hashlib.sha256(b"AAA").hexdigest(),
+                binder_length=3,
+                binder_template_mmcif_sha256="6" * 64,
+                binder_template_data_sha256=sha256_file(binder_data),
+                mapped_residues=3,
+            ),
+            binder_root / "binder-template-receipt.json",
+        )
     command = ("synthetic-prediction", str(input_path), str(output))
     command_sha = hashlib.sha256(
         json.dumps(((), command), ensure_ascii=True, separators=(",", ":")).encode()
@@ -140,6 +208,8 @@ def setup_partial(tmp_path):
         updated_at=now,
         target_msa_sha256=msa_sha,
         selected_candidate_ids=("candidate-a",),
+        template_protocol_id=PROTOCOL_ID if template_protocol else None,
+        target_template_receipt_sha256=target_receipt_sha256,
         tasks=(task,),
         predictions=(),
         progress=ProgressSnapshot(
@@ -174,8 +244,18 @@ def setup_partial(tmp_path):
             binder_token_count=3,
         ),
     )
+    def render_input(request):
+        if template_protocol:
+            assert request.require_role("target").template_data_sha256 == sha256_file(
+                work / "afo-template-protocol/de-novo/target/target-templates.json"
+            )
+            assert request.require_role("binder").template_data_sha256 == sha256_file(
+                candidate_root / "binder-template-protocol/binder-template.json"
+            )
+        return {"candidate": request.job_name}
+
     adapter = SimpleNamespace(
-        render_input=lambda request: {"candidate": request.job_name},
+        render_input=render_input,
         prediction_invocation=lambda request, **kwargs: SimpleNamespace(argv=command),
         collect_products=lambda request, **kwargs: (product,),
     )
@@ -214,6 +294,14 @@ def test_partial_reference_retains_full_target_clashes_and_missing_rmsd(tmp_path
         json.loads((kwargs["runtime"] / "full-target-state.json").read_text())["tasks"][0]["status"]
         == state.tasks[0].status
     )
+
+
+def test_partial_reference_recovery_preserves_frozen_template_protocol(tmp_path):
+    kwargs, _, _, _ = setup_partial(tmp_path, template_protocol=True)
+
+    records, _ = recover_partial_reference_predictions(**kwargs)
+
+    assert len(records) == 1
 
 
 def test_recollection_rejects_changed_wire_input_and_true_sequence_conflict(tmp_path):

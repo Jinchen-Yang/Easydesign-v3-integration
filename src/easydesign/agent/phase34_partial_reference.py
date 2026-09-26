@@ -18,19 +18,35 @@ from easydesign.backends.structure_prediction import (
     MsaMode,
     TemplateMode,
 )
-from easydesign.core import ArtifactRef, canonical_model_sha256, dump_model, load_model
+from easydesign.core import (
+    ArtifactRef,
+    canonical_model_sha256,
+    dump_model,
+    load_model,
+    sha256_file,
+)
 from easydesign.filtering import extract_complex_confidence, parse_protein_chain
 from easydesign.filtering.structure_metrics import (
     MODERATE_CLASH_ANGSTROM,
     SEVERE_CLASH_ANGSTROM,
     _pairwise_distances,
 )
+from easydesign.orchestration.afo_template_protocol import (
+    PROTOCOL_ID as AFO_TEMPLATE_PROTOCOL_ID,
+)
+from easydesign.orchestration.afo_template_protocol import (
+    AfoBinderTemplateReceipt,
+    AfoTargetTemplateReceipt,
+)
 from easydesign.orchestration.complex_prediction_support import (
     configured_prediction_chain,
     prediction_release_identity,
     read_fasta_sequence,
 )
-from easydesign.orchestration.config import PrecomputedComplexMsaConfig
+from easydesign.orchestration.config import (
+    ComplexTemplateConfig,
+    PrecomputedComplexMsaConfig,
+)
 from easydesign.orchestration.stage05 import _TargetMsaState
 from easydesign.orchestration.task_tracking import load_latest_runtime_model
 from easydesign.stages.s05_pilot_filtering import FullTargetExecutionState
@@ -126,6 +142,27 @@ def _ref(root: Path, path: Path, name: str, fmt: str) -> ArtifactRef:
     )
 
 
+def _template_config_from_receipt(
+    *,
+    data_path: Path,
+    receipt_path: Path,
+    receipt_type: type[AfoTargetTemplateReceipt] | type[AfoBinderTemplateReceipt],
+) -> ComplexTemplateConfig:
+    receipt = load_model(receipt_path, receipt_type)
+    expected = (
+        receipt.template_data_sha256
+        if isinstance(receipt, AfoTargetTemplateReceipt)
+        else receipt.binder_template_data_sha256
+    )
+    if receipt.protocol_id != AFO_TEMPLATE_PROTOCOL_ID or sha256_file(data_path) != expected:
+        raise AgentBoundaryError("Prediction recovery template receipt/data identity changed")
+    return ComplexTemplateConfig(
+        mode="precomputed",
+        data_path=data_path.resolve(),
+        data_sha256=expected,
+    )
+
+
 def recover_partial_reference_predictions(
     *,
     root: Path,
@@ -167,6 +204,19 @@ def recover_partial_reference_predictions(
         raise AgentBoundaryError("Prediction recovery MSA checksum changed")
     target_unpaired = PrecomputedComplexMsaConfig(path=msa_path, sha256=msa.a3m_sha256)
     reference = parse_protein_chain(upstream.target_structure_ref.verify(root), "A")
+    target_templates = prediction_config.target_templates
+    if state.template_protocol_id == AFO_TEMPLATE_PROTOCOL_ID:
+        if prediction_config.template_protocol != AFO_TEMPLATE_PROTOCOL_ID:
+            raise AgentBoundaryError("Prediction recovery template protocol changed")
+        target_protocol_root = work / "afo-template-protocol/de-novo/target"
+        target_receipt_path = target_protocol_root / "target-template-receipt.json"
+        if state.target_template_receipt_sha256 != sha256_file(target_receipt_path):
+            raise AgentBoundaryError("Prediction recovery target template receipt changed")
+        target_templates = _template_config_from_receipt(
+            data_path=target_protocol_root / "target-templates.json",
+            receipt_path=target_receipt_path,
+            receipt_type=AfoTargetTemplateReceipt,
+        )
     records: list[PartialReferencePrediction] = []
     refs: list[ArtifactRef] = []
     for task in state.tasks:
@@ -208,17 +258,25 @@ def recover_partial_reference_predictions(
             sequence=target_sequence,
             unpaired_msa=target_unpaired,
             paired_msa=prediction_config.target_paired_msa,
-            templates=prediction_config.target_templates,
+            templates=target_templates,
             query_only_root=candidate_root,
             target_condition=None,
         )
+        binder_templates = prediction_config.binder_templates
+        if state.template_protocol_id == AFO_TEMPLATE_PROTOCOL_ID:
+            binder_protocol_root = candidate_root / "binder-template-protocol"
+            binder_templates = _template_config_from_receipt(
+                data_path=binder_protocol_root / "binder-template.json",
+                receipt_path=binder_protocol_root / "binder-template-receipt.json",
+                receipt_type=AfoBinderTemplateReceipt,
+            )
         binder = configured_prediction_chain(
             chain_id="B",
             role="binder",
             sequence=binder_sequence,
             unpaired_msa=prediction_config.binder_msa,
             paired_msa=prediction_config.binder_paired_msa,
-            templates=prediction_config.binder_templates,
+            templates=binder_templates,
             query_only_root=candidate_root,
             target_condition=None,
         )

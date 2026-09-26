@@ -1,0 +1,163 @@
+import { useState } from 'react';
+import { ArrowRight, FolderOpen, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  PHASES,
+  type DesignProject,
+  type WorkbenchSnapshot,
+} from '../../adapters/WorkbenchAdapter';
+import { DemoBadge } from '../../components/DemoBadge';
+
+const labels: Record<DesignProject['status'], string> = {
+  'not-started': 'Not started',
+  running: 'In progress',
+  paused: 'Paused',
+  review: 'Ready for review',
+  complete: 'Completed',
+};
+
+export function ProjectsPage({
+  snapshot,
+  onNew,
+  onOpen,
+  onRename,
+  onDelete,
+}: {
+  snapshot: WorkbenchSnapshot;
+  onNew: () => void;
+  onOpen: (id: string) => void;
+  onRename: (project: DesignProject) => void;
+  onDelete: (project: DesignProject) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const projects = snapshot.projects.filter((project) =>
+    `${project.title} ${project.goal}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  return (
+    <main className="platform-page" aria-label="Projects">
+      <header className="platform-header">
+        <span>Research, thoughtfully organized.</span>
+        <DemoBadge />
+      </header>
+      <div className="platform-content">
+        <div className="platform-title-row">
+          <div>
+            <span className="eyebrow">YOUR RESEARCH</span>
+            <h1>Projects</h1>
+            <p>A space for every question. A clear path to your next candidate.</p>
+          </div>
+          <button className="primary-button" onClick={onNew}>
+            <Plus size={16} /> New project
+          </button>
+        </div>
+        {snapshot.projects.length === 0 ? (
+          <section className="platform-empty first-project">
+            <span className="empty-orbit">
+              <FolderOpen size={28} />
+            </span>
+            <h2>Give your next idea a home.</h2>
+            <p>
+              Keep your research goal, agent conversation and scientific context together in one
+              project.
+            </p>
+            <button className="text-button" onClick={onNew}>
+              Create your first project <ArrowRight size={15} />
+            </button>
+            <small>Start with the guided lysozyme / VHH demo.</small>
+          </section>
+        ) : (
+          <>
+            <div className="project-list-toolbar">
+              <span>
+                {snapshot.projects.length} {snapshot.projects.length === 1 ? 'project' : 'projects'}{' '}
+                <i /> Saved on this device
+              </span>
+              <label className="project-search">
+                <Search size={15} />
+                <input
+                  aria-label="Search projects"
+                  placeholder="Search projects…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="project-card-grid">
+              {projects.map((project) => (
+                <article className="project-card" data-testid="design-project" key={project.id}>
+                  <div className="project-card-top">
+                    <div className="project-card-tools">
+                      <span className="project-folder">
+                        <FolderOpen size={20} />
+                      </span>
+                      <button
+                        className="icon-button project-delete"
+                        title="Delete project"
+                        aria-label={`Delete project ${project.title}`}
+                        onClick={() => onDelete(project)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <span className={`project-status status-${project.status}`}>
+                      <i />
+                      {labels[project.status]}
+                    </span>
+                  </div>
+                  <h2>{project.title}</h2>
+                  <p className="project-card-goal">{project.goal}</p>
+                  <div className="project-journey" aria-label={`${project.phase} stage`}>
+                    {PHASES.map((phase, index) => (
+                      <span
+                        title={phase}
+                        key={phase}
+                        className={
+                          project.status === 'complete' || index <= PHASES.indexOf(project.phase)
+                            ? 'reached'
+                            : ''
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div className="project-card-stage">
+                    <span>Current stage</span>
+                    <strong>{project.phase}</strong>
+                  </div>
+                  <footer>
+                    <button
+                      className="icon-button"
+                      aria-label={`Rename project ${project.title}`}
+                      title="Rename project"
+                      onClick={() => onRename(project)}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      className="text-button"
+                      aria-label={`Open project ${project.title}`}
+                      onClick={() => onOpen(project.id)}
+                    >
+                      Open workspace <ArrowRight size={14} />
+                    </button>
+                  </footer>
+                </article>
+              ))}
+            </div>
+            {projects.length === 0 && (
+              <div className="platform-empty">
+                <Search size={26} />
+                <h2>No matching projects</h2>
+                <p>Try a different name or research goal.</p>
+                <button className="text-button" onClick={() => setQuery('')}>
+                  Clear search
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        <p className="platform-footnote">
+          Your conversations, decisions and results stay with their project.
+        </p>
+      </div>
+    </main>
+  );
+}

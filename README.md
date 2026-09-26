@@ -80,19 +80,22 @@ transition 仍等待相应 Scientist Gate。
 
 ### Workbench（live product）
 
-白紫色 Workbench 已作为 v3 Runtime 的浏览器界面接入；它不复制或替代科学 workflow。
+白紫色专业版和带豆豆兔子的 Easy 简洁版都已作为 v3 Runtime 的浏览器界面接入；它们不复制或替代科学 workflow。
 浏览器提交带 native revision/card identity 的命令，后台 worker 调用现有 `run_session`，页面只投影
 权威 Gate、结构/Site/Design artifact、安全进度和可恢复请求状态。默认是 live mode；只有显式
 `?mode=demo` 才进入原 deterministic prototype。
 
-先在 `web/workbench` 中执行 `pnpm install --frozen-lockfile && pnpm build`，再从仓库根目录启动：
+分别在 `web/workbench` 和 `web/easy` 中执行
+`pnpm install --frozen-lockfile && pnpm build`，再从仓库根目录启动：
 
 ```bash
 easydesign-workbench --models config/llm.yaml --web web/workbench/dist \
+  --easy-web web/easy/dist \
   --env-file .env.local
 ```
 
-服务只监听 `127.0.0.1`，启动后打印带本地访问 token 的链接。完整权限、恢复、安全投影与验收
+专业版位于 `/`，Easy 版位于 `/easy/`；两者共享同一个 same-origin session、Product API、
+Runtime 和 Scientist Gate。服务只监听 `127.0.0.1`，启动后打印带本地访问 token 的链接。完整权限、恢复、安全投影与验收
 说明见 [Workbench integration](docs/WORKBENCH_INTEGRATION.md)。
 
 ## 从全新机器开始

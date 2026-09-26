@@ -1,0 +1,21 @@
+$ playwright test --grep 'rail navigation'
+
+Running 3 tests using 1 worker
+
+(node:52805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-1440] › e2e/journey.spec.ts:220:1 › rail navigation opens fresh drafts and returns home without losing the active design (7.7s)
+(node:52844) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52844) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [desktop-1366] › e2e/journey.spec.ts:220:1 › rail navigation opens fresh drafts and returns home without losing the active design (6.1s)
+(node:52875) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52875) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 [desktop-1728] › e2e/journey.spec.ts:220:1 › rail navigation opens fresh drafts and returns home without losing the active design (9.3s)
+
+  3 passed (24.8s)

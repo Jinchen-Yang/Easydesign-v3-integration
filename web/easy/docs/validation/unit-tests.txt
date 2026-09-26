@@ -1,0 +1,11 @@
+$ vitest run
+
+ RUN  v3.0.5 /Users/knitua/Documents/Easy Design/ui-prototype-20260913/ui-workbench
+
+ ✓ tests/adapter.test.ts (24 tests) 21ms
+
+ Test Files  1 passed (1)
+      Tests  24 passed (24)
+   Start at  19:34:49
+   Duration  228ms (transform 34ms, setup 0ms, collect 38ms, tests 21ms, environment 0ms, prepare 35ms)
+

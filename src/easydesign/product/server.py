@@ -149,9 +149,10 @@ class ProductServer(ThreadingHTTPServer):
         *,
         port: int = 14380,
         web_root: Path | None = None,
+        easy_web_root: Path | None = None,
         token: str | None = None,
     ) -> None:
-        self.service, self.web_root = service, web_root
+        self.service, self.web_root, self.easy_web_root = service, web_root, easy_web_root
         self.compute_monitor = LocalGpuMonitor()
         token_path = service.root / "access-token"
         if token is None:
@@ -392,16 +393,27 @@ class Handler(BaseHTTPRequestHandler):
             )
 
     def static(self, path: str) -> None:
-        if self.command != "GET" or self.server.web_root is None:
+        if self.command != "GET":
             raise ProductError("not_found", "Workbench build is not available", 404)
-        relative = path.lstrip("/") or "index.html"
+        easy = path == "/easy" or path.startswith("/easy/")
+        root = self.server.easy_web_root if easy else self.server.web_root
+        if root is None:
+            raise ProductError("not_found", "Workbench build is not available", 404)
+        relative = (
+            "index.html"
+            if path == "/easy"
+            else path.removeprefix("/easy/").lstrip("/")
+            if easy
+            else path.lstrip("/")
+        )
+        relative = relative or "index.html"
         if not (
             relative == "index.html"
             or relative.startswith(("assets/", "structures/"))
             or relative in {"favicon.svg"}
         ):
             raise ProductError("not_found", "Unknown Workbench resource", 404)
-        data = confined_bytes(self.server.web_root, relative, maximum=32 * 1024**2)
+        data = confined_bytes(root, relative, maximum=32 * 1024**2)
         self.send(200, data, mimetypes.guess_type(relative)[0] or "application/octet-stream")
 
 
@@ -410,6 +422,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=14380)
     parser.add_argument("--models", type=Path, default=Path("config/llm.yaml"))
     parser.add_argument("--web", type=Path, default=Path("web/workbench/dist"))
+    parser.add_argument(
+        "--easy-web",
+        type=Path,
+        default=Path("web/easy/dist"),
+        help="Optional Easy UI build served from /easy/ on the same authenticated origin",
+    )
     parser.add_argument(
         "--prediction-backend",
         choices=("openfold3-af3-jax", "protenix-v2"),
@@ -458,10 +476,18 @@ def main(argv: list[str] | None = None) -> int:
             "Workbench build is missing; run pnpm install --frozen-lockfile and pnpm build "
             "inside web/workbench",
         )
+    easy_web_root = confined(context.root, context.root / args.easy_web)
+    if not (easy_web_root / "index.html").is_file():
+        raise ProductError(
+            "easy_workbench_not_built",
+            "Easy Workbench build is missing; run pnpm install --frozen-lockfile and pnpm build "
+            "inside web/easy",
+        )
     server = ProductServer(
         ProductService(gateway, actor=f"local-workbench:uid:{os.getuid()}"),
         port=args.port,
         web_root=web_root,
+        easy_web_root=easy_web_root,
     )
     # The token is written to the owner-only state file.  Never duplicate it in
     # process logs, shell history, or service-manager output.

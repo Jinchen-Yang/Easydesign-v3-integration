@@ -24,8 +24,10 @@ browser (same origin)
 
 ## User-visible behavior
 
-- The existing white/violet layout is retained. Live mode is the default;
-  `?mode=demo` explicitly opens the original deterministic prototype.
+- The existing white/violet Pro layout is retained at `/`. The self-contained
+  rabbit Easy edition is served at `/easy/`. Both use the same Product API and
+  native state; live mode is the Easy default and `?mode=demo` explicitly opens
+  its original deterministic prototype.
 - A project begins from a natural-language goal. A PDB/mmCIF upload is an optional
   source seed, not scientific identity or Gate authority.
 - Runtime work runs in a detached background worker. The browser polls serially,
@@ -53,8 +55,9 @@ browser (same origin)
   invalidity/`BLOCKED` removes approval; advisory `DISCOURAGED` does not create an
   override-only route.
 - Gate 4 and Gate 5 are shown only when the native downstream Runtime produces the
-  corresponding bounded cards. Validation fixtures never imply production
-  compute, scientific Scale, wet-lab execution or an order.
+  corresponding bounded cards. A server-owned mock-lab state machine may test
+  save, quote and submit after Gate 5, but its immutable receipt records no
+  financial commitment, external request or experiment authorization.
 
 ## Build and launch
 
@@ -63,9 +66,9 @@ and `config/llm.yaml` must reference configured provider credentials. Build the
 checked-in frontend once:
 
 ```bash
-cd web/workbench
-pnpm install --frozen-lockfile
-pnpm build
+for ui in web/workbench web/easy; do
+  (cd "$ui" && pnpm install --frozen-lockfile && pnpm build)
+done
 cd ../..
 ```
 
@@ -75,6 +78,7 @@ Then launch from the workspace root:
 easydesign-workbench \
   --models config/llm.yaml \
   --web web/workbench/dist \
+  --easy-web web/easy/dist \
   --env-file .env.local
 ```
 
@@ -93,10 +97,9 @@ ruff check src/easydesign/product tests/unit/agent/test_product_api.py tests/pro
 mypy src/easydesign/product
 ```
 
-Frontend:
+Frontends (run in both `web/workbench` and `web/easy`):
 
 ```bash
-cd web/workbench
 pnpm test
 pnpm typecheck
 pnpm build

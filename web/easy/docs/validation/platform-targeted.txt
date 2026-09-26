@@ -1,0 +1,18 @@
+$ playwright test e2e/platform.spec.ts --project=desktop-1440 --workers=2
+[2m[WebServer] [22m(node:26783) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m[2m$ vite --host 127.0.0.1 --port 13180 --strictPort[22m
+[2m[WebServer] [22m(node:26798) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:26805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-1440] › e2e/platform.spec.ts:26:1 › three English destinations, empty states, browser history and narrow navigation (2.6s)
+  ✓  2 [desktop-1440] › e2e/platform.spec.ts:64:1 › project center creates, searches, renames and switches independent workspaces (12.3s)
+  ✓  3 [desktop-1440] › e2e/platform.spec.ts:132:1 › compute page reflects approved demo runs, filters and returns to the correct project (15.4s)
+
+  3 passed (31.2s)

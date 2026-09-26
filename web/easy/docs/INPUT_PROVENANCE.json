@@ -1,0 +1,29 @@
+{
+  "fixture_sha256": "f9cb37a184a48037c210b8cfcdeb5fa75546c1c7ac060f7e9dfdeaef3da723ed",
+  "fixture_unchanged": true,
+  "input_pack": "../input-pack",
+  "read_order": [
+    "00_README_FIRST.md",
+    "01_UI_PRODUCT_SPEC.md",
+    "02_DEMO_FLOW_SPEC.md",
+    "03_ADAPTER_CONTRACT.md",
+    "04_CODEX_PROMPT.md",
+    "05_ACCEPTANCE_CHECKLIST.md",
+    "all references/latent-y screenshots",
+    "selected current-easydesign / dsh-ui code"
+  ],
+  "reference_screenshots": [
+    "01_\u5fae\u4fe1\u56fe\u7247_20260913011326_622_12.png",
+    "02_\u5fae\u4fe1\u56fe\u7247_20260913011843_623_12.png",
+    "03_\u5fae\u4fe1\u56fe\u7247_20260913011927_624_12.png",
+    "04_\u5fae\u4fe1\u56fe\u7247_20260913011949_625_12.png",
+    "05_\u5fae\u4fe1\u56fe\u7247_20260913012017_626_12.png",
+    "06_\u5fae\u4fe1\u56fe\u7247_20260913012034_627_12.png",
+    "07_\u5fae\u4fe1\u56fe\u7247_20260913012117_628_12.png",
+    "08_\u5fae\u4fe1\u56fe\u7247_20260913012137_629_12.png",
+    "09_\u5fae\u4fe1\u56fe\u7247_20260913012206_630_12.png",
+    "10_\u5fae\u4fe1\u56fe\u7247_20260913012225_631_12.png",
+    "INDEX.json"
+  ],
+  "reference_usage": "Visual inspection only. No reference screenshot, branding or historical generated frontend is imported into this application."
+}

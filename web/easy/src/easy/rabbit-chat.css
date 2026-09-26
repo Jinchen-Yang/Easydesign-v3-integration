@@ -1,0 +1,203 @@
+.rabbit-chat {
+  position: fixed;
+  width: min(380px, calc(100vw - 24px));
+  height: min(510px, calc(100dvh - 24px));
+  background: #fff;
+  border: 1px solid #e2dcea;
+  border-radius: 22px;
+  box-shadow: 0 12px 54px #32234b1f;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 3;
+  font-size: 16px;
+}
+.rabbit-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 14px;
+  border-bottom: 1px solid #eeeaf3;
+}
+.rabbit-chat-header div {
+  flex: 1;
+  padding-left: 4px;
+}
+.rabbit-chat-header strong {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+.rabbit-chat-header span {
+  display: block;
+  color: #827a91;
+  font-size: 14px;
+  margin-top: 4px;
+}
+.rabbit-chat-header button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  width: 32px;
+  height: 34px;
+  border-radius: 8px;
+}
+.rabbit-chat-header button:hover {
+  background: #f4f0fa;
+}
+.rabbit-chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px 16px;
+}
+.rabbit-chat-welcome {
+  padding: 16px 4px;
+}
+.rabbit-chat-welcome > span {
+  color: #7964ae;
+  font-size: 26px;
+}
+.rabbit-chat-welcome p {
+  font-size: 18px;
+  line-height: 1.6;
+  margin: 8px 0 24px;
+}
+.rabbit-chat-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.rabbit-chat-suggestions button {
+  background: #faf8fe;
+  border: 1px solid #e8e0f3;
+  border-radius: 12px;
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 14px;
+}
+.rabbit-message {
+  width: fit-content;
+  max-width: 94%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.65;
+  padding: 10px 13px;
+  margin-bottom: 14px;
+  border-radius: 15px;
+}
+.rabbit-message.user {
+  background: #eee8f9;
+  margin-left: auto;
+  color: #483763;
+}
+.rabbit-message.assistant {
+  background: #f8f7fa;
+  color: #37333f;
+}
+.rabbit-chat-error {
+  color: #876248;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.rabbit-chat-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  border: 1px solid #e3ddeb;
+  background: #fff;
+  margin: 0 12px;
+  border-radius: 15px;
+  padding: 9px;
+}
+.rabbit-chat-form:focus-within {
+  border-color: #9b85c5;
+}
+.rabbit-chat-form textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 4px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  background: transparent;
+  color: #37333f;
+}
+.rabbit-chat-form .rabbit-chat-send {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: #6c55a3;
+  color: white;
+  border: 0;
+}
+.rabbit-chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.rabbit-chat footer {
+  padding: 9px 10px 12px;
+  text-align: center;
+  color: #716a7e;
+  font-size: 14px;
+}
+.rabbit-chat-dots {
+  color: #8063b6;
+  letter-spacing: 5px;
+}
+.rabbit-settings {
+  left: 0;
+  right: auto;
+}
+.rabbit-companion[data-chat='waiting'] .bunny-body {
+  animation: rabbit-chat-listen 1.8s ease-in-out infinite !important;
+}
+.rabbit-companion[data-chat='replying'] .bunny-body {
+  animation: rabbit-chat-nod 0.9s ease-in-out infinite !important;
+}
+.rabbit-companion[data-motion='paused'] .bunny-body {
+  animation-play-state: paused !important;
+}
+@keyframes rabbit-chat-listen {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(5deg) translateY(-3%);
+  }
+}
+@keyframes rabbit-chat-nod {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4%) rotate(2deg);
+  }
+}
+
+/* Keep the input usable while the mobile keyboard reduces the visible viewport. */
+.rabbit-companion[data-chat-compact='true'] .rabbit-chat-header {
+  padding: 8px 12px;
+}
+.rabbit-companion[data-chat-compact='true'] .rabbit-chat-header span {
+  display: none;
+}
+.rabbit-companion[data-chat-compact='true'] .rabbit-chat-form textarea {
+  height: 32px;
+}
+.rabbit-companion[data-chat-compact='true'] .rabbit-chat footer {
+  padding: 5px 8px;
+}

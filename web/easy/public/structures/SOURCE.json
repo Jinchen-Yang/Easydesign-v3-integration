@@ -1,0 +1,23 @@
+{
+  "source": "https://files.rcsb.org/download/1MEL.pdb",
+  "pdb_id": "1MEL",
+  "sha256": "321aa847a20535c018b12cf340d2e057628dce42b4005c185916dd17bdd24de4",
+  "chain_residue_counts": {
+    "A": 132,
+    "B": 132,
+    "L": 127,
+    "M": 127
+  },
+  "usage": "Public reference complex only. Demo candidates do not have generated structures.",
+  "label_to_author_chain": {
+    "A": "A",
+    "B": "B",
+    "C": "L",
+    "D": "M",
+    "E": "A",
+    "F": "B",
+    "G": "L",
+    "H": "M"
+  },
+  "chain_note": "PDB author chain L corresponds to mmCIF label chain C. The supplied fixture used label identifiers."
+}

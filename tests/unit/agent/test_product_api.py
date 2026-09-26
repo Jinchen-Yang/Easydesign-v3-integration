@@ -448,8 +448,14 @@ def test_corrupt_project_cannot_hide_other_projects(site_bridge, tmp_path):
 
 
 @contextmanager
-def http_api(service):
-    server = ProductServer(service, port=0, token="test-product-access")
+def http_api(service, *, web_root=None, easy_web_root=None):
+    server = ProductServer(
+        service,
+        port=0,
+        token="test-product-access",
+        web_root=web_root,
+        easy_web_root=easy_web_root,
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -463,6 +469,27 @@ def http_api(service):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_same_origin_server_keeps_pro_and_easy_static_roots_isolated(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    pro = tmp_path / "pro-dist"
+    easy = tmp_path / "easy-dist"
+    (pro / "assets").mkdir(parents=True)
+    (easy / "assets").mkdir(parents=True)
+    (pro / "index.html").write_text("pro-index")
+    (easy / "index.html").write_text("easy-index")
+    (pro / "assets/app.js").write_text("pro-asset")
+    (easy / "assets/app.js").write_text("easy-asset")
+
+    with http_api(service, web_root=pro, easy_web_root=easy) as client:
+        assert client.get("/").text == "pro-index"
+        assert client.get("/assets/app.js").text == "pro-asset"
+        assert client.get("/easy").text == "easy-index"
+        assert client.get("/easy/").text == "easy-index"
+        assert client.get("/easy/assets/app.js").text == "easy-asset"
+        assert client.get("/easy/%2e%2e/assets/app.js").status_code == 403
+        assert client.get("/easy/unknown.js").status_code == 404
 
 
 def test_local_gpu_monitor_is_fixed_read_only_cached_and_fails_stale():

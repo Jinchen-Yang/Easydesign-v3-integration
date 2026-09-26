@@ -67,7 +67,10 @@ consumer of these same contracts.
 
 ### Workbench product transport
 
-Workbench 是 v3 Runtime 的本地浏览器投影与人工 Gate 操作面，不是第二套科学 authority。
+专业版 Workbench（`web/workbench`）与 Easy 简洁版（`web/easy`）是 v3 Runtime 的两个本地浏览器
+投影与人工 Gate 操作面，不是两套科学 authority。二者由同一 Product service 在 `/` 与 `/easy/`
+提供，共享 same-origin session、typed API、项目、artifact 与 Gate state；Easy 只减少操作复杂度，
+不减少科学边界。
 默认 live 路径固定为：
 
 ```text
@@ -82,6 +85,10 @@ same-origin browser
 记录，不能重复批准或推进 Gate。模型原始推理、provider/tool payload、密钥和服务器路径不进入浏览器；
 界面仅展示结构化的安全进度、可审查依据和持久化的只读对话记录。Gate 1–5 的批准语义、revision
 binding、BLOCKED 边界及结构/site/YAML artifact 均继续由上述 canonical v3 contract 决定。
+
+Gate 5 之后允许建立服务器持有的模拟下单状态机，用于验证 save → quote → submit 产品闭环。
+它固定使用 mock provider，并显式记录 `financial_commitment=false`、
+`external_request_sent=false`、`experiment_authorized=false`；它不是湿实验授权，也不能调用真实供应商。
 
 旧的 deterministic demo 只能通过显式 `?mode=demo` 启用，不属于默认产品路径。接口、恢复、
 安全投影和部署约束见 [`WORKBENCH_INTEGRATION.md`](WORKBENCH_INTEGRATION.md)。

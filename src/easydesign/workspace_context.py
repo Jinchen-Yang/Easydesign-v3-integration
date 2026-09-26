@@ -27,6 +27,7 @@ from easydesign.runtime_guard import (
 
 WORKSPACE_MARKER = "easydesign-workspace.yaml"
 WORKSPACE_ENVIRONMENT_VARIABLE = "EASYDESIGN_WORKSPACE"
+CODE_ROOT_ENVIRONMENT_VARIABLE = "EASYDESIGN_CODE_ROOT"
 # The first package cache generation could contain SHA-prefixed Conda archive
 # basenames produced by older installers. Conda scans every archive at startup,
 # so a new generation must not inherit those structurally invalid entries.
@@ -203,6 +204,24 @@ class WorkspaceContext:
         cache = self.runtime_root / "cache"
         git_config = self._git_config_path()
         startup_root = install_python_startup_guard(self.runtime_root / "state")
+        python_path = [startup_root]
+        selected_code_root = os.environ.get(CODE_ROOT_ENVIRONMENT_VARIABLE)
+        if selected_code_root:
+            code_root = Path(selected_code_root).expanduser().resolve(strict=True)
+            allowed_root = (self.runtime_root / "tmp").resolve(strict=True)
+            if not code_root.is_relative_to(allowed_root):
+                raise PathPolicyError(
+                    f"{CODE_ROOT_ENVIRONMENT_VARIABLE} 必须位于 runtime/tmp 内"
+                )
+            if not (
+                (code_root / ".git").exists()
+                and (code_root / "pyproject.toml").is_file()
+                and (code_root / "src/easydesign/__init__.py").is_file()
+            ):
+                raise PathPolicyError(
+                    f"{CODE_ROOT_ENVIRONMENT_VARIABLE} 不是完整 EasyDesign Git 工作树"
+                )
+            python_path.append(code_root / "src")
         values = {
             "HOME": str(self.runtime_root / "home"),
             "TMPDIR": str(self._short_tmp_alias()),
@@ -239,7 +258,7 @@ class WorkspaceContext:
                     self.archives_root,
                 )
             ),
-            "PYTHONPATH": str(startup_root),
+            "PYTHONPATH": os.pathsep.join(str(path) for path in python_path),
         }
         system_ca = Path("/etc/ssl/certs/ca-certificates.crt")
         if system_ca.is_file():

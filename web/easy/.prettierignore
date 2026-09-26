@@ -1,0 +1,9 @@
+node_modules
+dist
+test-results
+playwright-report
+pnpm-lock.yaml
+docs/spec
+docs/validation
+public/structures
+src/demo/demo-fixture.json

@@ -7,7 +7,11 @@ import pytest
 import yaml
 
 from easydesign.core import PathPolicyError
-from easydesign.workspace_context import WorkspaceContext, WorkspaceDeclaration
+from easydesign.workspace_context import (
+    CODE_ROOT_ENVIRONMENT_VARIABLE,
+    WorkspaceContext,
+    WorkspaceDeclaration,
+)
 
 
 def _workspace(tmp_path: Path) -> WorkspaceContext:
@@ -110,6 +114,28 @@ def test_subprocess_environment_replaces_host_interpreter_state(
     for key, value in inherited.items():
         assert os.environ[key] == value
     Path(guarded["TMPDIR"]).unlink()
+
+
+def test_child_environment_accepts_only_an_explicit_internal_git_code_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    candidate = context.runtime_root / "tmp/candidate"
+    (candidate / ".git").mkdir(parents=True)
+    (candidate / "src/easydesign").mkdir(parents=True)
+    (candidate / "pyproject.toml").write_text("[project]\nname='easydesign-local'\n")
+    (candidate / "src/easydesign/__init__.py").write_text("")
+    monkeypatch.setenv(CODE_ROOT_ENVIRONMENT_VARIABLE, str(candidate))
+
+    environment = context.child_environment()
+    paths = environment["PYTHONPATH"].split(os.pathsep)
+    assert paths[-1] == str(candidate / "src")
+    assert all(Path(path).is_relative_to(context.runtime_root) for path in paths)
+
+    monkeypatch.setenv(CODE_ROOT_ENVIRONMENT_VARIABLE, str(tmp_path.parent))
+    with pytest.raises(PathPolicyError, match="runtime/tmp"):
+        context.child_environment()
 
 
 def test_write_boundary_rejects_external_path(tmp_path: Path) -> None:

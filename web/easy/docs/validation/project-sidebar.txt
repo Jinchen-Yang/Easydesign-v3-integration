@@ -1,0 +1,6 @@
+Project-sidebar scenarios from the final full regression. Source: browser-tests.txt
+
+  ✓  11 [desktop-1366] › e2e/journey.spec.ts:301:1 › project sidebar creates, renames, switches and restores independent designs (16.8s)
+  ✓  12 [desktop-1440] › e2e/journey.spec.ts:301:1 › project sidebar creates, renames, switches and restores independent designs (17.2s)
+  ✓  18 [desktop-1728] › e2e/journey.spec.ts:301:1 › project sidebar creates, renames, switches and restores independent designs (14.9s)
+  18 passed (2.1m)

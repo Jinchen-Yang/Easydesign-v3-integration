@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -46,6 +47,72 @@ class ProtenixV2Runtime(BaseModel):
         return value
 
 
+class OpenFold3TemplatePipelineRuntime(BaseModel):
+    """Immutable local assets for the frozen AFO template-search protocol."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    component_id: Literal["afo-local-template-pipeline-v1"] = (
+        "afo-local-template-pipeline-v1"
+    )
+    component_receipt: Path
+    component_receipt_sha256: str
+    hmmbuild: Path
+    hmmbuild_sha256: str
+    hmmsearch: Path
+    hmmsearch_sha256: str
+    hmmalign: Path
+    hmmalign_sha256: str
+    hmmer_version: str
+    disabled_msa_search_executable: Path
+    disabled_msa_search_executable_sha256: str
+    unused_msa_database_sentinel: Path
+    unused_msa_database_sentinel_sha256: str
+    seqres_database: Path
+    seqres_database_sha256: str
+    seqres_database_version: str
+    mmcif_database: Path
+    mmcif_manifest: Path
+    mmcif_manifest_sha256: str
+    mmcif_database_version: str
+    max_template_date: date
+
+    @field_validator(
+        "component_receipt",
+        "hmmbuild",
+        "hmmsearch",
+        "hmmalign",
+        "disabled_msa_search_executable",
+        "unused_msa_database_sentinel",
+        "seqres_database",
+        "mmcif_database",
+        "mmcif_manifest",
+    )
+    @classmethod
+    def require_absolute_asset_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("AFO template pipeline 资产必须使用绝对路径")
+        return value
+
+    @field_validator(
+        "component_receipt_sha256",
+        "hmmbuild_sha256",
+        "hmmsearch_sha256",
+        "hmmalign_sha256",
+        "disabled_msa_search_executable_sha256",
+        "unused_msa_database_sentinel_sha256",
+        "seqres_database_sha256",
+        "mmcif_manifest_sha256",
+    )
+    @classmethod
+    def require_asset_sha256(cls, value: str) -> str:
+        if len(value) != 64 or any(
+            character not in "0123456789abcdef" for character in value
+        ):
+            raise ValueError("AFO template pipeline identity 必须是小写 SHA-256")
+        return value
+
+
 class OpenFold3Af3JaxRuntime(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -71,6 +138,7 @@ class OpenFold3Af3JaxRuntime(BaseModel):
     msa_server_url: str = "https://api.colabfold.com"
     msa_timeout_seconds: int = Field(default=3600, ge=1)
     prediction_timeout_seconds: int = Field(default=14_400, ge=1)
+    template_pipeline: OpenFold3TemplatePipelineRuntime | None = None
     extra_environment: tuple[tuple[str, str], ...] = ()
 
     @field_validator("python", "runner", "model_root", "converted_weight", "cache_root")

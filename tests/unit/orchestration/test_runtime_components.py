@@ -10,9 +10,11 @@ from easydesign.core import ConfigurationError, sha256_file
 from easydesign.orchestration import runtime_components
 from easydesign.orchestration.git_sources import directory_content_sha256
 from easydesign.orchestration.runtime_components import (
+    AfoTemplatePipelineComponentReceipt,
     install_openfold3_component,
     load_openfold3_bundle,
     runtime_status,
+    verify_afo_template_pipeline_component,
 )
 from easydesign.workspace_context import WorkspaceContext
 
@@ -329,3 +331,95 @@ def test_runtime_status_is_readable_before_first_component_install(
     assert status.openfold3 is None
     assert status.model_dump() == {"openfold3": None, "openfold3_installed": ()}
     assert not (tmp_path / "runtime/profile.yaml").exists()
+
+
+def test_template_pipeline_component_is_clone_local_and_checksum_pinned(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "workspace_id: template-component-test",
+                "runtime_root: runtime",
+                "projects_root: workspace/projects",
+                "runs_root: workspace/runs",
+                "archives_root: workspace/archives",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    context = WorkspaceContext.from_root(tmp_path)
+    context.ensure_layout()
+    component = context.runtime_root / "models/afo-template-pipeline-v1/test"
+    tools = component / "tools"
+    database = component / "databases/mmcif_files"
+    tools.mkdir(parents=True)
+    database.mkdir(parents=True)
+    binaries: dict[str, Path] = {}
+    for name in ("hmmbuild", "hmmsearch", "hmmalign"):
+        path = tools / name
+        path.write_text(name + "\n", encoding="utf-8")
+        binaries[name] = path
+    seqres = component / "databases/pdb_seqres_2022_09_28.fasta"
+    seqres.write_text(">x\nACD\n", encoding="utf-8")
+    disabled_search = tools / "disabled-msa-search"
+    disabled_search.write_text("disabled\n", encoding="utf-8")
+    unused_database = component / "databases/unused-msa-database.sentinel"
+    unused_database.write_text("unused\n", encoding="utf-8")
+    cif = database / "x.cif"
+    cif.write_text("data_x\n#\n", encoding="utf-8")
+    manifest = component / "mmcif-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "database_version": "pdb-2022-09-28",
+                "file_count": 1,
+                "files": [
+                    {
+                        "relative_path": "x.cif",
+                        "size_bytes": cif.stat().st_size,
+                        "sha256": sha256_file(cif),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    receipt = AfoTemplatePipelineComponentReceipt(
+        installed_at="2026-09-26T00:00:00Z",
+        hmmbuild=binaries["hmmbuild"],
+        hmmbuild_sha256=sha256_file(binaries["hmmbuild"]),
+        hmmsearch=binaries["hmmsearch"],
+        hmmsearch_sha256=sha256_file(binaries["hmmsearch"]),
+        hmmalign=binaries["hmmalign"],
+        hmmalign_sha256=sha256_file(binaries["hmmalign"]),
+        hmmer_version="3.4",
+        disabled_msa_search_executable=disabled_search,
+        disabled_msa_search_executable_sha256=sha256_file(disabled_search),
+        unused_msa_database_sentinel=unused_database,
+        unused_msa_database_sentinel_sha256=sha256_file(unused_database),
+        seqres_database=seqres,
+        seqres_database_sha256=sha256_file(seqres),
+        seqres_database_version="pdb-seqres-2022-09-28",
+        mmcif_database=database,
+        mmcif_manifest=manifest,
+        mmcif_manifest_sha256=sha256_file(manifest),
+        mmcif_database_version="pdb-2022-09-28",
+        mmcif_file_count=1,
+        max_template_date="2022-09-28",
+        source_urls=("https://example.test/seqres", "https://example.test/mmcif"),
+    )
+    receipt_path = component / "component.json"
+    receipt_path.write_text(receipt.model_dump_json(), encoding="utf-8")
+
+    observed = verify_afo_template_pipeline_component(
+        receipt_path,
+        context=context,
+    )
+    assert observed.mmcif_file_count == 1
+
+    seqres.write_text(">x\nAAA\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="identity 已变化"):
+        verify_afo_template_pipeline_component(receipt_path, context=context)

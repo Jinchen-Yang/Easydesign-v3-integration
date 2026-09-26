@@ -21,6 +21,8 @@ from easydesign.orchestration.config import (
     ComplexPredictionConfig,
     TargetConditionedPredictionConfig,
     migrate_run_config,
+    stage05_config_for_backend,
+    stage07_config_for_backends,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -58,6 +60,49 @@ def test_complex_prediction_config_allows_independent_chain_features(
     assert config.binder_paired_msa.mode == "query-only"
     assert config.target_templates.mode == "target-structure"
     assert config.binder_templates.mode == "precomputed"
+
+
+def test_afo_frozen_template_protocol_preserves_binder_paired_policy() -> None:
+    config = ComplexPredictionConfig.model_validate(
+        {
+            "backend": "openfold3-af3-jax",
+            "template_protocol": "afo-native-target-boltzgen-vhh-v1",
+            "binder_paired_msa": {"mode": "query-only"},
+        }
+    )
+
+    assert config.template_protocol == "afo-native-target-boltzgen-vhh-v1"
+    assert config.binder_paired_msa.mode == "query-only"
+
+
+def test_afo_frozen_template_protocol_rejects_manual_template_mixing() -> None:
+    with pytest.raises(ValueError, match="不能与手工"):
+        ComplexPredictionConfig.model_validate(
+            {
+                "backend": "openfold3-af3-jax",
+                "template_protocol": "afo-native-target-boltzgen-vhh-v1",
+                "target_templates": {"mode": "target-structure"},
+            }
+        )
+
+
+def test_new_afo_stage_configs_enable_frozen_template_protocol() -> None:
+    stage05 = stage05_config_for_backend("openfold3-af3-jax")
+    stage07 = stage07_config_for_backends(
+        "openfold3-af3-jax",
+        "openfold3-af3-jax",
+    )
+
+    assert (
+        stage05.full_target_prediction.template_protocol
+        == "afo-native-target-boltzgen-vhh-v1"
+    )
+    assert stage05.full_target_prediction.binder_paired_msa.mode == "query-only"
+    assert (
+        stage07.full_target_prediction.template_protocol
+        == "afo-native-target-boltzgen-vhh-v1"
+    )
+    assert stage07.target_conditioned_prediction.template_protocol == "disabled"
 
 
 def test_legacy_template_mode_is_migrated_without_overriding_explicit_choice() -> None:

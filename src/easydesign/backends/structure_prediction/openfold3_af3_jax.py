@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,33 @@ from .contracts import (
 OPENFOLD3_METRIC_DEFINITION_VERSION = (
     "openfold3-p2-af3-jax-complex-confidence-v1"
 )
+
+
+@dataclass(frozen=True, slots=True)
+class OpenFold3TemplatePipelineAssets:
+    """Receipt-pinned local assets used only by AFO's native DataPipeline."""
+
+    component_receipt: Path
+    component_receipt_sha256: str
+    hmmbuild: Path
+    hmmbuild_sha256: str
+    hmmsearch: Path
+    hmmsearch_sha256: str
+    hmmalign: Path
+    hmmalign_sha256: str
+    hmmer_version: str
+    disabled_msa_search_executable: Path
+    disabled_msa_search_executable_sha256: str
+    unused_msa_database_sentinel: Path
+    unused_msa_database_sentinel_sha256: str
+    seqres_database: Path
+    seqres_database_sha256: str
+    seqres_database_version: str
+    mmcif_database: Path
+    mmcif_manifest: Path
+    mmcif_manifest_sha256: str
+    mmcif_database_version: str
+    max_template_date: date
 
 
 class _OpenFold3Summary(BaseModel):
@@ -182,6 +211,7 @@ class OpenFold3Af3JaxAdapter:
         remote_msa_server_mode: str = "colabfold",
         msa_timeout_seconds: int = 3600,
         prediction_timeout_seconds: int = 14_400,
+        template_pipeline: OpenFold3TemplatePipelineAssets | None = None,
         extra_environment: tuple[tuple[str, str], ...] = (),
     ) -> None:
         paths = (python, runner, model_root, cache_root)
@@ -247,7 +277,50 @@ class OpenFold3Af3JaxAdapter:
         self.msa_timeout_seconds = msa_timeout_seconds
         self.remote_msa_timeout_seconds = msa_timeout_seconds
         self.prediction_timeout_seconds = prediction_timeout_seconds
+        self.template_pipeline = template_pipeline
         self.extra_environment = extra_environment
+
+    def _validated_template_pipeline(self) -> OpenFold3TemplatePipelineAssets:
+        assets = self.template_pipeline
+        if assets is None:
+            raise BackendContractError(
+                "AFO frozen template protocol 未注册本地 HMMER/seqres/mmCIF component"
+            )
+        files = (
+            (assets.component_receipt, assets.component_receipt_sha256),
+            (assets.hmmbuild, assets.hmmbuild_sha256),
+            (assets.hmmsearch, assets.hmmsearch_sha256),
+            (assets.hmmalign, assets.hmmalign_sha256),
+            (
+                assets.disabled_msa_search_executable,
+                assets.disabled_msa_search_executable_sha256,
+            ),
+            (
+                assets.unused_msa_database_sentinel,
+                assets.unused_msa_database_sentinel_sha256,
+            ),
+            (assets.seqres_database, assets.seqres_database_sha256),
+            (assets.mmcif_manifest, assets.mmcif_manifest_sha256),
+        )
+        for path, expected in files:
+            if not path.is_absolute() or not path.is_file():
+                raise BackendContractError(
+                    f"AFO template pipeline file 缺失或非绝对路径: {path}"
+                )
+            if sha256_file(path) != expected:
+                raise BackendContractError(
+                    f"AFO template pipeline file SHA-256 不一致: {path}"
+                )
+        if not assets.mmcif_database.is_absolute() or not assets.mmcif_database.is_dir():
+            raise BackendContractError(
+                f"AFO template mmCIF database 缺失: {assets.mmcif_database}"
+            )
+        return assets
+
+    def template_pipeline_assets(self) -> OpenFold3TemplatePipelineAssets:
+        """Return verified assets for orchestration receipts."""
+
+        return self._validated_template_pipeline()
 
     def _environment(self) -> tuple[tuple[str, str], ...]:
         values = [
@@ -517,6 +590,112 @@ class OpenFold3Af3JaxAdapter:
         except FileExistsError as error:
             raise ManifestStateError(f"不可覆盖已存在的 AFO 输入: {path}") from error
         return path
+
+    def write_target_template_pipeline_input(
+        self,
+        *,
+        job_name: str,
+        target_sequence: str,
+        unpaired_msa_path: Path,
+        paired_msa_path: Path,
+        path: Path,
+    ) -> Path:
+        """Write the target-only, offline DataPipeline input with templates=null."""
+
+        self._validated_template_pipeline()
+        payload = {
+            "name": job_name,
+            "sequences": [
+                {
+                    "protein": {
+                        "id": "A",
+                        "sequence": target_sequence,
+                        "unpairedMsa": _read_a3m(
+                            unpaired_msa_path,
+                            expected_query=target_sequence,
+                        ),
+                        "pairedMsa": _read_a3m(
+                            paired_msa_path,
+                            expected_query=target_sequence,
+                        ),
+                        "templates": None,
+                    }
+                }
+            ],
+            "modelSeeds": [101],
+            "dialect": "alphafold3",
+            "version": 4,
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with path.open("x", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+                handle.write("\n")
+        except FileExistsError as error:
+            raise ManifestStateError(
+                f"不可覆盖 AFO target template pipeline 输入: {path}"
+            ) from error
+        return path
+
+    def target_template_pipeline_invocation(
+        self,
+        *,
+        input_json: Path,
+        output_dir: Path,
+    ) -> BackendInvocation:
+        """Run native AFO DataPipeline locally; inference and network MSA stay off."""
+
+        assets = self._validated_template_pipeline()
+        return BackendInvocation(
+            backend_name=self.backend_name,
+            backend_version=self.backend_version,
+            argv=(
+                str(self.python),
+                str(self.runner),
+                f"--json_path={input_json}",
+                f"--output_dir={output_dir}",
+                f"--model_dir={self.model_root}",
+                "--of3_weights=true",
+                "--run_data_pipeline=true",
+                "--run_inference=false",
+                "--use_msa_server=false",
+                f"--hmmbuild_binary_path={assets.hmmbuild}",
+                f"--hmmsearch_binary_path={assets.hmmsearch}",
+                f"--hmmalign_binary_path={assets.hmmalign}",
+                "--jackhmmer_binary_path="
+                f"{assets.disabled_msa_search_executable}",
+                "--nhmmer_binary_path=" f"{assets.disabled_msa_search_executable}",
+                "--small_bfd_database_path="
+                f"{assets.unused_msa_database_sentinel}",
+                "--mgnify_database_path="
+                f"{assets.unused_msa_database_sentinel}",
+                "--uniprot_cluster_annot_database_path="
+                f"{assets.unused_msa_database_sentinel}",
+                "--uniref90_database_path="
+                f"{assets.unused_msa_database_sentinel}",
+                "--ntrna_database_path="
+                f"{assets.unused_msa_database_sentinel}",
+                "--rfam_database_path="
+                f"{assets.unused_msa_database_sentinel}",
+                "--rna_central_database_path="
+                f"{assets.unused_msa_database_sentinel}",
+                f"--seqres_database_path={assets.seqres_database}",
+                f"--pdb_database_path={assets.mmcif_database}",
+                f"--max_template_date={assets.max_template_date.isoformat()}",
+                f"--cache_dir={self.cache_root}",
+                "--force_output_dir=true",
+            ),
+            environment=self._environment(),
+            timeout_seconds=self.prediction_timeout_seconds,
+        )
+
+    @staticmethod
+    def target_template_processed_path(
+        *,
+        job_name: str,
+        output_dir: Path,
+    ) -> Path:
+        return output_dir / job_name / f"{job_name}_data.json"
 
     def prepare_precomputed_msa_input(
         self,

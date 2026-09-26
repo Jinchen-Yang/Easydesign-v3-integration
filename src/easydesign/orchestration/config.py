@@ -979,6 +979,10 @@ class ComplexPredictionConfig(BaseModel):
     binder_paired_msa: ComplexMsaConfig = QueryOnlyComplexMsaConfig()
     target_templates: ComplexTemplateConfig = ComplexTemplateConfig()
     binder_templates: ComplexTemplateConfig = ComplexTemplateConfig()
+    template_protocol: Literal[
+        "disabled",
+        "afo-native-target-boltzgen-vhh-v1",
+    ] = "disabled"
     template_mode: TemplateMode = TemplateMode.DISABLED
     parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
     prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
@@ -999,6 +1003,22 @@ class ComplexPredictionConfig(BaseModel):
             elif legacy_template_mode == TemplateMode.DISABLED:
                 migrated["target_templates"] = {"mode": "disabled"}
         return migrated
+
+    @model_validator(mode="after")
+    def validate_template_protocol(self) -> Self:
+        if self.template_protocol == "disabled":
+            return self
+        if self.backend != "openfold3-af3-jax":
+            raise ValueError("AFO frozen template protocol 只支持 openfold3-af3-jax")
+        if (
+            self.target_templates.mode != "disabled"
+            or self.binder_templates.mode != "disabled"
+            or self.template_mode is not TemplateMode.DISABLED
+        ):
+            raise ValueError(
+                "AFO frozen template protocol 不能与手工 target/binder template 混用"
+            )
+        return self
 
 
 class TargetConditionedPredictionConfig(ComplexPredictionConfig):
@@ -1191,7 +1211,10 @@ def stage05_config_for_backend(backend: PredictionBackend) -> Stage05Config:
         return Stage05Config.model_validate(
             {
                 "filter_profile": "nanobody-filter-standard-v1.7",
-                "full_target_prediction": {"backend": backend},
+                "full_target_prediction": {
+                    "backend": backend,
+                    "template_protocol": "afo-native-target-boltzgen-vhh-v1",
+                },
             }
         )
     return Stage05Config.model_validate(
@@ -1215,7 +1238,10 @@ def stage07_config_for_backends(
                 "final_filter_profile": "nanobody-final-v1.6",
                 "primary_count": primary_count,
                 "backup_count": backup_count,
-                "full_target_prediction": {"backend": de_novo_backend},
+                "full_target_prediction": {
+                    "backend": de_novo_backend,
+                    "template_protocol": "afo-native-target-boltzgen-vhh-v1",
+                },
                 "target_conditioned_prediction": {
                     "backend": target_conditioned_backend,
                 },

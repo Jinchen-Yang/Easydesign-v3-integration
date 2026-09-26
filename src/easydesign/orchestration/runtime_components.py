@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Literal, Self
 
@@ -26,6 +26,7 @@ from easydesign.workspace_context import WorkspaceContext
 from .git_sources import directory_content_sha256
 from .profile import (
     OpenFold3Af3JaxRuntime,
+    OpenFold3TemplatePipelineRuntime,
     RuntimeBackends,
     RuntimeProfile,
     initialize_runtime_profile,
@@ -39,6 +40,7 @@ ADAPTER_CONTRACT_VERSION = "openfold3-af3-jax-cli-v1"
 SEMVER_PATTERN = r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
 RELEASE_ID_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 COMPONENT_STATE_ROOT = Path("state/components") / COMPONENT_ID / "releases"
+TEMPLATE_COMPONENT_ID = "afo-local-template-pipeline-v1"
 AFO_PYTHON_VERSION = "3.12.13"
 BOOTSTRAP_UV_VERSION = "0.12.3"
 
@@ -320,6 +322,39 @@ class OpenFold3ComponentReceipt(BaseModel):
         return self
 
 
+class AfoTemplatePipelineComponentReceipt(BaseModel):
+    """Immutable local HMMER and PDB snapshot identity for template search."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    component_id: Literal["afo-local-template-pipeline-v1"] = (
+        "afo-local-template-pipeline-v1"
+    )
+    installed_at: datetime
+    hmmbuild: Path
+    hmmbuild_sha256: str = Field(pattern=SHA256_PATTERN)
+    hmmsearch: Path
+    hmmsearch_sha256: str = Field(pattern=SHA256_PATTERN)
+    hmmalign: Path
+    hmmalign_sha256: str = Field(pattern=SHA256_PATTERN)
+    hmmer_version: str
+    disabled_msa_search_executable: Path
+    disabled_msa_search_executable_sha256: str = Field(pattern=SHA256_PATTERN)
+    unused_msa_database_sentinel: Path
+    unused_msa_database_sentinel_sha256: str = Field(pattern=SHA256_PATTERN)
+    seqres_database: Path
+    seqres_database_sha256: str = Field(pattern=SHA256_PATTERN)
+    seqres_database_version: str
+    mmcif_database: Path
+    mmcif_manifest: Path
+    mmcif_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
+    mmcif_database_version: str
+    mmcif_file_count: int = Field(ge=1)
+    max_template_date: date
+    source_urls: tuple[str, str]
+
+
 class OpenFold3InstallResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -592,8 +627,13 @@ def _activate_profile(
             profile_id="workspace-local",
             runs_root=context.runs_root,
         )
-    current = load_runtime_profile()
+    current = load_runtime_profile(context.profile_path)
     runtime = _runtime_from_receipt(context, receipt)
+    active_runtime = current.profile.backends.openfold3_af3_jax
+    if active_runtime is not None and active_runtime.template_pipeline is not None:
+        runtime = runtime.model_copy(
+            update={"template_pipeline": active_runtime.template_pipeline}
+        )
     if current.profile.backends.openfold3_af3_jax == runtime:
         return current.path
     backends = current.profile.backends.model_copy(
@@ -606,6 +646,122 @@ def _activate_profile(
         }
     )
     return _profile_revision(context, profile)
+
+
+def verify_afo_template_pipeline_component(
+    receipt_path: Path,
+    *,
+    context: WorkspaceContext | None = None,
+) -> AfoTemplatePipelineComponentReceipt:
+    selected = WorkspaceContext.discover() if context is None else context
+    resolved_receipt = receipt_path.resolve()
+    try:
+        receipt = AfoTemplatePipelineComponentReceipt.model_validate_json(
+            resolved_receipt.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError) as error:
+        raise ConfigurationError("AFO template component receipt 无法读取") from error
+    runtime_root = selected.runtime_root.resolve()
+    file_checks = (
+        (receipt.hmmbuild, receipt.hmmbuild_sha256),
+        (receipt.hmmsearch, receipt.hmmsearch_sha256),
+        (receipt.hmmalign, receipt.hmmalign_sha256),
+        (
+            receipt.disabled_msa_search_executable,
+            receipt.disabled_msa_search_executable_sha256,
+        ),
+        (
+            receipt.unused_msa_database_sentinel,
+            receipt.unused_msa_database_sentinel_sha256,
+        ),
+        (receipt.seqres_database, receipt.seqres_database_sha256),
+        (receipt.mmcif_manifest, receipt.mmcif_manifest_sha256),
+    )
+    for path, expected in file_checks:
+        resolved = path.resolve()
+        if not resolved.is_relative_to(runtime_root):
+            raise ConfigurationError(
+                f"AFO template component 资产逃出当前 runtime: {path}"
+            )
+        if not resolved.is_file() or sha256_file(resolved) != expected:
+            raise ConfigurationError(
+                f"AFO template component 资产 identity 已变化: {path}"
+            )
+    mmcif_root = receipt.mmcif_database.resolve()
+    if (
+        not mmcif_root.is_relative_to(runtime_root)
+        or not mmcif_root.is_dir()
+    ):
+        raise ConfigurationError("AFO template mmCIF database 缺失或逃出 runtime")
+    try:
+        manifest = json.loads(receipt.mmcif_manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ConfigurationError("AFO template mmCIF manifest 无法读取") from error
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("file_count") != receipt.mmcif_file_count
+        or manifest.get("database_version") != receipt.mmcif_database_version
+        or not isinstance(manifest.get("files"), list)
+        or len(manifest["files"]) != receipt.mmcif_file_count
+    ):
+        raise ConfigurationError("AFO template mmCIF manifest identity 不一致")
+    return receipt
+
+
+def activate_afo_template_pipeline_component(
+    receipt_path: Path,
+    *,
+    context: WorkspaceContext | None = None,
+) -> Path:
+    selected = WorkspaceContext.discover() if context is None else context
+    receipt = verify_afo_template_pipeline_component(
+        receipt_path,
+        context=selected,
+    )
+    current = load_runtime_profile(selected.profile_path)
+    openfold = current.profile.backends.openfold3_af3_jax
+    if openfold is None:
+        raise ConfigurationError(
+            "激活 AFO template component 前必须先激活 AFO 3.1.4 runtime"
+        )
+    resolved_receipt = receipt_path.resolve()
+    template_runtime = OpenFold3TemplatePipelineRuntime(
+        component_receipt=resolved_receipt,
+        component_receipt_sha256=sha256_file(resolved_receipt),
+        hmmbuild=receipt.hmmbuild,
+        hmmbuild_sha256=receipt.hmmbuild_sha256,
+        hmmsearch=receipt.hmmsearch,
+        hmmsearch_sha256=receipt.hmmsearch_sha256,
+        hmmalign=receipt.hmmalign,
+        hmmalign_sha256=receipt.hmmalign_sha256,
+        hmmer_version=receipt.hmmer_version,
+        disabled_msa_search_executable=receipt.disabled_msa_search_executable,
+        disabled_msa_search_executable_sha256=(
+            receipt.disabled_msa_search_executable_sha256
+        ),
+        unused_msa_database_sentinel=receipt.unused_msa_database_sentinel,
+        unused_msa_database_sentinel_sha256=(
+            receipt.unused_msa_database_sentinel_sha256
+        ),
+        seqres_database=receipt.seqres_database,
+        seqres_database_sha256=receipt.seqres_database_sha256,
+        seqres_database_version=receipt.seqres_database_version,
+        mmcif_database=receipt.mmcif_database,
+        mmcif_manifest=receipt.mmcif_manifest,
+        mmcif_manifest_sha256=receipt.mmcif_manifest_sha256,
+        mmcif_database_version=receipt.mmcif_database_version,
+        max_template_date=receipt.max_template_date,
+    )
+    updated_runtime = openfold.model_copy(
+        update={"template_pipeline": template_runtime}
+    )
+    updated_backends = current.profile.backends.model_copy(
+        update={"openfold3_af3_jax": updated_runtime}
+    )
+    updated_profile = current.profile.model_copy(
+        update={"backends": RuntimeBackends.model_validate(updated_backends)}
+    )
+    return _profile_revision(selected, updated_profile)
 
 
 def active_openfold3_runtime(
@@ -1068,11 +1224,13 @@ def runtime_status() -> RuntimeStatus:
 
 
 __all__ = [
+    "AfoTemplatePipelineComponentReceipt",
     "OpenFold3ComponentReceipt",
     "OpenFold3InstallResult",
     "OpenFold3ReleaseManifest",
     "RuntimeStatus",
     "activate_openfold3_release",
+    "activate_afo_template_pipeline_component",
     "active_openfold3_runtime",
     "install_openfold3_component",
     "list_openfold3_components",
@@ -1080,4 +1238,5 @@ __all__ = [
     "load_openfold3_validation_receipt",
     "runtime_status",
     "verify_openfold3_component",
+    "verify_afo_template_pipeline_component",
 ]

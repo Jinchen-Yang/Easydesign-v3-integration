@@ -215,6 +215,11 @@ class RawFinalPrediction(BaseModel):
         "target-conditioned-evidence-v1",
     ] = "nanobody-final-v1.5"
     target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    template_protocol_id: Literal["afo-native-target-boltzgen-vhh-v1"] | None = None
+    target_template_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     target_condition_source_origin: Literal[
         "experimental", "imported", "predicted"
     ] | None = None
@@ -283,6 +288,10 @@ class RawFinalPrediction(BaseModel):
             self.target_condition_source_origin is None
         ):
             raise ValueError("target condition SHA/source origin 必须同时存在或缺失")
+        if (self.template_protocol_id is None) != (
+            self.target_template_receipt_sha256 is None
+        ):
+            raise ValueError("template protocol/receipt 必须同时存在或缺失")
         if self.target_condition_self_conditioned and self.target_condition_sha256 is None:
             raise ValueError("self-conditioned prediction 必须记录 condition identity")
         if self.backend_identity.startswith("openfold3-af3-jax@") and len(
@@ -434,6 +443,11 @@ class Stage07PredictionState(BaseModel):
     target_msa_sha256: str = Field(pattern=SHA256_PATTERN)
     scientific_mode: Literal["de-novo", "target-conditioned"] = "de-novo"
     target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    template_protocol_id: Literal["afo-native-target-boltzgen-vhh-v1"] | None = None
+    target_template_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     planned_prediction_keys: tuple[str, ...]
     tasks: tuple[TaskRecord, ...]
     predictions: tuple[RawFinalPrediction, ...] = ()
@@ -447,6 +461,10 @@ class Stage07PredictionState(BaseModel):
             self.target_condition_sha256 is None
         ):
             raise ValueError("Stage 07 state scientific mode/condition 不一致")
+        if (self.template_protocol_id is None) != (
+            self.target_template_receipt_sha256 is None
+        ):
+            raise ValueError("Stage 07 template protocol/receipt 必须同时存在或缺失")
         if tuple(sorted(set(self.planned_prediction_keys))) != (self.planned_prediction_keys):
             raise ValueError("Stage 07 prediction key 必须升序唯一")
         task_keys = tuple(sorted(item.strategy_id for item in self.tasks))

@@ -21,6 +21,7 @@ from easydesign.backends.scannet import ScanNetBackendConfig, ScanNetEpitopeAdap
 from easydesign.backends.structure_prediction import (
     MsaMode,
     OpenFold3Af3JaxAdapter,
+    OpenFold3TemplatePipelineAssets,
     ProtenixV2Adapter,
 )
 from easydesign.backends.target_sources import PyMOLPseAdapter
@@ -509,6 +510,7 @@ def _openfold3_adapter(
     provider: ResolvedProtenixMsaProviderConfig | None = None,
     prediction_timeout_seconds: int | None = None,
 ) -> OpenFold3Af3JaxAdapter:
+    template_runtime = runtime.template_pipeline
     return OpenFold3Af3JaxAdapter(
         release_id=runtime.release_id,
         backend_version=runtime.backend_version,
@@ -541,6 +543,41 @@ def _openfold3_adapter(
             prediction_timeout_seconds
             if prediction_timeout_seconds is not None
             else runtime.prediction_timeout_seconds
+        ),
+        template_pipeline=(
+            None
+            if template_runtime is None
+            else OpenFold3TemplatePipelineAssets(
+                component_receipt=template_runtime.component_receipt,
+                component_receipt_sha256=template_runtime.component_receipt_sha256,
+                hmmbuild=template_runtime.hmmbuild,
+                hmmbuild_sha256=template_runtime.hmmbuild_sha256,
+                hmmsearch=template_runtime.hmmsearch,
+                hmmsearch_sha256=template_runtime.hmmsearch_sha256,
+                hmmalign=template_runtime.hmmalign,
+                hmmalign_sha256=template_runtime.hmmalign_sha256,
+                hmmer_version=template_runtime.hmmer_version,
+                disabled_msa_search_executable=(
+                    template_runtime.disabled_msa_search_executable
+                ),
+                disabled_msa_search_executable_sha256=(
+                    template_runtime.disabled_msa_search_executable_sha256
+                ),
+                unused_msa_database_sentinel=(
+                    template_runtime.unused_msa_database_sentinel
+                ),
+                unused_msa_database_sentinel_sha256=(
+                    template_runtime.unused_msa_database_sentinel_sha256
+                ),
+                seqres_database=template_runtime.seqres_database,
+                seqres_database_sha256=template_runtime.seqres_database_sha256,
+                seqres_database_version=template_runtime.seqres_database_version,
+                mmcif_database=template_runtime.mmcif_database,
+                mmcif_manifest=template_runtime.mmcif_manifest,
+                mmcif_manifest_sha256=template_runtime.mmcif_manifest_sha256,
+                mmcif_database_version=template_runtime.mmcif_database_version,
+                max_template_date=template_runtime.max_template_date,
+            )
         ),
         extra_environment=runtime.extra_environment,
     )

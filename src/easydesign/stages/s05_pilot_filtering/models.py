@@ -292,6 +292,11 @@ class FullTargetPredictionRecord(BaseModel):
         "target-conditioned-evidence-v1",
     ] = "nanobody-filter-standard-v1.7"
     target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    template_protocol_id: Literal["afo-native-target-boltzgen-vhh-v1"] | None = None
+    target_template_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     target_condition_source_origin: Literal[
         "experimental", "imported", "predicted"
     ] | None = None
@@ -350,6 +355,10 @@ class FullTargetPredictionRecord(BaseModel):
             self.target_condition_source_origin is None
         ):
             raise ValueError("target condition SHA/source origin 必须同时存在或缺失")
+        if (self.template_protocol_id is None) != (
+            self.target_template_receipt_sha256 is None
+        ):
+            raise ValueError("template protocol/receipt 必须同时存在或缺失")
         if self.target_condition_self_conditioned and self.target_condition_sha256 is None:
             raise ValueError("self-conditioned prediction 必须记录 condition identity")
         if self.backend_identity.startswith("openfold3-af3-jax@") and len(
@@ -732,6 +741,11 @@ class FullTargetExecutionState(BaseModel):
     selected_candidate_ids: tuple[str, ...] = Field(min_length=1)
     scientific_mode: Literal["de-novo", "target-conditioned"] = "de-novo"
     target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    template_protocol_id: Literal["afo-native-target-boltzgen-vhh-v1"] | None = None
+    target_template_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     tasks: tuple[TaskRecord, ...] = Field(min_length=1)
     predictions: tuple[FullTargetPredictionRecord, ...] = ()
     progress: ProgressSnapshot
@@ -742,6 +756,10 @@ class FullTargetExecutionState(BaseModel):
             self.target_condition_sha256 is None
         ):
             raise ValueError("full-target state scientific mode/condition 不一致")
+        if (self.template_protocol_id is None) != (
+            self.target_template_receipt_sha256 is None
+        ):
+            raise ValueError("full-target template protocol/receipt 必须同时存在或缺失")
         if len(self.selected_candidate_ids) != len(set(self.selected_candidate_ids)):
             raise ValueError("selected_candidate_ids 不能重复")
         task_ids = {task.strategy_id for task in self.tasks}

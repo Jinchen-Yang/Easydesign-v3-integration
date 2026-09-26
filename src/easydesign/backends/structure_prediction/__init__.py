@@ -18,6 +18,7 @@ from .contracts import (
 from .openfold3_af3_jax import (
     OPENFOLD3_METRIC_DEFINITION_VERSION,
     OpenFold3Af3JaxAdapter,
+    OpenFold3TemplatePipelineAssets,
 )
 from .protenix_v2 import (
     ProtenixMsaProvider,
@@ -33,6 +34,7 @@ __all__ = [
     "MsaMode",
     "OPENFOLD3_METRIC_DEFINITION_VERSION",
     "OpenFold3Af3JaxAdapter",
+    "OpenFold3TemplatePipelineAssets",
     "PredictionRequest",
     "PredictionParameterProfile",
     "ProteinPredictionChain",

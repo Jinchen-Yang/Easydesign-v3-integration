@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -11,6 +11,7 @@ from easydesign.backends.structure_prediction import (
     ComplexStructurePredictionRequest,
     MsaMode,
     OpenFold3Af3JaxAdapter,
+    OpenFold3TemplatePipelineAssets,
     ProteinPredictionChain,
     StructurePredictionRequest,
     TemplateMode,
@@ -38,6 +39,118 @@ def adapter() -> OpenFold3Af3JaxAdapter:
         runner_commit="bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997",
         runner_tree_sha256="1" * 64,
         cuda_visible_devices="0",
+    )
+
+
+def adapter_with_template_pipeline(tmp_path: Path) -> OpenFold3Af3JaxAdapter:
+    files = {}
+    for name in (
+        "component.json",
+        "hmmbuild",
+        "hmmsearch",
+        "hmmalign",
+        "seqres",
+        "mmcif-manifest.json",
+        "disabled-msa-search",
+        "unused-msa-database.sentinel",
+    ):
+        path = (tmp_path / name).resolve()
+        path.write_text(f"{name}\n", encoding="utf-8")
+        files[name] = path
+    mmcif = (tmp_path / "mmcif").resolve()
+    mmcif.mkdir()
+    base = adapter()
+    return OpenFold3Af3JaxAdapter(
+        python=base.python,
+        runner=base.runner,
+        model_root=base.model_root,
+        cache_root=base.cache_root,
+        release_id=base.release_id,
+        backend_version=base.backend_version,
+        model_name=base.model_name,
+        adapter_contract_version=base.adapter_contract_version,
+        release_manifest_sha256=base.release_manifest_sha256,
+        conversion_receipt_sha256=base.conversion_receipt_sha256,
+        raw_checkpoint_sha256=base.raw_checkpoint_sha256,
+        converted_weight_sha256=base.converted_weight_sha256,
+        wheel_sha256=base.wheel_sha256,
+        environment_lock_sha256=base.environment_lock_sha256,
+        runner_commit=base.runner_commit,
+        runner_tree_sha256=base.runner_tree_sha256,
+        template_pipeline=OpenFold3TemplatePipelineAssets(
+            component_receipt=files["component.json"],
+            component_receipt_sha256=hashlib.sha256(
+                files["component.json"].read_bytes()
+            ).hexdigest(),
+            hmmbuild=files["hmmbuild"],
+            hmmbuild_sha256=hashlib.sha256(files["hmmbuild"].read_bytes()).hexdigest(),
+            hmmsearch=files["hmmsearch"],
+            hmmsearch_sha256=hashlib.sha256(
+                files["hmmsearch"].read_bytes()
+            ).hexdigest(),
+            hmmalign=files["hmmalign"],
+            hmmalign_sha256=hashlib.sha256(files["hmmalign"].read_bytes()).hexdigest(),
+            hmmer_version="3.4",
+            disabled_msa_search_executable=files["disabled-msa-search"],
+            disabled_msa_search_executable_sha256=hashlib.sha256(
+                files["disabled-msa-search"].read_bytes()
+            ).hexdigest(),
+            unused_msa_database_sentinel=files["unused-msa-database.sentinel"],
+            unused_msa_database_sentinel_sha256=hashlib.sha256(
+                files["unused-msa-database.sentinel"].read_bytes()
+            ).hexdigest(),
+            seqres_database=files["seqres"],
+            seqres_database_sha256=hashlib.sha256(
+                files["seqres"].read_bytes()
+            ).hexdigest(),
+            seqres_database_version="test",
+            mmcif_database=mmcif,
+            mmcif_manifest=files["mmcif-manifest.json"],
+            mmcif_manifest_sha256=hashlib.sha256(
+                files["mmcif-manifest.json"].read_bytes()
+            ).hexdigest(),
+            mmcif_database_version="test",
+            max_template_date=date(2026, 1, 1),
+        ),
+    )
+
+
+def test_frozen_target_template_pipeline_input_and_invocation(tmp_path: Path) -> None:
+    target_msa = (tmp_path / "target.a3m").resolve()
+    paired_msa = (tmp_path / "paired.a3m").resolve()
+    target_msa.write_text(">query\nACDE\n>hit\nAC-E\n", encoding="utf-8")
+    paired_msa.write_text(">query\nACDE\n", encoding="utf-8")
+    current = adapter_with_template_pipeline(tmp_path)
+
+    input_json = current.write_target_template_pipeline_input(
+        job_name="target-template",
+        target_sequence="ACDE",
+        unpaired_msa_path=target_msa,
+        paired_msa_path=paired_msa,
+        path=tmp_path / "input.json",
+    )
+    invocation = current.target_template_pipeline_invocation(
+        input_json=input_json,
+        output_dir=tmp_path / "output",
+    )
+
+    protein = json.loads(input_json.read_text())["sequences"][0]["protein"]
+    assert protein["unpairedMsa"] == target_msa.read_text()
+    assert protein["pairedMsa"] == paired_msa.read_text()
+    assert protein["templates"] is None
+    assert "--run_data_pipeline=true" in invocation.argv
+    assert "--run_inference=false" in invocation.argv
+    assert "--use_msa_server=false" in invocation.argv
+    assert "--max_template_date=2026-01-01" in invocation.argv
+    assert any(
+        argument.startswith("--jackhmmer_binary_path=")
+        and argument.endswith("disabled-msa-search")
+        for argument in invocation.argv
+    )
+    assert any(
+        argument.startswith("--uniref90_database_path=")
+        and argument.endswith("unused-msa-database.sentinel")
+        for argument in invocation.argv
     )
 
 

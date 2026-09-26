@@ -96,6 +96,14 @@ from easydesign.stages.s05_pilot_filtering import (
     TargetConditionedStage05Evidence,
 )
 
+from .afo_template_protocol import (
+    PROTOCOL_ID as AFO_TEMPLATE_PROTOCOL_ID,
+)
+from .afo_template_protocol import (
+    audit_final_input,
+    prepare_binder_template_config,
+    prepare_target_template_config,
+)
 from .boltzgen_tasks import (
     TaskTransition,
     execute_boltzgen_candidate_task,
@@ -111,6 +119,7 @@ from .complex_prediction_support import (
 )
 from .config import (
     ComplexPredictionConfig,
+    ComplexTemplateConfig,
     PrecomputedComplexMsaConfig,
     ResolvedProtenixMsaProviderConfig,
     Stage05Config,
@@ -815,6 +824,24 @@ def _predict_selected_candidates(
     request_provider = (
         remote_feature_providers[0] if remote_feature_providers else provider
     )
+    target_templates: ComplexTemplateConfig = prediction_config.target_templates
+    target_template_receipt_sha256: str | None = None
+    if prediction_config.template_protocol == AFO_TEMPLATE_PROTOCOL_ID:
+        protocol_adapter = adapter_builder(request_provider, devices[0])
+        if not isinstance(protocol_adapter, OpenFold3Af3JaxAdapter):
+            raise ManifestStateError("AFO template protocol 解析到了非 AFO backend")
+        protocol_root = work / "afo-template-protocol" / mode_suffix / "target"
+        target_templates = prepare_target_template_config(
+            adapter=protocol_adapter,
+            job_name=f"{upstream.strategy_bundle.target_id}-template"[:128],
+            target_sequence=target_sequence,
+            target_unpaired_a3m=target_msa,
+            target_paired_msa=prediction_config.target_paired_msa,
+            output_root=protocol_root,
+        )
+        target_template_receipt_sha256 = sha256_file(
+            protocol_root / "target-template-receipt.json"
+        )
     target_msa_ref = _artifact(
         root,
         target_msa,
@@ -864,6 +891,14 @@ def _predict_selected_candidates(
         if (
             state.scientific_mode != mode_suffix
             or state.target_condition_sha256 != expected_condition_sha
+            or state.template_protocol_id
+            != (
+                AFO_TEMPLATE_PROTOCOL_ID
+                if prediction_config.template_protocol == AFO_TEMPLATE_PROTOCOL_ID
+                else None
+            )
+            or state.target_template_receipt_sha256
+            != target_template_receipt_sha256
         ):
             raise ManifestStateError("Stage 05 full-target state scientific mode 不一致")
         tasks = {item.strategy_id: item for item in state.tasks}
@@ -943,6 +978,12 @@ def _predict_selected_candidates(
                     if target_condition is None
                     else target_condition.template_data_sha256
                 ),
+                template_protocol_id=(
+                    AFO_TEMPLATE_PROTOCOL_ID
+                    if prediction_config.template_protocol == AFO_TEMPLATE_PROTOCOL_ID
+                    else None
+                ),
+                target_template_receipt_sha256=target_template_receipt_sha256,
                 tasks=task_values,
                 predictions=tuple(
                     prediction_by_id[candidate_id]
@@ -1050,17 +1091,24 @@ def _predict_selected_candidates(
                 sequence=target_sequence,
                 unpaired_msa=target_unpaired,
                 paired_msa=prediction_config.target_paired_msa,
-                templates=prediction_config.target_templates,
+                templates=target_templates,
                 query_only_root=candidate_root,
                 target_condition=target_condition,
             )
+            binder_templates = prediction_config.binder_templates
+            if prediction_config.template_protocol == AFO_TEMPLATE_PROTOCOL_ID:
+                binder_templates = prepare_binder_template_config(
+                    source_complex=candidate.original_structure.verify(root),
+                    binder_sequence=sequence,
+                    output_root=candidate_root / "binder-template-protocol",
+                )
             binder_chain = configured_prediction_chain(
                 chain_id="B",
                 role="binder",
                 sequence=sequence,
                 unpaired_msa=prediction_config.binder_msa,
                 paired_msa=prediction_config.binder_paired_msa,
-                templates=prediction_config.binder_templates,
+                templates=binder_templates,
                 query_only_root=candidate_root,
                 target_condition=target_condition,
             )
@@ -1087,6 +1135,11 @@ def _predict_selected_candidates(
                 request,
                 candidate_root / "input.json",
             )
+            if prediction_config.template_protocol == AFO_TEMPLATE_PROTOCOL_ID:
+                audit_final_input(
+                    input_json=input_path,
+                    output_path=candidate_root / "input-audit.json",
+                )
             remote_invocation: BackendInvocation | None = None
             prediction_input = input_path
             if any(
@@ -1252,6 +1305,15 @@ def _predict_selected_candidates(
                         None
                         if target_condition is None
                         else target_condition.template_data_sha256
+                    ),
+                    template_protocol_id=(
+                        AFO_TEMPLATE_PROTOCOL_ID
+                        if prediction_config.template_protocol
+                        == AFO_TEMPLATE_PROTOCOL_ID
+                        else None
+                    ),
+                    target_template_receipt_sha256=(
+                        target_template_receipt_sha256
                     ),
                     target_condition_source_origin=(
                         None if target_condition is None else target_condition.source_origin

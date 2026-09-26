@@ -226,6 +226,11 @@ def test_extracts_only_exact_stage1_binder_chain_and_audits_final_input(
                                     "mmcif": _structure_text((("A", "ACD"),)),
                                     "queryIndices": [0, 1, 2],
                                     "templateIndices": [0, 1, 2],
+                                },
+                                {
+                                    "mmcif": _structure_text((("A", "ACD"),)),
+                                    "queryIndices": [1, 2],
+                                    "templateIndices": [1, 2],
                                 }
                             ],
                         }
@@ -252,5 +257,7 @@ def test_extracts_only_exact_stage1_binder_chain_and_audits_final_input(
     )
 
     assert audit.chains[0].unpaired_msa_depth == 2
+    assert audit.chains[0].template_count == 2
+    assert audit.chains[0].mapped_residues == 3
     assert audit.chains[1].paired_msa_depth == 1
     assert audit.chains[1].template_source == "boltzgen-stage1-vhh"

@@ -578,13 +578,19 @@ def audit_final_input(
             or not templates
         ):
             raise ManifestStateError("最终 AFO input.json feature schema 不合法")
-        mapped = 0
+        mapped_query_indices: set[int] = set()
         for template in templates:
-            if not isinstance(template, dict) or not isinstance(
-                template.get("queryIndices"), list
+            query_indices = (
+                template.get("queryIndices") if isinstance(template, dict) else None
+            )
+            if (
+                not isinstance(query_indices, list)
+                or not query_indices
+                or any(type(value) is not int for value in query_indices)
+                or any(value < 0 or value >= len(sequence) for value in query_indices)
             ):
                 raise ManifestStateError("最终 AFO input.json template mapping 不合法")
-            mapped += len(template["queryIndices"])
+            mapped_query_indices.update(query_indices)
         audits.append(
             AfoChainInputAudit(
                 chain_id=chain_id,
@@ -599,7 +605,7 @@ def audit_final_input(
                     if role == "target"
                     else "boltzgen-stage1-vhh"
                 ),
-                mapped_residues=mapped,
+                mapped_residues=len(mapped_query_indices),
             )
         )
     audit = AfoFinalInputAudit(

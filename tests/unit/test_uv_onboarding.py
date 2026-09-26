@@ -22,6 +22,7 @@ def test_uv_files_and_local_distribution_identity_are_committed() -> None:
     assert project["scripts"] == {
         "easydesign": "easydesign.cli:main",
         "easydesign-agent": "easydesign.agent.cli:main",
+        "easydesign-workbench": "easydesign.product.server:main",
     }
     assert project["requires-python"] == ">=3.11,<3.13"
     assert project["classifiers"][-1] == "Private :: Do Not Upload"

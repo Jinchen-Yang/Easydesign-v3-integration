@@ -71,7 +71,7 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
 
     for index, (name, chars) in enumerate(
         [
-            ("analyze_receptor_context", 26000),
+            ("analyze_receptor_context", 75000),
             ("read_site_evidence", 6000),
             ("retrieve_evidence", 5000),
             ("retrieve_evidence", 5000),
@@ -164,7 +164,7 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
     ]
     assert len(admission) == 1
     assert admission[0]["preserved_latest_tool_batch_calls"] == len(calls)
-    assert admission[0]["projected_input_chars_with_schemas"] <= 100000
+    assert admission[0]["projected_input_chars_with_schemas"] <= config.max_input_chars
     context = [e["payload"] for e in events if e["kind"] == "model-context"]
-    assert len(context) == 1 and context[0]["context_chars"] <= 100000
+    assert len(context) == 1 and context[0]["context_chars"] <= config.max_input_chars
     assert context[0]["history_projection"] == "runtime-site-research-working-packet"

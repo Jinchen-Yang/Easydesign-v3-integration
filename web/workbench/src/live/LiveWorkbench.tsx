@@ -20,6 +20,7 @@ import { Landing, Modal } from '../app/App';
 import { useWorkbenchPage } from '../app/navigation';
 import { ProjectSidebar, type WorkbenchPage } from '../features/projects/ProjectSidebar';
 import { ProjectsPage } from '../features/projects/ProjectsPage';
+import { LiveResources } from '../features/compute/LiveResources';
 import { Workflow } from '../features/workflow/Workflow';
 import { Conversation } from '../features/conversation/Conversation';
 import type {
@@ -803,7 +804,8 @@ function Compute({
             <p>Follow your runs across projects, from pilot to scale.</p>
           </div>
         </div>
-        <section className="compute-connection" aria-label="Compute connection">
+        <LiveResources />
+        <section className="compute-connection" aria-label="Project activity connection">
           <span className="compute-icon">
             <Cpu size={25} />
           </span>

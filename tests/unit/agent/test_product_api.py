@@ -6,6 +6,7 @@ import asyncio
 import json
 from contextlib import contextmanager
 from threading import Thread
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -29,7 +30,7 @@ from easydesign.product.projection import (
     structure_candidate_previews,
     workbench,
 )
-from easydesign.product.server import ProductServer
+from easydesign.product.server import LocalGpuMonitor, ProductServer
 from easydesign.product.service import ProductService
 from easydesign.workspace_context import WorkspaceContext
 from tests.agent_support import ScriptedModel, scripted_config
@@ -462,6 +463,56 @@ def http_api(service):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_local_gpu_monitor_is_fixed_read_only_cached_and_fails_stale():
+    now = [0.0]
+    fail = [False]
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append((argv, kwargs))
+        assert argv[0] == "nvidia-smi"
+        assert kwargs == {
+            "capture_output": True,
+            "check": True,
+            "text": True,
+            "timeout": 5,
+        }
+        if fail[0] and argv[1].startswith("--query-gpu="):
+            raise OSError("private diagnostic")
+        if argv[1].startswith("--query-compute-apps="):
+            return SimpleNamespace(stdout="GPU-uuid, 123\n")
+        return SimpleNamespace(
+            stdout="0, NVIDIA A100-PCIE-40GB, GPU-uuid, 91, 40960, 1024, 53, 210, 250, 580.0\n"
+        )
+
+    monitor = LocalGpuMonitor(runner=runner, clock=lambda: now[0], node="Suzhou2")
+    first = monitor()
+    assert first["connection"] == "connected"
+    assert first["node"] == "Suzhou2"
+    assert first["sample"]["gpus"][0] == {
+        "index": 0,
+        "name": "NVIDIA A100-PCIE-40GB",
+        "utilization": 91.0,
+        "memoryTotalMiB": 40960.0,
+        "memoryUsedMiB": 1024.0,
+        "temperatureC": 53.0,
+        "powerW": 210.0,
+        "powerLimitW": 250.0,
+        "processCount": 1,
+        "driverVersion": "580.0",
+    }
+    assert len(calls) == 2
+    now[0] = 9.0
+    assert monitor() == first
+    assert len(calls) == 2
+    now[0] = 11.0
+    fail[0] = True
+    stale = monitor()
+    assert stale["connection"] == "stale"
+    assert stale["sample"] == first["sample"]
+    assert "private diagnostic" not in json.dumps(stale)
 
 
 def prime(bridge, goal):

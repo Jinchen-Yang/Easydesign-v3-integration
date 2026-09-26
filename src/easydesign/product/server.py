@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hmac
+import io
 import json
 import logging
 import mimetypes
 import os
 import secrets
+import subprocess
+import threading
+import time
+from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,11 +33,110 @@ from .contracts import ActionRequest, CreateProject, ProductError, RenameProject
 from .domain import NativeGateway
 from .service import ProductService
 
-
 # Keep an authenticated local browser usable across ordinary browser restarts.
 # The cookie remains origin-bound, HttpOnly and strict same-site; the durable
 # workspace token is still required for the first login in each browser profile.
 SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+GPU_SAMPLE_TTL_SECONDS = 10.0
+
+
+class LocalGpuMonitor:
+    """Bounded, read-only local GPU telemetry for the loopback product UI."""
+
+    _GPU_QUERY = (
+        "index,name,uuid,utilization.gpu,memory.total,memory.used,"
+        "temperature.gpu,power.draw,power.limit,driver_version"
+    )
+
+    def __init__(
+        self,
+        *,
+        runner: Any = subprocess.run,
+        clock: Any = time.monotonic,
+        node: str | None = None,
+    ) -> None:
+        self.runner = runner
+        self.clock = clock
+        self.node = node or os.uname().nodename
+        self._checked_at = float("-inf")
+        self._sample: dict[str, Any] | None = None
+        self._failed = False
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _number(value: str) -> float | None:
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+
+    def _query(self, kind: str, fields: str) -> str:
+        completed = self.runner(
+            [
+                "nvidia-smi",
+                f"--query-{kind}={fields}",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=5,
+        )
+        return completed.stdout
+
+    def _collect(self) -> dict[str, Any]:
+        counts: dict[str, set[str]] | None = {}
+        try:
+            for uuid, pid in csv.reader(io.StringIO(self._query("compute-apps", "gpu_uuid,pid"))):
+                counts.setdefault(uuid.strip(), set()).add(pid.strip())
+        except (OSError, subprocess.SubprocessError, ValueError):
+            counts = None
+        gpus: list[dict[str, Any]] = []
+        rows = csv.reader(io.StringIO(self._query("gpu", self._GPU_QUERY)))
+        for row in rows:
+            if len(row) != 10:
+                raise ValueError("Unexpected nvidia-smi row")
+            index, name, uuid, util, total, used, temp, power, limit, driver = (
+                value.strip() for value in row
+            )
+            gpus.append(
+                {
+                    "index": int(index),
+                    "name": name,
+                    "utilization": self._number(util),
+                    "memoryTotalMiB": self._number(total),
+                    "memoryUsedMiB": self._number(used),
+                    "temperatureC": self._number(temp),
+                    "powerW": self._number(power),
+                    "powerLimitW": self._number(limit),
+                    "processCount": len(counts.get(uuid, set())) if counts is not None else None,
+                    "driverVersion": driver,
+                }
+            )
+        if not gpus:
+            raise ValueError("No GPUs reported")
+        return {
+            "sampledAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "gpus": gpus,
+        }
+
+    def __call__(self) -> dict[str, Any]:
+        with self._lock:
+            now = self.clock()
+            if now - self._checked_at >= GPU_SAMPLE_TTL_SECONDS:
+                try:
+                    self._sample = self._collect()
+                    self._failed = False
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    self._failed = True
+                self._checked_at = now
+            if self._sample is None:
+                return {"connection": "unavailable", "node": self.node, "sample": None}
+            return {
+                "connection": "stale" if self._failed else "connected",
+                "node": self.node,
+                "sample": self._sample,
+            }
 
 
 class ProductServer(ThreadingHTTPServer):
@@ -46,6 +151,7 @@ class ProductServer(ThreadingHTTPServer):
         token: str | None = None,
     ) -> None:
         self.service, self.web_root = service, web_root
+        self.compute_monitor = LocalGpuMonitor()
         token_path = service.root / "access-token"
         if token is None:
             try:
@@ -167,6 +273,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self.authenticated():
                 raise ProductError("unauthorized", "Open the Workbench access link", 401)
+            if path == "/api/compute/resources":
+                if self.command != "GET":
+                    raise ProductError("method_not_allowed", "Resource telemetry is read-only", 405)
+                if url.query:
+                    raise ProductError("invalid_request", "Resource telemetry takes no query", 400)
+                self.send(200, self.server.compute_monitor())
+                return
             parts = path.strip("/").split("/")
             query = parse_qs(url.query)
             service = self.server.service

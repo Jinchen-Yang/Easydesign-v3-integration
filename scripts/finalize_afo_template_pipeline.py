@@ -36,6 +36,11 @@ def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--staging", type=Path, required=True)
     parser.add_argument("--workspace-root", type=Path, required=True)
+    parser.add_argument(
+        "--profile",
+        type=Path,
+        help="Activate only this clone-local profile (defaults to runtime/profile.yaml)",
+    )
     return parser.parse_args()
 
 
@@ -116,6 +121,7 @@ def main() -> int:
         profile = activate_afo_template_pipeline_component(
             receipt_path,
             context=context,
+            profile_path=arguments.profile,
         )
         print(profile)
         return 0
@@ -189,6 +195,7 @@ def main() -> int:
     profile = activate_afo_template_pipeline_component(
         receipt_path,
         context=context,
+        profile_path=arguments.profile,
     )
     print(profile)
     return 0

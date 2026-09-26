@@ -284,7 +284,7 @@ def main() -> int:
     arguments = _arguments()
     cases = _parse_cases(arguments.case)
     context = WorkspaceContext.discover()
-    code_commit = _git_commit(context.root)
+    code_commit = _git_commit(Path(__file__).resolve().parents[1])
     profile = load_runtime_profile()
     template_runtime = profile.profile.backends.openfold3_af3_jax
     if template_runtime is None or template_runtime.template_pipeline is None:

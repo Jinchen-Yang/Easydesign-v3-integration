@@ -566,8 +566,15 @@ def _python312(
     )
 
 
-def _profile_revision(context: WorkspaceContext, model: RuntimeProfile) -> Path:
-    base = context.profile_path
+def _profile_revision(
+    context: WorkspaceContext,
+    model: RuntimeProfile,
+    *,
+    profile_path: Path | None = None,
+) -> Path:
+    base = context.profile_path if profile_path is None else profile_path.resolve()
+    if not base.is_relative_to(context.runtime_root.resolve()):
+        raise ConfigurationError("Runtime profile 必须位于当前 clone 的 runtime/ 内")
     if not base.exists():
         destination = base
     else:
@@ -712,13 +719,15 @@ def activate_afo_template_pipeline_component(
     receipt_path: Path,
     *,
     context: WorkspaceContext | None = None,
+    profile_path: Path | None = None,
 ) -> Path:
     selected = WorkspaceContext.discover() if context is None else context
     receipt = verify_afo_template_pipeline_component(
         receipt_path,
         context=selected,
     )
-    current = load_runtime_profile(selected.profile_path)
+    selected_profile = selected.profile_path if profile_path is None else profile_path.resolve()
+    current = load_runtime_profile(selected_profile)
     openfold = current.profile.backends.openfold3_af3_jax
     if openfold is None:
         raise ConfigurationError(
@@ -761,7 +770,11 @@ def activate_afo_template_pipeline_component(
     updated_profile = current.profile.model_copy(
         update={"backends": RuntimeBackends.model_validate(updated_backends)}
     )
-    return _profile_revision(selected, updated_profile)
+    return _profile_revision(
+        selected,
+        updated_profile,
+        profile_path=selected_profile,
+    )
 
 
 def active_openfold3_runtime(

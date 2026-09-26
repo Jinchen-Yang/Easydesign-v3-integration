@@ -11,6 +11,7 @@ from easydesign.orchestration import (
     runtime_setup,
 )
 from easydesign.orchestration.profile import (
+    PROFILE_ENVIRONMENT_VARIABLE,
     _protenix_compile_environment,
     load_runtime_profile_by_identity,
 )
@@ -50,6 +51,23 @@ def test_runtime_profile_is_exclusive_and_path_identity_is_stable(
     assert len(loaded.identity.sha256) == 64
     with pytest.raises(ConfigurationError, match="禁止覆盖"):
         initialize_runtime_profile(profile_path)
+
+
+def test_runtime_profile_environment_selects_clone_local_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_path = initialize_runtime_profile(
+        tmp_path / "runtime/experiments/afo-template/profile.yaml",
+        profile_id="candidate-afo-template",
+        runs_root=(tmp_path / "workspace/runs").resolve(),
+    )
+    monkeypatch.setenv(PROFILE_ENVIRONMENT_VARIABLE, str(profile_path))
+
+    loaded = load_runtime_profile()
+
+    assert loaded.path == profile_path.resolve()
+    assert loaded.profile.profile_id == "candidate-afo-template"
 
 
 def test_run_frozen_profile_resolves_old_revision_and_never_drifts_to_active(

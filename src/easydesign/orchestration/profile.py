@@ -287,11 +287,12 @@ def default_runtime_profile_path() -> Path:
 
 
 def resolve_runtime_profile_path(explicit_path: Path | None = None) -> Path:
-    return (
-        explicit_path.expanduser()
-        if explicit_path is not None
-        else default_runtime_profile_path()
-    )
+    if explicit_path is not None:
+        return explicit_path.expanduser()
+    configured = os.environ.get(PROFILE_ENVIRONMENT_VARIABLE)
+    if configured:
+        return Path(configured).expanduser()
+    return default_runtime_profile_path()
 
 
 def _latest_profile_path(path: Path) -> Path:

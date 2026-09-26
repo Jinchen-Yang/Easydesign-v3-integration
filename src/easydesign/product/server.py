@@ -31,6 +31,7 @@ from easydesign.workspace_context import WorkspaceContext
 from .artifacts import confined_bytes
 from .contracts import ActionRequest, CreateProject, ProductError, RenameProject
 from .domain import NativeGateway
+from .lab_order import LabOrderCommand
 from .service import ProductService
 
 # Keep an authenticated local browser usable across ordinary browser restarts.
@@ -317,6 +318,8 @@ class Handler(BaseHTTPRequestHandler):
                         )
                     elif resource == "events" and len(tail) == 3:
                         result = service.events(project, int(query.get("after", ["0"])[0]), limit)
+                    elif resource == "lab-order" and len(tail) == 3:
+                        result = service.lab_order(project)
                     else:
                         raise ProductError("not_found", "Unknown project resource", 404)
                 else:
@@ -334,6 +337,13 @@ class Handler(BaseHTTPRequestHandler):
             elif len(tail) == 3 and tail[0] == "projects" and tail[2] == "actions":
                 self.send(
                     202, service.submit(tail[1], ActionRequest.model_validate(self.json_body()))
+                )
+            elif len(tail) == 3 and tail[0] == "projects" and tail[2] == "lab-order":
+                self.send(
+                    200,
+                    service.apply_lab_order(
+                        tail[1], LabOrderCommand.model_validate(self.json_body())
+                    ),
                 )
             elif len(tail) == 3 and tail[0] == "requests" and tail[2] == "resume":
                 self.json_body()

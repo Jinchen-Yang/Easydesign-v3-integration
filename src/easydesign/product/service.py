@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.harness import fingerprint
 from easydesign.agent.phase34_runtime import Phase34Runtime
+from easydesign.agent.phase34_contracts import WetLabHandoffPackage
 from easydesign.agent.session_store import SessionStore
 from easydesign.core import ArtifactRef, sha256_file
 from easydesign.core.errors import ContractError
@@ -31,6 +32,7 @@ from .contracts import ActionRequest, CreateProject, ProductError, ProjectView, 
 from .conversation import answer, messages
 from .domain import NativeGateway, decision_view
 from .journal import RequestJournal
+from .lab_order import LabOrderCommand, LabOrderStore, MockLabProvider
 from .projection import (
     activity,
     activity_rows,
@@ -57,6 +59,48 @@ class ProductService:
 
     def journal(self) -> RequestJournal:
         return RequestJournal(self.root / "requests.sqlite")
+
+    def order_store(self) -> LabOrderStore:
+        return LabOrderStore(
+            self.root / "lab-orders.sqlite", self.root / "lab-order-receipts"
+        )
+
+    @staticmethod
+    def _current_handoff(session: Any) -> WetLabHandoffPackage:
+        bridge = session.bridge
+        if not isinstance(bridge, Phase34Runtime):
+            raise ProductError(
+                "gate5_required", "A current Gate 5 handoff is required", 409
+            )
+        event = bridge.project_latest("phase34-wet-lab-handoff")
+        if event is None:
+            raise ProductError(
+                "gate5_required", "A current Gate 5 handoff is required", 409
+            )
+        return WetLabHandoffPackage.model_validate(bridge.document(event["ref"]))
+
+    def lab_order(self, project: str) -> dict[str, Any]:
+        with self.gateway.session(project) as session:
+            handoff = self._current_handoff(session)
+        store = self.order_store()
+        try:
+            return store.view(project, handoff)
+        finally:
+            store.close()
+
+    def apply_lab_order(self, project: str, command: LabOrderCommand) -> dict[str, Any]:
+        with self.gateway.session(project) as session:
+            handoff = self._current_handoff(session)
+        store = self.order_store()
+        try:
+            return store.apply(
+                project=project,
+                handoff=handoff,
+                command=command,
+                provider=MockLabProvider(),
+            )
+        finally:
+            store.close()
 
     @staticmethod
     def public_request(row: dict[str, Any]) -> dict[str, Any]:
@@ -400,6 +444,13 @@ class ProductService:
             for phase in value["workflow"]:
                 if phase["id"] == value["project"]["phase"]:
                     phase["status"] = "running"
+        try:
+            value["lab_order"] = self.lab_order(project)
+        except ProductError as error:
+            if error.code not in {"gate5_required", "no_agent_session", "not_found"}:
+                raise
+            value["lab_order"] = None
+        value["capabilities"]["lab_order"] = value["lab_order"] is not None
         value["connection"] = "connected"
         return value
 

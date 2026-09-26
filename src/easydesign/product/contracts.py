@@ -126,4 +126,5 @@ class WorkbenchProjection(Value):
     capabilities: dict[str, bool]
     conversation: list[dict[str, Any]] = Field(default_factory=list)
     requests: list[dict[str, Any]] = Field(default_factory=list)
+    lab_order: dict[str, Any] | None = None
     connection: Literal["connected"] = "connected"

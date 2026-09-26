@@ -45,7 +45,7 @@ class LabOrderDraft(Value):
     reviewed: Literal[True]
 
     @model_validator(mode="after")
-    def unique_candidates(self) -> "LabOrderDraft":
+    def unique_candidates(self) -> LabOrderDraft:
         if len(self.candidate_ids) != len(set(self.candidate_ids)):
             raise ValueError("Lab order candidates must be unique")
         return self
@@ -59,7 +59,7 @@ class LabOrderCommand(Value):
     acknowledgement: Literal["SIMULATED_ORDER_ONLY"] | None = None
 
     @model_validator(mode="after")
-    def action_payload(self) -> "LabOrderCommand":
+    def action_payload(self) -> LabOrderCommand:
         if self.action == "save" and self.draft is None:
             raise ValueError("Saving a lab order requires a draft")
         if self.action != "save" and self.draft is not None:
@@ -238,7 +238,11 @@ class LabOrderStore:
         draft: LabOrderDraft, handoff: WetLabHandoffPackage
     ) -> None:
         available = {item.candidate_id: item for item in handoff.candidates}
-        unknown = [candidate_id for candidate_id in draft.candidate_ids if candidate_id not in available]
+        unknown = [
+            candidate_id
+            for candidate_id in draft.candidate_ids
+            if candidate_id not in available
+        ]
         if unknown:
             raise ProductError(
                 "candidate_outside_gate5",
@@ -300,7 +304,9 @@ class LabOrderStore:
                 }
             elif command.action == "quote":
                 if state["draft"] is None:
-                    raise ProductError("draft_required", "Save a complete simulated order first", 409)
+                    raise ProductError(
+                        "draft_required", "Save a complete simulated order first", 409
+                    )
                 draft = LabOrderDraft.model_validate(state["draft"])
                 self._validate_draft(draft, handoff)
                 state["quote"] = provider.quote(draft).model_dump(mode="json")
@@ -320,12 +326,16 @@ class LabOrderStore:
                 receipt_value = receipt.model_dump(mode="json", exclude={"receipt_sha256"})
                 receipt_sha = digest(receipt_value)
                 receipt = receipt.model_copy(update={"receipt_sha256": receipt_sha})
-                immutable_json(self.receipts / (receipt.receipt_id + ".json"), receipt.model_dump(mode="json"))
+                immutable_json(
+                    self.receipts / (receipt.receipt_id + ".json"),
+                    receipt.model_dump(mode="json"),
+                )
                 state["receipt"] = receipt.model_dump(mode="json")
             now = time.time()
             self.db.execute(
                 "INSERT INTO lab_orders VALUES(?,?,?,?) "
-                "ON CONFLICT(project,handoff) DO UPDATE SET state=excluded.state,updated=excluded.updated",
+                "ON CONFLICT(project,handoff) DO UPDATE SET "
+                "state=excluded.state,updated=excluded.updated",
                 (project, handoff_sha, json.dumps(state, sort_keys=True), now),
             )
             response = {
@@ -340,4 +350,3 @@ class LabOrderStore:
                 (command.request_id, project, command_hash, json.dumps(response), now),
             )
         return response
-

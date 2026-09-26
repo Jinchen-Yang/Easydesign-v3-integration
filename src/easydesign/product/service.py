@@ -20,8 +20,8 @@ from pydantic import ValidationError
 
 from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.harness import fingerprint
-from easydesign.agent.phase34_runtime import Phase34Runtime
 from easydesign.agent.phase34_contracts import WetLabHandoffPackage
+from easydesign.agent.phase34_runtime import Phase34Runtime
 from easydesign.agent.session_store import SessionStore
 from easydesign.core import ArtifactRef, sha256_file
 from easydesign.core.errors import ContractError

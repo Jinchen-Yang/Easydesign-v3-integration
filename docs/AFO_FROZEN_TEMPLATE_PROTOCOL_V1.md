@@ -27,6 +27,11 @@ Templates must contain inline mmCIF plus non-empty, in-range `queryIndices` and
 protocol failure; the standard condition does not fall back to no template or
 to a manually selected experimental structure.
 
+Stage 05 does not automatically relabel this standard input as a second
+`target-conditioned` prediction.  Doing so would create identical AFO inputs
+with different scientific labels.  A state-specific source-structure condition
+must instead be configured and audited as a separate experimental arm.
+
 ## Binder chain
 
 Each candidate uses only its own BoltzGen stage-1 VHH structure.  The binder

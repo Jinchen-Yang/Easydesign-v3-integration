@@ -2235,7 +2235,18 @@ def execute_stage05(
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,
         )
-        if upstream.target_bundle is None:
+        if (
+            upstream.target_bundle is None
+            or config.full_target_prediction.template_protocol
+            == AFO_TEMPLATE_PROTOCOL_ID
+        ):
+            # The frozen AFO protocol defines the standard condition as native
+            # local-DataPipeline target templates plus the candidate's own
+            # BoltzGen VHH template.  Re-running the same protocol under the
+            # historical target-conditioned label would create two identical
+            # inputs with different scientific labels.  A source-structure
+            # condition therefore needs its own explicitly configured
+            # experimental arm instead of being injected automatically here.
             conditioned_refs = ()
             conditioned_evidence_ref = None
         else:

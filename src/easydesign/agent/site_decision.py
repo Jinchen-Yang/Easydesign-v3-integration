@@ -812,12 +812,57 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
         None,
     )
     if mandatory_ids and first_selectable not in mandatory_ids:
-        raise ResearchConclusionMismatch(
-            "GPCR_ORTHOSTERIC_A_REQUIRED: rank one supplied extracellular deep-orthosteric "
-            "outer-pore candidate first: "
-            + ", ".join(sorted(mandatory_ids))
-            + ". approach_validation is not-performed, so speculative whole-VHH framework/CDR "
-            "access cannot demote it below a peripheral or shallow ECL candidate."
+        # This is an explicit product policy over already verified facts, so enforce it during
+        # deterministic hydration instead of consuming model-repair retries. Scientific content
+        # is retained; only the relative order and order-dependent prose are normalized.
+        original_order = list(decision.candidates)
+        required = next(
+            item for item in original_order if item.candidate_id in mandatory_ids
+        )
+        required_index = original_order.index(required)
+        selectable = [
+            item
+            for item in original_order
+            if runtime_block(candidates[item.candidate_id]) is None
+            and item.candidate_id != required.candidate_id
+        ]
+        blocked = [
+            item
+            for item in original_order
+            if runtime_block(candidates[item.candidate_id]) is not None
+        ]
+        required = required.model_copy(
+            update={
+                "tied_with_previous": False,
+                "tie_reason": None,
+                "why_ranked": (
+                    "Runtime GPCR policy ranks this verified extracellular deep-orthosteric "
+                    "outer-pore candidate A. Whole-VHH reach remains untested and must be "
+                    "evaluated downstream; that uncertainty cannot demote it before design."
+                ),
+            }
+        )
+        normalized_selectable = []
+        for item in selectable:
+            update: dict[str, Any] = {
+                "tied_with_previous": False,
+                "tie_reason": None,
+            }
+            if original_order.index(item) < required_index:
+                update["why_ranked"] = (
+                    "Retained as an extracellular alternative, but it is peripheral or "
+                    "shallower than the verified deep-orthosteric outer-pore candidate required "
+                    "by the objective."
+                )
+            normalized_selectable.append(item.model_copy(update=update))
+        normalized_blocked = [
+            item.model_copy(update={"tied_with_previous": False, "tie_reason": None})
+            for item in blocked
+        ]
+        decision = decision.model_copy(
+            update={
+                "candidates": [required, *normalized_selectable, *normalized_blocked],
+            }
         )
 
     # Ranked Site synthesis owns relative preference, not hard eligibility. In particular, a

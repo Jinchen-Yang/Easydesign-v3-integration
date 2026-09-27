@@ -265,8 +265,9 @@ def test_extracellular_deep_orthosteric_gpcr_candidate_must_rank_a(site_bridge):
         ]
     }
 
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
 
     corrected = case["decision"].model_copy(
         update={
@@ -328,8 +329,9 @@ def test_deep_gpcr_ligand_occupancy_mechanism_cannot_evade_rank_a_by_omitting_ke
         ]
     }
 
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
 
 
 def test_explicit_pdb_gpcr_pocket_occupancy_wording_still_requires_rank_a(site_bridge):
@@ -390,8 +392,9 @@ def test_explicit_pdb_gpcr_pocket_occupancy_wording_still_requires_rank_a(site_b
         ]
     }
 
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
 
 
 def test_verified_orthosteric_evidence_cannot_be_demoted_for_unmodeled_vhh_reach(site_bridge):
@@ -453,8 +456,10 @@ def test_verified_orthosteric_evidence_cannot_be_demoted_for_unmodeled_vhh_reach
         ]
     }
 
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
+    assert "Whole-VHH reach remains untested" in hydrated.portfolio[0].site.rationale
 
 
 def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):

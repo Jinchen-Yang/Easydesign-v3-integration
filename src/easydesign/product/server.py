@@ -32,6 +32,7 @@ from .artifacts import confined_bytes
 from .contracts import ActionRequest, CreateProject, ProductError, RenameProject
 from .domain import NativeGateway
 from .lab_order import LabOrderCommand
+from .rabbit_chat import RabbitChatService, SubprocessChatProvider
 from .service import ProductService
 
 # Keep an authenticated local browser usable across ordinary browser restarts.
@@ -151,8 +152,10 @@ class ProductServer(ThreadingHTTPServer):
         web_root: Path | None = None,
         easy_web_root: Path | None = None,
         token: str | None = None,
+        rabbit_chat: RabbitChatService | None = None,
     ) -> None:
         self.service, self.web_root, self.easy_web_root = service, web_root, easy_web_root
+        self.rabbit_chat = rabbit_chat or RabbitChatService()
         self.compute_monitor = LocalGpuMonitor()
         token_path = service.root / "access-token"
         if token is None:
@@ -275,6 +278,30 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self.authenticated():
                 raise ProductError("unauthorized", "Open the Workbench access link", 401)
+            if path == "/api/rabbit/chat":
+                if url.query:
+                    raise ProductError("invalid_request", "Chat endpoint takes no query", 400)
+                if self.command == "GET":
+                    self.send(200, self.server.rabbit_chat.status())
+                    return
+                if self.command != "POST":
+                    raise ProductError("method_not_allowed", "Chat accepts GET and POST", 405)
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                    raise ProductError("invalid_content_type", "Expected application/json", 415)
+                payload = json.loads(self.body(140 * 1024))
+                events = self.server.rabbit_chat.events(payload)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                for event in events:
+                    self.wfile.write((json.dumps(event, ensure_ascii=False) + "\n").encode())
+                    self.wfile.flush()
+                self.close_connection = True
+                return
             if path == "/api/compute/resources":
                 if self.command != "GET":
                     raise ProductError("method_not_allowed", "Resource telemetry is read-only", 405)
@@ -484,11 +511,24 @@ def main(argv: list[str] | None = None) -> int:
             "Easy Workbench build is missing; run pnpm install --frozen-lockfile and pnpm build "
             "inside web/easy",
         )
+    source_root = Path(__file__).resolve().parents[3]
+    rabbit_script = confined(
+        context.root, source_root / "web/easy/server/rabbit_chat.py"
+    )
     server = ProductServer(
         ProductService(gateway, actor=f"local-workbench:uid:{os.getuid()}"),
         port=args.port,
         web_root=web_root,
         easy_web_root=easy_web_root,
+        rabbit_chat=RabbitChatService(
+            SubprocessChatProvider(
+                rabbit_script,
+                confined(context.root, context.root / (args.env_file or Path(".env.local"))),
+            )
+            if os.environ.get("DEEPSEEK_API_KEY")
+            and rabbit_script.is_file()
+            else None
+        ),
     )
     # The token is written to the owner-only state file.  Never duplicate it in
     # process logs, shell history, or service-manager output.

@@ -87,7 +87,13 @@ export async function streamChat(
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error ?? 'unavailable');
+    const code =
+      typeof body.error === 'string'
+        ? body.error
+        : typeof body.error?.code === 'string'
+          ? body.error.code
+          : 'unavailable';
+    throw new Error(code);
   }
   if (!response.body) throw new Error('unavailable');
   const reader = response.body.getReader();

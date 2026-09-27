@@ -4,21 +4,36 @@ Click Doudou (豆豆) to open its white/violet chat panel. The panel chooses fre
 
 ## Connection
 
+The current product path is:
+
 ```text
-Mac browser → same-origin Vite server → SSH → Suzhou2 Python bridge → DeepSeek
+authenticated browser → same-origin Product service → local bounded Python bridge → DeepSeek
 ```
 
-The preview still runs locally on port 13190. API credentials remain on Suzhou2. The SSH bridge uses Python's standard library, starts only for a request, and does not open another server port. It does not provide shell tools to the model or call EasyDesign's scientific backend. No DSH, GPU job, scheduler or workflow migration is involved.
+The Product service and credential bridge run on the same Suzhou2 product host, so the live
+product does not depend on the historical Mac-to-Suzhou2 SSH preview bridge. The bridge starts
+only for one request and does not open another server port. It does not provide shell tools to
+the model or call EasyDesign's scientific backend. No DSH, GPU job, scheduler, Gate approval or
+workflow mutation is involved.
 
 - Endpoint: `POST /api/rabbit/chat`, content-only NDJSON; `GET` reports configuration only, not provider health.
 - Model: `deepseek-flash` (the official V4.1 Flash API alias at implementation), thinking disabled, streaming enabled, output capped at 1,024 tokens.
 - Conversation: up to 16 prior completed messages plus the current message; 4,000 characters per new message; 32,000 total history characters.
 - Page context: viewed stage, selected design status and up to 1,200 characters of the selected goal/description. Raw files, structure coordinates and FASTA input are not automatically attached. Anything the user explicitly types into chat is sent to the model.
-- System context explains that the scientific results are a fixed lysozyme/VHH demo. It cannot launch jobs, place lab orders or change projects. It treats the supplied page summary as untrusted data.
-- Local server validates loopback Host and same Origin, JSON, roles and size; allows at most two concurrent requests and 20 requests/minute. Browser callers cannot select an SSH host, path, endpoint or model. There are no automatic paid retries.
+- System context explains that chat is separate from the live gated scientific workflow. It cannot launch jobs, approve Gates, place lab orders or change projects. It treats the supplied page summary as untrusted data.
+- Product server requires the existing Workbench session, validates same origin, JSON, roles and size, and allows at most two concurrent requests and 20 requests/minute. Browser callers cannot select a host, path, endpoint or model. There are no automatic paid retries.
 - The Python bridge emits only answer content, suggested questions, completion and sanitized error codes. Reasoning fields, provider errors and credentials are never relayed. HTTPS certificate verification remains enabled; the host's system CA bundle is used where available.
 
-## Setup
+## Live product setup
+
+The private product `.env.local` may contain `DEEPSEEK_API_KEY=...`; the normal Product service
+startup loads only credential names declared in the model configuration. The value remains on
+the server and is not returned by the status or streaming endpoint.
+
+## Historical local preview setup
+
+The original standalone demo on port 13190 used the following SSH-only settings. They remain
+documented for reproducing that demo and are not part of the canonical live product path.
 
 Keep these server-only settings in the **local frontend's private `.env.local`**, preserving existing entries:
 
@@ -37,7 +52,9 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The same middleware is available with `pnpm build && pnpm preview`. A static-only deployment serves the UI but cannot provide live chat. This is a local preview integration, not a public multi-user service; public deployment would need authentication and per-user quotas.
+The same historical middleware is available with `pnpm build && pnpm preview`. A static-only
+deployment serves the UI but cannot provide live chat. The canonical Product service supplies
+its authenticated same-origin bridge instead.
 
 ## Validation
 

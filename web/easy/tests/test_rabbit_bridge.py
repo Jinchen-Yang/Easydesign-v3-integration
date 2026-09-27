@@ -14,7 +14,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(request['thinking'],{'type':'disabled'})
         self.assertTrue(request['stream'])
         self.assertNotIn('tools',request)
-        self.assertIn('DEMO',request['messages'][0]['content'])
+        self.assertIn('live Easy presentation',request['messages'][0]['content'])
         self.assertIn('Doudou (豆豆)',request['messages'][0]['content'])
         lines = [b'data: '+json.dumps({'choices':[{'delta':{'reasoning_content':'PRIVATE','content':'hello'}}]}).encode(), b'data: [DONE]']
         events=list(bridge.content_events(lines))

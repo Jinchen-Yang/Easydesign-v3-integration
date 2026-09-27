@@ -811,7 +811,6 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       </main>
       <RabbitMascot
         locale="zh"
-        chatEnabled={false}
         mood={state.pending || active ? 'running' : snapshot ? 'complete' : 'idle'}
         stage={(snapshot ? STEPS[index] : 'Idle') as (typeof STEPS)[number] | 'Idle'}
         chatContext={{

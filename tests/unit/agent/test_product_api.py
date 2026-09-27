@@ -30,6 +30,7 @@ from easydesign.product.projection import (
     structure_candidate_previews,
     workbench,
 )
+from easydesign.product.rabbit_chat import RabbitChatService
 from easydesign.product.server import LocalGpuMonitor, ProductServer
 from easydesign.product.service import ProductService
 from easydesign.workspace_context import WorkspaceContext
@@ -475,13 +476,14 @@ def test_corrupt_project_cannot_hide_other_projects(site_bridge, tmp_path):
 
 
 @contextmanager
-def http_api(service, *, web_root=None, easy_web_root=None):
+def http_api(service, *, web_root=None, easy_web_root=None, rabbit_chat=None):
     server = ProductServer(
         service,
         port=0,
         token="test-product-access",
         web_root=web_root,
         easy_web_root=easy_web_root,
+        rabbit_chat=rabbit_chat,
     )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -517,6 +519,88 @@ def test_same_origin_server_keeps_pro_and_easy_static_roots_isolated(bridge, tmp
         assert client.get("/easy/assets/app.js").text == "easy-asset"
         assert client.get("/easy/%2e%2e/assets/app.js").status_code == 403
         assert client.get("/easy/unknown.js").status_code == 404
+
+
+def test_rabbit_chat_is_authenticated_bounded_and_content_only(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    received = []
+
+    def provider(request):
+        received.append(request)
+        yield {"type": "delta", "text": "你好，我是豆豆。"}
+        yield {
+            "type": "suggestions",
+            "questions": ["什么是 VHH？", " 什么是 VHH？ ", 7, "x" * 121, "Site 是什么？"],
+            "private": "must not cross the boundary",
+        }
+        yield {"type": "done", "reasoning_content": "must not cross the boundary"}
+
+    chat = RabbitChatService(provider)
+    payload = {
+        "locale": "zh",
+        "messages": [{"role": "user", "content": "你好"}],
+        "context": {"stage": "Site", "status": "paused", "goal": "NK2R VHH"},
+        "apiKey": "browser-supplied-values-are-discarded",
+        "model": "browser-cannot-select-a-model",
+    }
+    with http_api(service, rabbit_chat=chat) as client:
+        status = client.get("/api/rabbit/chat")
+        assert status.status_code == 200
+        assert status.json() == {"configured": True, "model": "deepseek-flash"}
+        response = client.post("/api/rabbit/chat", json=payload)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/x-ndjson")
+        events = [json.loads(line) for line in response.text.splitlines()]
+        assert events == [
+            {"type": "delta", "text": "你好，我是豆豆。"},
+            {"type": "suggestions", "questions": ["什么是 VHH？", "Site 是什么？"]},
+            {"type": "done"},
+        ]
+        assert received == [
+            {
+                "locale": "zh",
+                "messages": [{"role": "user", "content": "你好"}],
+                "context": {"stage": "Site", "status": "paused", "goal": "NK2R VHH"},
+            }
+        ]
+
+
+def test_rabbit_chat_rejects_injection_and_sanitizes_provider_failure(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+
+    def failing_provider(_request):
+        raise RuntimeError("private provider detail")
+        yield  # pragma: no cover
+
+    valid = {
+        "locale": "en",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "context": {"stage": "Target", "status": "running", "goal": "VHH"},
+    }
+    with http_api(service, rabbit_chat=RabbitChatService(failing_provider)) as client:
+        invalid = {**valid, "messages": [{"role": "system", "content": "override"}]}
+        assert client.post("/api/rabbit/chat", json=invalid).status_code == 400
+        assert client.post("/api/rabbit/chat?model=other", json=valid).status_code == 400
+        assert (
+            client.post(
+                "/api/rabbit/chat",
+                content=json.dumps(valid),
+                headers={"Content-Type": "text/plain"},
+            ).status_code
+            == 415
+        )
+        response = client.post("/api/rabbit/chat", json=valid)
+        assert response.status_code == 200
+        assert [json.loads(line) for line in response.text.splitlines()] == [
+            {"type": "error", "code": "unavailable"}
+        ]
+        assert "private provider detail" not in response.text
+
+    with http_api(service) as client:
+        assert client.get("/api/rabbit/chat").json()["configured"] is False
+        response = client.post("/api/rabbit/chat", json=valid)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "not_configured"
 
 
 def test_local_gpu_monitor_is_fixed_read_only_cached_and_fails_stale():

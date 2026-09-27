@@ -90,9 +90,10 @@ pnpm format:check
 - `src/easy/easy.css`: responsive Easy styling.
 - `src/easy/i18n.ts`: Chinese/English UI messages and language preference. Stored user content and exported data remain in their original language.
 - `src/easy/RabbitMascot.tsx`: pointer/keyboard positioning, isolated preferences, bilingual controls and original-image album. `RabbitActor.tsx` / `rabbit-mascot.css` define six stage gestures and props; `RabbitArt.tsx` continuously deforms the original PNG, with a static-art fallback when WebGL is unavailable. Only `easydesign-rabbit-v1` preferences are stored; no adapter calls.
-- `src/easy/RabbitChat.tsx` / `chat.ts`: historical demo-only chat. It is
-  disabled in live mode and its former SSH bridge is not part of the product
-  Vite build.
+- `src/easy/RabbitChat.tsx` / `chat.ts`: bilingual, content-only Doudou chat.
+  The live Product service exposes the authenticated same-origin
+  `/api/rabbit/chat` bridge with bounded concurrency and request rate. It has no
+  design adapter, tools or Scientist Gate authority.
 - Existing brand, molecular viewer and fixture assets are reused without modifying Pro components. The bundled 1MEL structure works offline; viewer failure does not stop the demo.
 
 Easy uses its own `easydesign-easy-preview-v1` localStorage key on port 13190, plus `easydesign-easy-locale-v1` for the optional language preference. Pro keys are never read or written. Invalid stored data is left untouched, and storage failure falls back to the current tab's memory. Closing the browser pauses the demo animation; reopening resumes it, with no remote job implied.

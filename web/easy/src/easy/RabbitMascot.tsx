@@ -65,13 +65,11 @@ export function RabbitMascot({
   mood = 'idle',
   stage = 'Idle',
   chatContext = { stage, status: 'idle', goal: '' },
-  chatEnabled = true,
 }: {
   locale: Locale;
   mood?: 'idle' | 'running' | 'complete';
   stage?: RabbitStage;
   chatContext?: ChatContext;
-  chatEnabled?: boolean;
 }) {
   const t = (key: string) => translate(locale, key);
   const [prefs, setPrefs] = useState(loadPreferences);
@@ -245,23 +243,21 @@ export function RabbitMascot({
         data-chat={chatActivity}
         data-chat-compact={chatOpen && chatViewport.height < 500}
       >
-        {chatEnabled && (
-          <RabbitChat
-            open={chatOpen && !prefs.minimized}
-            locale={locale}
-            context={chatContext}
-            onActivity={setChatActivity}
-            onClose={() => {
-              setChatOpen(false);
-              pet.current?.focus();
-            }}
-            onSettings={() => {
-              setChatOpen(false);
-              setOpen(true);
-            }}
-            style={chatLayout.panel}
-          />
-        )}
+        <RabbitChat
+          open={chatOpen && !prefs.minimized}
+          locale={locale}
+          context={chatContext}
+          onActivity={setChatActivity}
+          onClose={() => {
+            setChatOpen(false);
+            pet.current?.focus();
+          }}
+          onSettings={() => {
+            setChatOpen(false);
+            setOpen(true);
+          }}
+          style={chatLayout.panel}
+        />
         {open && !prefs.minimized && (
           <section
             ref={menu}
@@ -389,10 +385,10 @@ export function RabbitMascot({
               return;
             }
             if (prefs.minimized) setPrefs((current) => ({ ...current, minimized: false }));
-            else if (chatEnabled) {
+            else {
               setOpen(false);
               setChatOpen((value) => !value);
-            } else setOpen((value) => !value);
+            }
           }}
         >
           <RabbitActor stage={prefs.minimized ? 'Idle' : stage} active={!still} />

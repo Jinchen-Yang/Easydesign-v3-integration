@@ -394,6 +394,69 @@ def test_explicit_pdb_gpcr_pocket_occupancy_wording_still_requires_rank_a(site_b
         compile_site_decision(dossier, case["decision"])
 
 
+def test_verified_orthosteric_evidence_cannot_be_demoted_for_unmodeled_vhh_reach(site_bridge):
+    """A verified orthosteric evidence card plus outer-pore geometry survives wording drift."""
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {"status": "resolved"},
+            "membrane": {"status": "resolved", "reliable": True},
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    dossier["decision_questions"] = [
+        {
+            "status": "VERIFIED",
+            "question": "Which residues define the deep orthosteric pocket?",
+            "decision_impact": "The upper-pore residues are ligand-binding determinants.",
+            "evidence": [
+                {
+                    "card_id": "passage-deep-pocket",
+                    "claim": "The deep orthosteric pocket reaches the TM6/TM7 residues.",
+                }
+            ],
+        }
+    ]
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = "outer-vestibule blockade"
+    shallow["research_hypothesis"]["rationale"] = "Accessible extracellular loop surface."
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "transmembrane-pore blockade"
+    deep["research_hypothesis"]["rationale"] = (
+        "Published selectivity residues define the deep NK2R pocket, but VHH reach is unresolved."
+    )
+    deep["research_hypothesis"]["evidence_card_ids"] = ["passage-deep-pocket"]
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
+        compile_site_decision(dossier, case["decision"])
+
+
 def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):
     case = setup_portfolio(site_bridge)
     dossier = deepcopy(case["dossier"])

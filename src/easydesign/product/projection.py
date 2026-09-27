@@ -12,6 +12,7 @@ from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.phase3_ranking import METRIC_DIRECTIONS
 from easydesign.agent.phase34_contracts import GlobalCandidatePool, PilotMeasurement
 from easydesign.agent.phase34_runtime import Phase34Runtime
+from easydesign.backends.boltzgen import read_generation_heartbeat
 from easydesign.core import ArtifactRef, ManifestStateError, load_model
 from easydesign.orchestration import read_pipeline_progress
 from easydesign.orchestration.local_jobs import LocalStepJob
@@ -42,6 +43,16 @@ PROGRESS_LABELS = {
     "boltzgen-refold": "Refold",
     "boltzgen-analysis": "Analyze",
     "boltzgen-filter": "Filter",
+}
+
+_BOLTZGEN_PHASE_ORDER = {
+    "boltzgen-initialize": 0,
+    "boltzgen-generate": 1,
+    "boltzgen-inverse-fold": 2,
+    "boltzgen-refold": 3,
+    "boltzgen-analysis": 4,
+    "boltzgen-filter": 5,
+    "boltzgen-running": 6,
 }
 
 
@@ -113,6 +124,45 @@ def _waiting_gpu_progress(root: Path) -> dict[str, Any] | None:
     return None
 
 
+def _active_boltzgen_log_progress(
+    root: Path, stage_id: str
+) -> tuple[str, str, int | None, int | None, int | None, int | None] | None:
+    """Read bounded task logs when an older live worker has not persisted heartbeats."""
+
+    tasks_root = root / stage_id / "attempt-0001" / "tasks"
+    if not tasks_root.is_dir():
+        return None
+    rows: list[tuple[str, str, int | None, int | None, int | None, int | None]] = []
+    for task_root in sorted(tasks_root.iterdir()):
+        attempts = sorted(task_root.glob("attempt-*/stdout.log"))
+        if not attempts:
+            continue
+        log = attempts[-1].resolve()
+        if not log.is_relative_to(tasks_root.resolve()):
+            continue
+        rows.append(read_generation_heartbeat(log))
+    if not rows:
+        return None
+    active_phase = min(rows, key=lambda item: _BOLTZGEN_PHASE_ORDER.get(item[0], 99))[0]
+    active = [row for row in rows if row[0] == active_phase]
+    message = active[-1][1]
+    completed_values = [row[2] for row in active]
+    total_values = [row[3] for row in active]
+    completed = (
+        sum(value for value in completed_values if value is not None)
+        if completed_values and all(value is not None for value in completed_values)
+        else None
+    )
+    total = (
+        sum(value for value in total_values if value is not None)
+        if total_values and all(value is not None for value in total_values)
+        else None
+    )
+    steps = [(row[4], row[5]) for row in active if row[4] is not None and row[5] is not None]
+    step, step_count = steps[-1] if steps else (None, None)
+    return active_phase, message, completed, total, step, step_count
+
+
 def job_progress(job: LocalStepJob, runs_root: Path) -> dict[str, Any] | None:
     """Project only verified pipeline progress belonging to the configured runs root."""
 
@@ -125,7 +175,12 @@ def job_progress(job: LocalStepJob, runs_root: Path) -> dict[str, Any] | None:
         return _waiting_gpu_progress(root)
     heartbeats = sorted(progress.task_heartbeats, key=lambda item: item.updated_at)
     current = heartbeats[-1] if heartbeats else None
-    substage = current.phase if current else None
+    log_progress = (
+        _active_boltzgen_log_progress(root, progress.stage_id)
+        if current is None and progress.status == "running"
+        else None
+    )
+    substage = current.phase if current else (log_progress[0] if log_progress else None)
     same_stage = [item for item in heartbeats if item.phase == substage]
     completed = [item.completed for item in same_stage]
     totals = [item.total for item in same_stage]
@@ -139,15 +194,24 @@ def job_progress(job: LocalStepJob, runs_root: Path) -> dict[str, Any] | None:
         "running_tasks": progress.running_tasks,
         "estimated_remaining_seconds": progress.estimated_remaining_seconds,
         "substage": substage,
-        "substage_label": PROGRESS_LABELS.get(substage or "", current.message if current else None),
-        "substage_completed": sum(value for value in completed if value is not None)
-        if completed and all(value is not None for value in completed)
-        else None,
-        "substage_total": sum(value for value in totals if value is not None)
-        if totals and all(value is not None for value in totals)
-        else None,
-        "pipeline_step": current.step if current else None,
-        "pipeline_steps": current.steps if current else None,
+        "substage_label": PROGRESS_LABELS.get(
+            substage or "",
+            current.message if current else (log_progress[1] if log_progress else None),
+        ),
+        "substage_completed": (
+            sum(value for value in completed if value is not None)
+            if completed and all(value is not None for value in completed)
+            else (log_progress[2] if log_progress else None)
+        ),
+        "substage_total": (
+            sum(value for value in totals if value is not None)
+            if totals and all(value is not None for value in totals)
+            else (log_progress[3] if log_progress else None)
+        ),
+        "pipeline_step": current.step if current else (log_progress[4] if log_progress else None),
+        "pipeline_steps": (
+            current.steps if current else (log_progress[5] if log_progress else None)
+        ),
     }
 
 ROLE_ACTIVITY = {

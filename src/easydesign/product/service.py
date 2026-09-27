@@ -60,10 +60,15 @@ class ProductService:
         self.launcher = launcher or self.launch
         self._cache_lock = threading.Lock()
         self._stable_snapshots: dict[str, dict[str, Any]] = {}
+        self._compact_candidate_pages: dict[
+            tuple[str, int, int, str | None], dict[str, Any]
+        ] = {}
 
     def _invalidate_projection_cache(self, project: str) -> None:
         with self._cache_lock:
             self._stable_snapshots.pop(project, None)
+            for key in [key for key in self._compact_candidate_pages if key[0] == project]:
+                self._compact_candidate_pages.pop(key, None)
 
     def _remember_project_view(self, project: str, value: dict[str, Any]) -> None:
         journal = self.journal()
@@ -549,10 +554,24 @@ class ProductService:
         *,
         compact: bool = False,
     ) -> dict[str, Any]:
+        key = (project, offset, limit, candidate)
+        if compact:
+            with self._cache_lock:
+                cached = self._compact_candidate_pages.get(key)
+            if cached is not None:
+                return deepcopy(cached)
         with self.gateway.session(project) as session:
-            return candidate_page(
+            value = candidate_page(
                 session, self.catalog, offset, limit, candidate, compact=compact
             ).model_dump(mode="json")
+        if compact:
+            # Candidate pages are cached only after the same server instance has
+            # observed a stable snapshot with no active request. All product
+            # mutations invalidate both caches before dispatch.
+            with self._cache_lock:
+                if project in self._stable_snapshots:
+                    self._compact_candidate_pages[key] = deepcopy(value)
+        return value
 
     def events(self, project: str, after: int, limit: int) -> dict[str, Any]:
         journal = self.journal()

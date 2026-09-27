@@ -1168,6 +1168,20 @@ def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):
         )
 
 
+def test_compact_candidate_cache_is_project_scoped_and_invalidated(bridge, tmp_path, monkeypatch):
+    service = service_for(bridge, tmp_path)
+    cached = {"items": [], "total": 0, "offset": 0, "limit": 20}
+    service._compact_candidate_pages[("project", 0, 20, None)] = cached
+
+    def must_not_open(_project):
+        raise AssertionError("A stable compact candidate page must not reopen the project")
+
+    monkeypatch.setattr(service.gateway, "session", must_not_open)
+    assert service.candidates("project", 0, 20, compact=True) == cached
+    service._invalidate_projection_cache("project")
+    assert service._compact_candidate_pages == {}
+
+
 def test_gate3_decision_is_bound_to_current_pilot_plan(design_bridge, tmp_path):
     from easydesign.agent.phase34_runtime import Phase34Runtime
     from tests.unit.agent.test_phase34_authority import prepared

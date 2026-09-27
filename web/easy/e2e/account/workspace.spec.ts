@@ -34,6 +34,21 @@ function installWorkspaceRoutes(page: Page, username: string, scopeId: string, c
   });
 }
 
+test('Scientist STOP renders retained evidence rather than an active Agent', async ({page}) => {
+  installWorkspaceRoutes(page, 'bob', 'team-1');
+  await page.route('**/workbench', route => {
+    const value = workbenchSnapshot();
+    return route.fulfill({json: {...value, project: {...value.project, phase: 'pilot', status: 'stopped'},
+      decision: null, capabilities: {resume: false, decide: false},
+      current_action: {id: 'stop', stage: 'scientist-stopped', message: 'Scientist stopped this campaign; evidence is retained.', resumable: false},
+    }});
+  });
+  await page.goto('/easy/?scope=team-1&project=proj-1');
+  await expect(page.getByRole('heading', {name: '研究已停止', exact: true})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Agent 正在工作', exact: true})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: '继续研究', exact: true})).toHaveCount(0);
+});
+
 test('surface handoff retains a deep-linked project while its snapshot is loading', async ({page}) => {
   installWorkspaceRoutes(page, 'bob', 'team-1');
   let release!: () => void;

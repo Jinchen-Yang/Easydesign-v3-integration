@@ -1125,6 +1125,17 @@ def project_view(session: DomainSession, title: str | None = None) -> ProjectVie
         status = "complete"
     elif action.stage in {"scientist-stopped", "proposal-rejected"}:
         status = "stopped"
+        if isinstance(b, Phase34Runtime) and action.stage == "scientist-stopped":
+            # A downstream disposition belongs to its reviewed card, not the
+            # still-valid legacy Design gate. Do not infer from unrelated history.
+            for kind, stopped_phase in (
+                ("phase34-gate5-transition", "candidates"),
+                ("phase34-gate4-transition", "pilot"),
+            ):
+                transition = b.project_latest(kind)
+                if transition and transition.get("card_id") == action.binding:
+                    phase = stopped_phase
+                    break
     elif "running" in action.stage:
         status = "running"
     elif "blocked" in action.stage:

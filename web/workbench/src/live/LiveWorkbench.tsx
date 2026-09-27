@@ -33,7 +33,7 @@ import type {
   WorkflowTask,
 } from '../adapters/WorkbenchAdapter';
 import type { LiveWorkbenchPort } from '../adapters/LiveWorkbenchAdapter';
-import {scopeDecisionLinks, surfaceRights} from '../../../shared/account-client';
+import { scopeDecisionLinks, surfaceRights } from '../../../shared/account-client';
 import type { GateInput, LiveState, ProductSnapshot } from './contracts';
 import { LiveContext } from './LiveContext';
 import { GateReview } from './GateReview';
@@ -76,12 +76,21 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
     ? `Target Intelligence recommends ${recommendedTarget.label || recommendedTarget.option_id} as the prepared structure and chain. Review it, then approve the target or change the structure.`
     : v.decision?.question || v.current_action.message;
   // The asynchronous worker's generic wait is not a current scientific failure
-  // once Runtime has produced an evidence-bound Scientist review. Native history
+  // once Runtime has produced a review or terminal disposition. Native history
   // stays intact; do not hide real answers, user messages or unresolved waits.
   const incompleteTurn =
     'Scientific work remains incomplete. The previous action has not produced the required verified result; inspect its status before continuing.';
   const result: ConversationItem[] = (v.conversation || [])
-    .filter((m) => !(v.decision && m.kind === 'summary' && m.text === incompleteTurn))
+    .filter(
+      (m) =>
+        !(
+          (v.decision ||
+            v.project.status === 'stopped' ||
+            v.current_action.stage === 'handoff-complete') &&
+          m.kind === 'summary' &&
+          m.text === incompleteTurn
+        ),
+    )
     .map((m) => ({
       ...m,
       phase: phaseOf(m.phase || v.project.phase),
@@ -140,12 +149,16 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
   result.splice(firstChat < 0 ? result.length : firstChat, 0, ...cards);
   return result;
 }
-export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
+export function LiveWorkbench({
+  adapter,
+  access,
+  computeAvailable = true,
+}: {
   adapter: LiveWorkbenchPort;
-  access?: {id?: string; can_edit: boolean; can_execute: boolean; role: string};
+  access?: { id?: string; can_edit: boolean; can_execute: boolean; role: string };
   computeAvailable?: boolean;
 }) {
-  const {canExecute, canEdit, canDiscuss} = surfaceRights(access, computeAvailable);
+  const { canExecute, canEdit, canDiscuss } = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState>();
   const [page, setPage] = useWorkbenchPage();
   const [projectsOpen, setProjectsOpen] = useState(
@@ -180,7 +193,8 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
     // unscoped token flow only remains for the non-account single-user surface.
     const legacyToken = new URLSearchParams(location.hash.slice(1)).get('access');
     const accountScoped = access !== undefined;
-    if (legacyToken) history.replaceState(null, '', location.pathname + location.search + '#projects');
+    if (legacyToken)
+      history.replaceState(null, '', location.pathname + location.search + '#projects');
     const project = new URLSearchParams(location.search).get('project');
     void (async () => {
       if (legacyToken && !accountScoped) await adapter.authenticate(legacyToken);
@@ -250,7 +264,10 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
     });
   };
   const create = (goal: string) => {
-    if (!canExecute) {setError('当前身份不能启动计算，请由项目所有者或团队管理员执行。'); return;}
+    if (!canExecute) {
+      setError('当前身份不能启动计算，请由项目所有者或团队管理员执行。');
+      return;
+    }
     run(async () => {
       await adapter.createProject(goal.slice(0, 80), goal, file);
       setNewDesign(false);
@@ -320,6 +337,7 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
           : 'waiting') as ActivityStatus,
   }));
   const completed = v?.current_action.stage === 'handoff-complete';
+  const stopped = v?.project.status === 'stopped';
   const agentTasks = (v?.tasks || [])
     .filter((task) => !(completed && task.type === 'gate.awaiting'))
     .map((task) => ({
@@ -343,13 +361,15 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
         2: `Approve Site ${rank || option?.label || ''}`,
         3: 'Approve design',
         4:
-          ({
-            PROMOTE_TO_SCALE: 'Promote pilot',
-            RUN_ANOTHER_PILOT: 'Prepare another pilot',
-            REVISE_DESIGN: 'Revise design',
-            REVISE_SITE: 'Revise site',
-            STOP: 'Stop campaign',
-          } as Record<string, string>)[option?.option_id || ''] || 'Approve pilot route',
+          (
+            {
+              PROMOTE_TO_SCALE: 'Promote pilot',
+              RUN_ANOTHER_PILOT: 'Prepare another pilot',
+              REVISE_DESIGN: 'Revise design',
+              REVISE_SITE: 'Revise site',
+              STOP: 'Stop campaign',
+            } as Record<string, string>
+          )[option?.option_id || ''] || 'Approve pilot route',
         5: 'Finalize candidate panel',
       }[decision.gate]
     : '';
@@ -389,35 +409,35 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
             </div>
           </main>
         ) : (
-        <main className="landing">
-          <div className="landing-center">
-            <Brand />
-            <h1>Connect to your research workspace</h1>
-            <form
-              className="goal-composer"
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await adapter.authenticate(token);
-                  await adapter.refresh();
-                });
-              }}
-            >
-              <label className="form-label">
-                Access token
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                />
-              </label>
-              <button className="primary-button">
-                Connect <ArrowRight size={15} />
-              </button>
-            </form>
-          </div>
-        </main>
+          <main className="landing">
+            <div className="landing-center">
+              <Brand />
+              <h1>Connect to your research workspace</h1>
+              <form
+                className="goal-composer"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  run(async () => {
+                    await adapter.authenticate(token);
+                    await adapter.refresh();
+                  });
+                }}
+              >
+                <label className="form-label">
+                  Access token
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                  />
+                </label>
+                <button className="primary-button">
+                  Connect <ArrowRight size={15} />
+                </button>
+              </form>
+            </div>
+          </main>
         )
       ) : !state || state.connection === 'loading' ? (
         <div className="app-loading">
@@ -430,13 +450,15 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
             mode="live"
             snapshot={{ projects }}
             canCreate={canExecute}
-            createDisabledReason={access
-              ? access.role === 'observer'
-                ? '管理员只读访问：不能创建项目、批准 Gate 或启动计算。'
-                : !computeAvailable
-                  ? '服务未连接科学执行器（账号管理模式）：暂不能创建项目；团队草稿协作仍可用。'
-                  : '团队成员不能启动计算；请协作编辑团队草稿，由团队管理员创建项目。'
-              : undefined}
+            createDisabledReason={
+              access
+                ? access.role === 'observer'
+                  ? '管理员只读访问：不能创建项目、批准 Gate 或启动计算。'
+                  : !computeAvailable
+                    ? '服务未连接科学执行器（账号管理模式）：暂不能创建项目；团队草稿协作仍可用。'
+                    : '团队成员不能启动计算；请协作编辑团队草稿，由团队管理员创建项目。'
+                : undefined
+            }
             onNew={() => {
               setNewDesign(true);
               setDraftRevision((n) => n + 1);
@@ -444,13 +466,15 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
               closeProjects();
             }}
             onOpen={open}
-            onRename={canEdit
-              ? (project) => {
-                  setRenamingProject(project.id);
-                  setProjectName(project.title);
-                  setModal('rename');
-                }
-              : undefined}
+            onRename={
+              canEdit
+                ? (project) => {
+                    setRenamingProject(project.id);
+                    setProjectName(project.title);
+                    setModal('rename');
+                  }
+                : undefined
+            }
           />
           {state && state.projects.total > 20 && (
             <div className="project-pagination">
@@ -601,7 +625,7 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
                   mode="live"
                   snapshot={{
                     messages: dialogue(v),
-                    completed,
+                    completed: completed || stopped,
                     phase,
                     busy: v.project.status === 'running',
                   }}
@@ -647,26 +671,30 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
                         ? `Continue with Site ${rank || ''}?`
                         : completed
                           ? 'Panel finalized'
-                          : v.lifecycle === 'failed'
-                            ? 'Target research needs a retry'
-                            : decision?.gate === 1
-                              ? 'Approve the automatically selected target?'
-                              : decision?.gate === 3
-                                ? 'Ready to start the pilot?'
-                                : decision
-                                  ? 'Ready for your review'
-                                  : stepTitles[v.project.phase] || 'Research in progress'}
+                          : stopped
+                            ? 'Campaign stopped'
+                            : v.lifecycle === 'failed'
+                              ? 'Target research needs a retry'
+                              : decision?.gate === 1
+                                ? 'Approve the automatically selected target?'
+                                : decision?.gate === 3
+                                  ? 'Ready to start the pilot?'
+                                  : decision
+                                    ? 'Ready for your review'
+                                    : stepTitles[v.project.phase] || 'Research in progress'}
                     </strong>
                     <span>
                       {v.project.validation_only
                         ? 'Validation only · not authorized for experiment'
-                        : v.lifecycle === 'failed'
-                          ? 'Verified evidence and recovery state were retained.'
-                          : decision?.gate === 1
-                            ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
-                            : decision
-                              ? 'Review the scientific context before continuing.'
-                              : 'Your conversations, decisions and results stay with this project.'}
+                        : stopped
+                          ? 'Scientific evidence is retained; no further computation is scheduled.'
+                          : v.lifecycle === 'failed'
+                            ? 'Verified evidence and recovery state were retained.'
+                            : decision?.gate === 1
+                              ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
+                              : decision
+                                ? 'Review the scientific context before continuing.'
+                                : 'Your conversations, decisions and results stay with this project.'}
                     </span>
                   </div>
                   {decision ? (
@@ -825,7 +853,10 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (!canEdit) {setError('当前是只读访问。'); return;}
+              if (!canEdit) {
+                setError('当前是只读访问。');
+                return;
+              }
               run(async () => {
                 await adapter.renameProject(renamingProject, projectName);
                 setModal(null);

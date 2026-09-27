@@ -123,6 +123,22 @@ test.describe('professional mode under accounts', () => {
     await page.goto('/?scope=user-b&project=proj-1');
     await expect(page.getByText(incompleteTurn, {exact: true})).toBeVisible();
   });
+  test('Scientist STOP is terminal, retains evidence and does not invite another review', async ({page}) => {
+    install(page, 'bob', true);
+    await page.route('**/workbench', route => {
+      const value = snapshot();
+      return route.fulfill({json: {...value, project: {...value.project, phase: 'pilot', status: 'stopped'},
+        decision: null, capabilities: {decide: false, resume: false},
+        current_action: {id: 'stop', stage: 'scientist-stopped', message: 'Scientist stopped this campaign; evidence is retained.', resumable: false},
+        conversation: [{id: 'old-wait', kind: 'summary', phase: 'pilot', text: incompleteTurn}],
+      }});
+    });
+    await page.goto('/?scope=user-b&project=proj-1');
+    await expect(page.getByText('Campaign stopped', {exact: true})).toBeVisible();
+    await expect(page.getByText(incompleteTurn, {exact: true})).toHaveCount(0);
+    await expect(page.getByText('Ready for your review below', {exact: true})).toHaveCount(0);
+    await expect(page.getByRole('button', {name: 'Continue research', exact: true})).toHaveCount(0);
+  });
   test('long Gate evidence stays scrollable and its real download remains reachable', async ({page}) => {
     install(page, 'bob', true);
     const evidence = {observations: Array.from({length: 100}, (_, i) => ({

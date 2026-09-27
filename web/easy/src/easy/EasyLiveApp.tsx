@@ -569,6 +569,7 @@ export function EasyLiveApp({
       )
     : undefined;
   const completed = snapshot?.current_action.stage === 'handoff-complete';
+  const stopped = snapshot?.project.status === 'stopped';
   useEffect(() => {
     if (
       !canExecute || // team members, read-only observers and compute-off surfaces never auto-resume
@@ -896,6 +897,14 @@ export function EasyLiveApp({
                     stageIndex={shownIndex}
                     onReturn={() => setViewedIndex(null)}
                   />
+                ) : stopped ? (
+                  <section className="easy-live-progress-card">
+                    <ShieldCheck size={22} />
+                    <div>
+                      <h3>研究已停止</h3>
+                      <p>Scientist 已停止本轮研究；科学证据保留，不会继续启动计算。</p>
+                    </div>
+                  </section>
                 ) : completed ? (
                   <section className="easy-live-progress-card easy-live-complete-card">
                     <Check size={22} />

@@ -1159,6 +1159,42 @@ def test_frozen_pilot_query_is_read_only(design_bridge, tmp_path):
     WorkbenchProjection.model_validate_json(view.model_dump_json())
 
 
+@pytest.mark.parametrize(
+    ("transition_kind", "expected_phase", "card_id"),
+    [
+        ("phase34-gate4-transition", "pilot", "reviewed-stop"),
+        ("phase34-gate5-transition", "candidates", "reviewed-stop"),
+        ("phase34-gate4-transition", "design", "unrelated-old-stop"),
+    ],
+)
+def test_stopped_downstream_projection_keeps_the_reviewed_gate_phase(
+    design_bridge, monkeypatch, transition_kind, expected_phase, card_id
+):
+    from easydesign.agent.control_flow import RuntimeAction
+    from easydesign.agent.phase34_runtime import Phase34Runtime
+    from easydesign.product.projection import project_view
+
+    original = design_bridge
+    runtime = Phase34Runtime(original.project, original.thread, original.store)
+    monkeypatch.setattr(runtime, "scientific_state", lambda: {"gate_type": "design-specification"})
+    monkeypatch.setattr(
+        runtime,
+        "project_latest",
+        lambda kind: {"card_id": card_id, "route": "STOP"}
+        if kind == transition_kind
+        else None,
+    )
+    session = DomainSession("target-test", runtime, "Synthetic stopped campaign")
+    monkeypatch.setattr(
+        session,
+        "current",
+        lambda: (RuntimeAction("scientist-stopped", "reviewed-stop"), None, "a" * 64),
+    )
+    view = project_view(session)
+    assert view.status == "stopped"
+    assert view.phase == expected_phase
+
+
 @pytest.mark.parametrize("action_name", ["approve", "reject"])
 def test_interrupted_gate_request_recovers_native_response_exactly_once(
     site_bridge, tmp_path, monkeypatch, action_name

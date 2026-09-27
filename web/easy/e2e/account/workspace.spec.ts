@@ -143,6 +143,35 @@ function installChatRoutes(page: Page, behavior: 'transient' | 'forbidden'): Rec
 }
 
 test.describe('account-mode Easy workspace', () => {
+  for (const state of ['accepted', 'running']) {
+    test(`accepted Gate approval stays disabled while the request is ${state}`, async ({page}) => {
+      installWorkspaceRoutes(page, 'alice', 'team-1');
+      const request = {kind:'action',id:'req-gate-pending',project:'proj-1',state,result:null,created:1,updated:1};
+      let submitted = false;
+      await page.route('**/api/v1/scopes/team-1/**', async route => {
+        const path = new URL(route.request().url()).pathname;
+        if (path.endsWith('/actions') && route.request().method() === 'POST') {
+          submitted = true;
+          return jsonResponse(route, request, 202);
+        }
+        if (path.endsWith('/requests/req-gate-pending')) return jsonResponse(route, request);
+        if (path.endsWith('/workbench') && submitted) {
+          const snapshot = workbenchSnapshot();
+          return jsonResponse(route, {...snapshot,project:{...snapshot.project,status:'running'},capabilities:{...snapshot.capabilities,decide:false},requests:[request]});
+        }
+        return route.fallback();
+      });
+      await page.goto('/easy/?scope=team-1&project=proj-1');
+      const approve = page.getByRole('button', {name:'批准并继续',exact:true});
+      await expect(approve).toBeEnabled();
+      await approve.click();
+      await expect.poll(()=>submitted).toBe(true);
+      await expect(approve).toBeDisabled();
+      await expect(page.getByRole('button',{name:'修改',exact:true})).toBeDisabled();
+      await page.reload();
+      await expect(approve).toBeDisabled();
+    });
+  }
   test('team member cannot start or approve but keeps read and co-edit surfaces', async ({page}) => {
     installWorkspaceRoutes(page, 'bob', 'team-1');
     // A stale single-user workspace token is dropped silently, never authenticated.

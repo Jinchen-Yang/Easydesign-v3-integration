@@ -551,10 +551,10 @@ class ProductService:
                     mode="json"
                 )
             if registered is not None:
-                value["lifecycle"] = registered["state"]
                 if registered["state"] != "failed" and value.get("decision"):
                     value["lifecycle"] = f"gate{value['decision']['gate']}_awaiting_scientist"
                 if registered["state"] == "failed":
+                    value["lifecycle"] = "failed"
                     value["project"]["status"] = "blocked"
                     value["project"]["notice"] = registered["detail"].get("message")
         journal = self.journal()

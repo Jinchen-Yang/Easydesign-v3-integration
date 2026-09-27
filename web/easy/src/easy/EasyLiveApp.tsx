@@ -322,7 +322,7 @@ function GatePanel({
         </button>
         <button
           className="easy-outline"
-          disabled={!canDecide}
+          disabled={busy || !canDecide}
           onClick={() => setShowRevise((value) => !value)}
         >
           修改
@@ -553,7 +553,8 @@ export function EasyLiveApp({
     };
   }, [adapter]);
   const snapshot = state?.snapshot || null;
-  const currentProject = snapshot?.project.id || new URLSearchParams(location.search).get('project');
+  const currentProject =
+    snapshot?.project.id || new URLSearchParams(location.search).get('project');
   const professionalQuery = new URLSearchParams({
     ...(access ? { scope: access.id } : {}),
     ...(currentProject ? { project: currentProject } : {}),
@@ -907,8 +908,11 @@ export function EasyLiveApp({
                   <GatePanel
                     key={snapshot.decision.id}
                     snapshot={snapshot}
-                    busy={state.pending}
-                    canDecide={canExecute}
+                    busy={
+                      state.pending ||
+                      ['accepted', 'running'].includes(state.pendingRequest?.state || '')
+                    }
+                    canDecide={canExecute && Boolean(snapshot.capabilities.decide)}
                     onDecide={async (value) => {
                       if (value.selected_option_id) setSelectedSite(value.selected_option_id);
                       await adapter.decide(value);

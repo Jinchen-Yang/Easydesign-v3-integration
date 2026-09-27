@@ -592,7 +592,10 @@ def test_corrupt_project_cannot_hide_other_projects(site_bridge, tmp_path):
     assert database.read_bytes() == b"Deliberately invalid fixture database"
 
 
-def test_native_gate_lifecycle_wins_over_legacy_bootstrap_index(site_bridge, tmp_path):
+@pytest.mark.parametrize("pending_gate", [True, False])
+def test_native_gate_lifecycle_wins_over_legacy_bootstrap_index(
+    site_bridge, tmp_path, monkeypatch, pending_gate
+):
     b = site_bridge
     setup_portfolio(b)
     review_card(b)
@@ -612,10 +615,24 @@ def test_native_gate_lifecycle_wins_over_legacy_bootstrap_index(site_bridge, tmp
         journal.update_project("target-test", "gate1_awaiting_scientist", {})
     finally:
         journal.close()
+    if not pending_gate:
+        def resolved_workbench(*args, **kwargs):
+            native = workbench(*args, **kwargs).model_dump(mode="json")
+            native["decision"] = None
+            native["project"]["phase"] = "pilot"
+            native["project"]["status"] = "running"
+            return WorkbenchProjection.model_validate(native)
+
+        monkeypatch.setattr("easydesign.product.service.workbench", resolved_workbench)
     before = len(b.store.events(b.thread))
     view = service.snapshot("target-test")
-    assert view["decision"]["gate"] == 2
-    assert view["lifecycle"] == "gate2_awaiting_scientist"
+    if pending_gate:
+        assert view["decision"]["gate"] == 2
+        assert view["lifecycle"] == "gate2_awaiting_scientist"
+    else:
+        assert view["decision"] is None
+        assert view["project"]["phase"] == "pilot"
+        assert view["lifecycle"] == "scientific_project"
     assert len(b.store.events(b.thread)) == before
 
 

@@ -148,11 +148,27 @@ class TaskHeartbeat(BaseModel):
     updated_at: datetime
     elapsed_seconds: float = Field(ge=0)
     message: str = Field(min_length=1, max_length=512)
+    completed: int | None = Field(default=None, ge=0)
+    total: int | None = Field(default=None, ge=1)
+    step: int | None = Field(default=None, ge=1)
+    steps: int | None = Field(default=None, ge=1)
 
     @field_validator("updated_at")
     @classmethod
     def normalize_datetime(cls, value: datetime) -> datetime:
         return normalize_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_progress(self) -> Self:
+        if (self.completed is None) != (self.total is None):
+            raise ValueError("heartbeat completed and total must be reported together")
+        if self.completed is not None and self.total is not None and self.completed > self.total:
+            raise ValueError("heartbeat progress exceeds its total")
+        if (self.step is None) != (self.steps is None):
+            raise ValueError("heartbeat step and steps must be reported together")
+        if self.step is not None and self.steps is not None and self.step > self.steps:
+            raise ValueError("heartbeat step exceeds the pipeline step count")
+        return self
 
 
 class ProgressSnapshot(BaseModel):

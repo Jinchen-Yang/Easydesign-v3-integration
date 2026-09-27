@@ -942,6 +942,9 @@ class ProductService:
                 store,
                 through="handoff",
                 prediction_backend=self.gateway.prediction_backend,
+                pilot_candidate_budget=30 if request.surface == "easy" else None,
+                scale_candidate_budget=30 if request.surface == "easy" else None,
+                product_auto_continue=request.surface == "easy",
             )
             loaded = bridge.validate_project()
             if request.input_id is not None and ref is None:

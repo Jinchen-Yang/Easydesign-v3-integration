@@ -7,6 +7,7 @@ from .generation import (
     BoltzGenGenerationRequest,
     BoltzGenGenerationResult,
     BoltzGenHeartbeatCallback,
+    read_generation_heartbeat,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "BoltzGenGenerationRequest",
     "BoltzGenGenerationResult",
     "BoltzGenHeartbeatCallback",
+    "read_generation_heartbeat",
 ]

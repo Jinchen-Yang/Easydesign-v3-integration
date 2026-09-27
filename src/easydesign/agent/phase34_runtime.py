@@ -44,10 +44,16 @@ class Phase34Runtime(Phase34Bridge):
         through: Literal["pilot", "handoff"] = "pilot",
         prediction_backend: PredictionBackend = "openfold3-af3-jax",
         pilot_allocations: dict[str, int] | None = None,
+        pilot_candidate_budget: int | None = None,
+        scale_candidate_budget: int | None = None,
+        product_auto_continue: bool = False,
     ) -> None:
         self.downstream_scope = through
         self.prediction_backend = prediction_backend
         self.pilot_allocations = dict(pilot_allocations) if pilot_allocations is not None else None
+        self.pilot_candidate_budget = pilot_candidate_budget
+        self.scale_candidate_budget = scale_candidate_budget
+        self.product_auto_continue = product_auto_continue
         super().__init__(project, thread, store)
         scope: dict[str, Any] = {"through": through, "prediction_backend": prediction_backend}
         if pilot_allocations is not None:
@@ -56,6 +62,19 @@ class Phase34Runtime(Phase34Bridge):
         if pilot_allocations is None and prior and "pilot_allocations" in prior:
             self.pilot_allocations = dict(prior["pilot_allocations"])
             scope["pilot_allocations"] = self.pilot_allocations
+        for key in ("pilot_candidate_budget", "scale_candidate_budget"):
+            value = getattr(self, key)
+            if value is None and prior and key in prior:
+                value = int(prior[key])
+                setattr(self, key, value)
+            if value is not None:
+                if type(value) is not int or value < 1:
+                    raise AgentBoundaryError(f"{key} must be a positive integer")
+                scope[key] = value
+        if not product_auto_continue and prior and prior.get("product_auto_continue") is True:
+            self.product_auto_continue = True
+        if self.product_auto_continue:
+            scope["product_auto_continue"] = True
         if prior and any(prior.get(k) != v for k, v in scope.items()):
             raise AgentBoundaryError("Downstream thread scope/backend is immutable")
         if prior is None:
@@ -157,6 +176,7 @@ class Phase34Runtime(Phase34Bridge):
             prediction_backend=self.prediction_backend,
             parent_gate4_card_id=self.parent_pilot_card(proposal),
             pilot_allocations=self.pilot_allocations,
+            pilot_candidate_budget=self.pilot_candidate_budget,
         )
 
     @authority_read
@@ -807,6 +827,12 @@ class Phase34Runtime(Phase34Bridge):
                 gate_type="pilot-promotion",
                 evidence_refs=[*context.evidence_refs, canonical_model_sha256(measurement)],
             )
+            if self.scale_candidate_budget is not None:
+                packet["scale_execution_budget"] = {
+                    "maximum_candidates": self.scale_candidate_budget,
+                    "required_total_on_promotion": self.scale_candidate_budget,
+                    "scope": "product execution budget; Scientist Gate 4 still authorizes Scale",
+                }
             sources = self.project_latest("phase34-pilot-measurement-sources")
             if sources and sources["authority"] == execution["authority"]:
                 packet["evidence_refs"].extend(

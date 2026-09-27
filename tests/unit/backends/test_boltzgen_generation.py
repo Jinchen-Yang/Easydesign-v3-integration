@@ -10,7 +10,37 @@ from easydesign.backends.boltzgen import (
     BoltzGenCheckAdapter,
     BoltzGenGenerationAdapter,
     BoltzGenGenerationRequest,
+    read_generation_heartbeat,
 )
+
+
+def test_generation_heartbeat_reads_real_pipeline_substage_and_count(tmp_path: Path) -> None:
+    log = tmp_path / "stdout.log"
+    log.write_text(
+        "[Step 1/5] design - Predicting DataLoader 0: 10/30\r"
+        "[Step 2/5] inverse_folding - Predicting DataLoader 0: 7/30\r",
+        encoding="utf-8",
+    )
+
+    assert read_generation_heartbeat(log) == (
+        "boltzgen-inverse-fold",
+        "Inverse-folding sequences",
+        7,
+        30,
+        2,
+        5,
+    )
+
+
+def test_generation_heartbeat_reports_initialize_without_log(tmp_path: Path) -> None:
+    assert read_generation_heartbeat(tmp_path / "missing.log") == (
+        "boltzgen-initialize",
+        "Initializing BoltzGen",
+        None,
+        None,
+        None,
+        5,
+    )
 
 
 def test_generation_command_freezes_full_nanobody_pipeline_parameters(

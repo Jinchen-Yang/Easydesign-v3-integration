@@ -103,6 +103,31 @@ def test_explicit_bounded_scientific_pilot_keeps_default_design_and_exact_approv
             )
 
 
+def test_product_budget_is_projected_to_equal_bounded_strategy_allocations(design_bridge):
+    bridge, default_plan, _ = prepared(design_bridge)
+    plan = plan_for_design(
+        bridge,
+        bridge.current_design(),
+        prediction_backend="openfold3-af3-jax",
+        pilot_candidate_budget=30,
+    )
+    assert len(default_plan.production_allocations) == 7
+    assert set(plan.production_allocations.values()) == {4}
+    assert sum(plan.production_allocations.values()) == 28
+    assert plan.production_allocations == plan.execution_allocations
+
+
+def test_product_budget_must_cover_every_approved_strategy(design_bridge):
+    bridge, default_plan, _ = prepared(design_bridge)
+    with pytest.raises(AgentBoundaryError, match="cover every approved"):
+        plan_for_design(
+            bridge,
+            bridge.current_design(),
+            prediction_backend="openfold3-af3-jax",
+            pilot_candidate_budget=len(default_plan.production_allocations) - 1,
+        )
+
+
 def test_pilot_plan_stale_design_rejected_before_freeze(design_bridge):
     bridge, plan, card = prepared(design_bridge)
     bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")

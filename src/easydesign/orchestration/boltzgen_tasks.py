@@ -347,6 +347,10 @@ def execute_boltzgen_candidate_task(
                         updated_at=value.observed_at,
                         elapsed_seconds=value.elapsed_seconds,
                         message=value.message,
+                        completed=value.completed,
+                        total=value.total,
+                        step=value.step,
+                        steps=value.steps,
                     )
                 )
 

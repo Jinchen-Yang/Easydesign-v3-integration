@@ -169,6 +169,19 @@ describe('Easy live adapter preserves Product API authority', () => {
     expect(bodies[0].request_id).not.toBe(bodies[1].request_id);
   });
 
+  it('clears the selected historical project for a genuinely new design', async () => {
+    const { adapter } = fixture(async () => Response.json({}));
+    let selected: string | null = null;
+    adapter.subscribe((event) => {
+      selected = event.snapshot.selectedProject;
+    });
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    expect(selected).toBe(project.id);
+    adapter.clearProject();
+    expect(selected).toBeNull();
+  });
+
   it('binds simulated-order commands to the current server revision', async () => {
     const bodies: Record<string, unknown>[] = [];
     const order = {

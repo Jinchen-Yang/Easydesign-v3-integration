@@ -12,6 +12,8 @@ from easydesign.agent.phase3_ranking import METRIC_DIRECTIONS
 from easydesign.agent.phase34_contracts import GlobalCandidatePool, PilotMeasurement
 from easydesign.agent.phase34_runtime import Phase34Runtime
 from easydesign.core import ArtifactRef, ManifestStateError, load_model
+from easydesign.orchestration import read_pipeline_progress
+from easydesign.orchestration.local_jobs import LocalStepJob
 from easydesign.stages.s01_target_preparation.models import ResidueMapping, TargetBundle
 
 from .artifacts import ArtifactCatalog
@@ -30,6 +32,55 @@ PHASES = ("target", "site", "design", "pilot", "scale", "candidates", "handoff")
 
 _PDB_ID = re.compile(r"[0-9A-Za-z]{4}")
 _ATTEMPT_ID = re.compile(r"attempt-[0-9]{4}")
+
+PROGRESS_LABELS = {
+    "boltzgen-initialize": "Initialize",
+    "boltzgen-generate": "Generate",
+    "boltzgen-inverse-fold": "Inverse fold",
+    "boltzgen-refold": "Refold",
+    "boltzgen-analysis": "Analyze",
+    "boltzgen-filter": "Filter",
+}
+
+
+def job_progress(job: LocalStepJob, runs_root: Path) -> dict[str, Any] | None:
+    """Project only verified pipeline progress belonging to the configured runs root."""
+
+    if job.step < 4 or job.run_root is None:
+        return None
+    root = job.run_root.resolve()
+    if not root.is_relative_to(runs_root.resolve()):
+        return None
+    try:
+        progress = read_pipeline_progress(root)
+    except (ManifestStateError, OSError, ValueError):
+        return None
+    heartbeats = sorted(progress.task_heartbeats, key=lambda item: item.updated_at)
+    current = heartbeats[-1] if heartbeats else None
+    substage = current.phase if current else None
+    same_stage = [item for item in heartbeats if item.phase == substage]
+    completed = [item.completed for item in same_stage]
+    totals = [item.total for item in same_stage]
+    return {
+        "stage_id": progress.stage_id,
+        "status": progress.status,
+        "completed": progress.collected_candidates,
+        "total": progress.planned_candidates,
+        "completed_tasks": progress.succeeded_tasks,
+        "total_tasks": progress.total_tasks,
+        "running_tasks": progress.running_tasks,
+        "estimated_remaining_seconds": progress.estimated_remaining_seconds,
+        "substage": substage,
+        "substage_label": PROGRESS_LABELS.get(substage or "", current.message if current else None),
+        "substage_completed": sum(value for value in completed if value is not None)
+        if completed and all(value is not None for value in completed)
+        else None,
+        "substage_total": sum(value for value in totals if value is not None)
+        if totals and all(value is not None for value in totals)
+        else None,
+        "pipeline_step": current.step if current else None,
+        "pipeline_steps": current.steps if current else None,
+    }
 
 ROLE_ACTIVITY = {
     "target": (
@@ -1063,6 +1114,11 @@ def workbench(
             "status": str(j.status),
             "resumable": str(j.status) in {"failed", "lost", "drained"},
             "validation_only": project.validation_only,
+            **(
+                {"progress": progress}
+                if (progress := job_progress(j, b.context.runs_root)) is not None
+                else {}
+            ),
         }
         for j in b.controller.list(project_id=b.project_id)
     ][:40]
@@ -1166,5 +1222,6 @@ def workbench(
             "decide": card is not None,
             "message": True,
             "resume": action.tool is not None and card is None,
+            "auto_continue": isinstance(b, Phase34Runtime) and b.product_auto_continue,
         },
     )

@@ -168,6 +168,114 @@
   flex: 1;
 }
 
+.easy-execution-progress {
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid #e2dfeb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
+}
+
+.easy-execution-title {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.easy-execution-title > div {
+  display: grid;
+  gap: 4px;
+}
+
+.easy-execution-title span {
+  color: #7361e4;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.easy-execution-title strong {
+  font-size: 15px;
+}
+
+.easy-execution-title b {
+  color: #6154c7;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.easy-progress-track {
+  height: 8px;
+  margin: 14px 0 16px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #eeebf7;
+}
+
+.easy-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #745fe2, #9887f2);
+  transition: width 300ms ease;
+}
+
+.easy-pipeline-steps {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.easy-pipeline-steps > div {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: #aaa5b5;
+  text-align: center;
+}
+
+.easy-pipeline-steps > div > span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid #ded9eb;
+  border-radius: 99px;
+  background: #fff;
+  font-size: 10px;
+}
+
+.easy-pipeline-steps small,
+.easy-pipeline-steps em {
+  font-size: 10px;
+  font-style: normal;
+}
+
+.easy-pipeline-steps > div.done,
+.easy-pipeline-steps > div.active {
+  color: #6654d3;
+}
+
+.easy-pipeline-steps > div.done > span {
+  border-color: #b9dfd0;
+  background: #eaf7f1;
+  color: #338064;
+}
+
+.easy-pipeline-steps > div.active > span {
+  border-color: #7966e6;
+  background: #eeeaff;
+  box-shadow: 0 0 0 4px #f5f2ff;
+}
+
+.easy-execution-progress > p {
+  margin: 14px 0 0;
+  color: #7d7886;
+  font-size: 11px;
+}
+
 .easy-live-activity {
   margin-top: 16px;
 }
@@ -420,6 +528,10 @@
 }
 
 @media (max-width: 700px) {
+  .easy-pipeline-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .easy-live-order-fields {
     grid-template-columns: 1fr;
   }

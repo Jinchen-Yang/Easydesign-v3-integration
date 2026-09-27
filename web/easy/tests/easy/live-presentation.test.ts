@@ -94,4 +94,14 @@ describe('Easy live presentation', () => {
     value.project.status = 'running';
     expect(awaitingDecisionRecovery(value)).toBe(false);
   });
+
+  it('does not present an available continuation as active model work', () => {
+    const value = snapshot();
+    value.decision = null;
+    value.project.status = 'available';
+    expect(summarizeEasyActivity(value)[0]).toMatchObject({
+      title: '设计方案已整理',
+      status: 'completed',
+    });
+  });
 });

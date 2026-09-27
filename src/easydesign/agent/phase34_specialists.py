@@ -54,11 +54,28 @@ def downstream_specialist(
             refs = tuple(packet["evidence_refs"])
 
             def validate_pilot(opinion: PilotDiagnosisOpinion) -> Any:
+                budget = getattr(bridge, "scale_candidate_budget", None)
+                if (
+                    budget is not None
+                    and opinion.recommended_action == "PROMOTE_TO_SCALE"
+                    and sum(opinion.scale_allocations.values()) != budget
+                ):
+                    raise AgentBoundaryError(
+                        "Scale promotion must allocate exactly the reviewed "
+                        f"product budget ({budget})"
+                    )
                 return bind_pilot_opinion(
                     measurement, context.plan.arms, opinion, evidence_refs=refs
                 )
 
             prompt = (skill_root() / "pilot-diagnosis/SKILL.md").read_text()
+            if bridge.scale_candidate_budget is not None:
+                prompt += (
+                    "\nIf and only if recommending PROMOTE_TO_SCALE, allocate exactly "
+                    f"{bridge.scale_candidate_budget} total candidates across the selected "
+                    "measured strategies. This is a frozen product execution budget, not a "
+                    "scientific ranking prior."
+                )
             if measurement.native_evidence is not None:
                 from .phase3_capacity import ranking_decision_view
 

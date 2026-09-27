@@ -148,6 +148,22 @@ export interface ProductSnapshot {
     status: string;
     resumable: boolean;
     validation_only: boolean;
+    progress?: {
+      stage_id: string;
+      status: string;
+      completed: number;
+      total: number;
+      completed_tasks: number;
+      total_tasks: number;
+      running_tasks: number;
+      estimated_remaining_seconds: number | null;
+      substage: string | null;
+      substage_label: string | null;
+      substage_completed: number | null;
+      substage_total: number | null;
+      pipeline_step: number | null;
+      pipeline_steps: number | null;
+    };
   }[];
   artifacts: Artifact[];
   conversation?: {

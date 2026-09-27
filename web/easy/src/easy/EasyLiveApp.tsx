@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -56,6 +56,71 @@ function stageStatus(snapshot: ProductSnapshot | null, index: number) {
   const phase = STEPS[index].toLowerCase();
   const row = snapshot.workflow.find((item) => item.id === phase);
   return row?.status || (index < activeIndex(snapshot) ? 'complete' : 'waiting');
+}
+
+const PIPELINE_STEPS = [
+  ['boltzgen-initialize', 'Initialize'],
+  ['boltzgen-generate', 'Generate'],
+  ['boltzgen-inverse-fold', 'Inverse fold'],
+  ['boltzgen-refold', 'Refold'],
+  ['boltzgen-analysis', 'Analyze'],
+  ['boltzgen-filter', 'Filter'],
+  ['native-filter', 'AFO / native filter'],
+] as const;
+
+function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
+  const job = snapshot.jobs.find((item) => item.phase === snapshot.project.phase && item.progress);
+  const progress = job?.progress;
+  if (!progress) return null;
+  const native = progress.stage_id.startsWith('05-') || progress.stage_id.startsWith('07-');
+  const current = native ? 'native-filter' : progress.substage;
+  const currentIndex = PIPELINE_STEPS.findIndex(([id]) => id === current);
+  const overall = progress.total
+    ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
+    : 0;
+  const substage =
+    progress.substage_total && progress.substage_completed !== null
+      ? `${progress.substage_completed} / ${progress.substage_total}`
+      : null;
+  return (
+    <section className="easy-execution-progress" aria-label="真实执行进度">
+      <div className="easy-execution-title">
+        <div>
+          <span>REAL EXECUTION</span>
+          <strong>{native ? 'AFO 预测与原生过滤' : progress.substage_label || 'BoltzGen'}</strong>
+        </div>
+        <b>
+          {progress.completed} / {progress.total} 条
+        </b>
+      </div>
+      <div
+        className="easy-progress-track"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={progress.total}
+        aria-valuenow={progress.completed}
+      >
+        <span style={{ width: `${overall}%` }} />
+      </div>
+      <div className="easy-pipeline-steps">
+        {PIPELINE_STEPS.map(([id, label], stepIndex) => {
+          const done = native || (currentIndex >= 0 && stepIndex < currentIndex);
+          const active = id === current;
+          return (
+            <div key={id} className={active ? 'active' : done ? 'done' : ''}>
+              <span>{done ? <Check size={11} /> : stepIndex + 1}</span>
+              <small>{label}</small>
+              {active && substage && <em>{substage}</em>}
+            </div>
+          );
+        })}
+      </div>
+      <p>
+        {progress.completed_tasks} / {progress.total_tasks} 个策略任务完成
+        {progress.running_tasks ? `，${progress.running_tasks} 个正在运行` : ''}
+      </p>
+    </section>
+  );
 }
 
 function GatePanel({
@@ -351,6 +416,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const [selectedSite, setSelectedSite] = useState<string | undefined>();
   const [order, setOrder] = useState<LabOrderView | null>(null);
   const [error, setError] = useState('');
+  const autoContinuation = useRef<string | null>(null);
   useEffect(() => {
     const unsubscribe = adapter.subscribe((event) => setState(event.snapshot));
     void (async () => {
@@ -373,8 +439,6 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       } else {
         const loaded = await adapter.load();
         setState(loaded);
-        const project = loaded.projects.items[0]?.id;
-        if (project) await adapter.selectProject(project);
       }
     })().catch((reason) => setError((reason as Error).message));
     return () => {
@@ -385,13 +449,33 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const snapshot = state?.snapshot || null;
   const completed = snapshot?.current_action.stage === 'handoff-complete';
   useEffect(() => {
+    if (
+      !snapshot ||
+      !snapshot.capabilities.auto_continue ||
+      !snapshot.capabilities.resume ||
+      snapshot.project.status !== 'available' ||
+      state?.pending ||
+      state?.pendingRequest?.state === 'running' ||
+      state?.pendingRequest?.state === 'accepted'
+    )
+      return;
+    const key = `${snapshot.project.id}:${snapshot.revision}:${snapshot.current_action.id}`;
+    if (autoContinuation.current === key) return;
+    autoContinuation.current = key;
+    void adapter.resume().catch((reason) => setError((reason as Error).message));
+  }, [adapter, snapshot, state?.pending, state?.pendingRequest?.state]);
+  useEffect(() => {
     const defaultSite = snapshot?.scientific_context.approved_site?.selected_candidate_id;
     setSelectedSite(defaultSite || snapshot?.decision?.default_option_id || undefined);
     setOrder(snapshot?.lab_order || null);
   }, [snapshot?.revision]);
   const issue = validateInput(input);
   const index = activeIndex(snapshot);
-  const active = snapshot && !['complete', 'finished'].includes(snapshot.project.status);
+  const active = Boolean(
+    state?.pending ||
+      snapshot?.project.status === 'running' ||
+      snapshot?.project.status === 'incomplete',
+  );
   const artifact =
     state?.selectedCandidate?.artifacts.find((item) =>
       ['pdb', 'cif', 'mmcif'].includes(item.format),
@@ -431,6 +515,26 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     }
   }
 
+  function newDesign() {
+    adapter.clearProject();
+    setOrder(null);
+    setSelectedSite(undefined);
+    autoContinuation.current = null;
+    const params = new URLSearchParams(location.search);
+    params.delete('project');
+    params.delete('token');
+    history.replaceState({}, '', `${location.pathname}${params.size ? `?${params}` : ''}#design`);
+    document.getElementById('design')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  async function openProject(id: string) {
+    await adapter.selectProject(id);
+    const params = new URLSearchParams(location.search);
+    params.delete('token');
+    params.set('project', id);
+    history.replaceState({}, '', `${location.pathname}?${params.toString()}#current-design`);
+  }
+
   if (!state)
     return (
       <div className="easy-live-loading">
@@ -468,8 +572,16 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
           <Brand /> <span className="easy-edition">EASY · LIVE</span>
         </a>
         <nav>
-          <a href="#design">新设计</a>
-          <a href="#current-design">当前任务</a>
+          <a
+            href="#design"
+            onClick={(event) => {
+              event.preventDefault();
+              newDesign();
+            }}
+          >
+            新设计
+          </a>
+          {snapshot && <a href="#current-design">当前任务</a>}
           <a href="#my-designs">我的设计</a>
         </nav>
         <div className="easy-header-end">
@@ -665,16 +777,20 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                   <section className="easy-live-progress-card">
                     <LoaderCircle className="easy-spin" size={22} />
                     <div>
-                      <h3>当前步骤可以继续</h3>
-                      <p>{snapshot.current_action.stage}</p>
+                      <h3>
+                        {snapshot.capabilities.auto_continue ? '正在自动继续' : '当前步骤可以继续'}
+                      </h3>
+                      <p>{snapshot.current_action.message || snapshot.current_action.stage}</p>
                     </div>
-                    <button
-                      className="easy-primary"
-                      disabled={state.pending}
-                      onClick={() => void adapter.resume()}
-                    >
-                      继续研究 <ArrowRight size={14} />
-                    </button>
+                    {!snapshot.capabilities.auto_continue && (
+                      <button
+                        className="easy-primary"
+                        disabled={state.pending}
+                        onClick={() => void adapter.resume()}
+                      >
+                        继续研究 <ArrowRight size={14} />
+                      </button>
+                    )}
                   </section>
                 ) : (
                   <section className="easy-live-progress-card">
@@ -685,14 +801,15 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     </div>
                   </section>
                 )}
+                <ExecutionProgress snapshot={snapshot} />
                 <section className="easy-live-activity">
                   <h3>实时过程</h3>
                   {activity.map((item) => (
                     <article key={item.id}>
                       <span className={item.status || ''} />
                       <div>
-                        <strong>{item.title || item.role || item.type}</strong>
-                        <p>{item.summary || item.text}</p>
+                        <strong>{item.title}</strong>
+                        <p>{item.summary}</p>
                       </div>
                     </article>
                   ))}
@@ -795,10 +912,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     <td>{project.phase}</td>
                     <td>{project.status}</td>
                     <td>
-                      <button
-                        className="easy-outline"
-                        onClick={() => void adapter.selectProject(project.id)}
-                      >
+                      <button className="easy-outline" onClick={() => void openProject(project.id)}>
                         打开
                       </button>
                     </td>

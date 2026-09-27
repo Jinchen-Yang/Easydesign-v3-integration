@@ -25,6 +25,7 @@ export interface EasyProductPort {
   authenticate(token: string): Promise<void>;
   refresh(): Promise<void>;
   selectProject(id: string): Promise<void>;
+  clearProject(): void;
   projectPage(offset: number): Promise<void>;
   renameProject(id: string, title: string): Promise<void>;
   candidatePage(offset: number): Promise<void>;
@@ -214,6 +215,17 @@ export class EasyProductAdapter implements EasyProductPort {
     if (generation !== this.generation) return;
     this.emit({ snapshot, connection: 'connected', error: null });
     await this.candidatePage(0);
+  }
+  clearProject() {
+    this.generation++;
+    this.emit({
+      selectedProject: null,
+      snapshot: null,
+      selectedCandidate: null,
+      candidates: emptyPage(),
+      pendingRequest: null,
+      error: null,
+    });
   }
   async candidatePage(offset: number) {
     const id = this.state.selectedProject,

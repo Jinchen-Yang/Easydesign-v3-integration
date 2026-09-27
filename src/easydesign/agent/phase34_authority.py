@@ -41,6 +41,7 @@ def plan_for_design(
     parent_gate4_card_id: str | None = None,
     executor: Any = None,
     pilot_allocations: dict[str, int] | None = None,
+    pilot_candidate_budget: int | None = None,
 ) -> BoundPilotPlan:
     if parent_gate4_card_id is not None:
         event = bridge.project_latest("phase34-gate4-transition")
@@ -68,6 +69,18 @@ def plan_for_design(
     if site is None:
         raise AgentBoundaryError("Pilot requires the current approved Site")
     production = {r.strategy_id: r.candidates_per_strategy for r in records}
+    if pilot_allocations is not None and pilot_candidate_budget is not None:
+        raise AgentBoundaryError("Pilot scope accepts an explicit allocation or a budget, not both")
+    if pilot_candidate_budget is not None:
+        if type(pilot_candidate_budget) is not int or pilot_candidate_budget < len(production):
+            raise AgentBoundaryError(
+                "Pilot candidate budget must cover every approved Design strategy"
+            )
+        per_strategy = min(
+            min(production.values()),
+            pilot_candidate_budget // len(production),
+        )
+        pilot_allocations = {strategy_id: per_strategy for strategy_id in production}
     if pilot_allocations is not None:
         if set(pilot_allocations) != set(production) or any(
             type(n) is not int or n < 1 or n > production[s] for s, n in pilot_allocations.items()

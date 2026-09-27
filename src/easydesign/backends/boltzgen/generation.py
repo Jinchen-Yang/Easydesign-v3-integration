@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import threading
 from collections.abc import Callable
@@ -47,6 +48,71 @@ class BoltzGenGenerationHeartbeat:
     elapsed_seconds: float
     phase: str = "boltzgen-running"
     message: str = "BoltzGen process is still running."
+    completed: int | None = None
+    total: int | None = None
+    step: int | None = None
+    steps: int | None = None
+
+
+_STEP_PROGRESS = re.compile(
+    r"\[Step\s+(?P<step>\d+)/(?P<steps>\d+)\]\s+"
+    r"(?P<name>[a-z_]+).*?(?P<completed>\d+)/(?P<total>\d+)",
+    re.IGNORECASE,
+)
+_STEP_ONLY = re.compile(
+    r"(?:\[Step\s+(?P<bracket_step>\d+)/(?P<bracket_steps>\d+)\]\s+"
+    r"(?P<bracket_name>[a-z_]+)|Pipeline step\s+(?P<plain_step>\d+)\s+of\s+"
+    r"(?P<plain_steps>\d+):\s*(?P<plain_name>[a-z_]+))",
+    re.IGNORECASE,
+)
+_PHASES = {
+    "design": ("boltzgen-generate", "Generating binder backbones"),
+    "inverse_folding": ("boltzgen-inverse-fold", "Inverse-folding sequences"),
+    "folding": ("boltzgen-refold", "Refolding generated sequences"),
+    "analysis": ("boltzgen-analysis", "Analyzing generated candidates"),
+    "filtering": ("boltzgen-filter", "Filtering generated candidates"),
+}
+
+
+def read_generation_heartbeat(
+    path: Path,
+) -> tuple[str, str, int | None, int | None, int | None, int | None]:
+    """Parse only BoltzGen's bounded log tail; absence remains an initializing state."""
+
+    if not path.is_file():
+        return "boltzgen-initialize", "Initializing BoltzGen", None, None, None, 5
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        size = handle.tell()
+        handle.seek(max(0, size - 262_144))
+        text = handle.read().decode("utf-8", errors="replace")
+    matches = list(_STEP_PROGRESS.finditer(text))
+    if matches:
+        match = matches[-1]
+        name = match.group("name").lower()
+        phase, message = _PHASES.get(name, ("boltzgen-running", f"BoltzGen {name}"))
+        return (
+            phase,
+            message,
+            int(match.group("completed")),
+            int(match.group("total")),
+            int(match.group("step")),
+            int(match.group("steps")),
+        )
+    steps = list(_STEP_ONLY.finditer(text))
+    if steps:
+        match = steps[-1]
+        name = (match.group("bracket_name") or match.group("plain_name")).lower()
+        phase, message = _PHASES.get(name, ("boltzgen-running", f"BoltzGen {name}"))
+        return (
+            phase,
+            message,
+            None,
+            None,
+            int(match.group("bracket_step") or match.group("plain_step")),
+            int(match.group("bracket_steps") or match.group("plain_steps")),
+        )
+    return "boltzgen-initialize", "Initializing BoltzGen", None, None, None, 5
 
 
 BoltzGenHeartbeatCallback = Callable[[BoltzGenGenerationHeartbeat], None]
@@ -139,6 +205,9 @@ class BoltzGenGenerationAdapter:
                     continue
                 observed = datetime.now(UTC)
                 try:
+                    phase, message, completed, total, step, steps = read_generation_heartbeat(
+                        request.stdout_path
+                    )
                     heartbeat_callback(
                         BoltzGenGenerationHeartbeat(
                             observed_at=observed,
@@ -146,6 +215,12 @@ class BoltzGenGenerationAdapter:
                                 0.0,
                                 (observed - started).total_seconds(),
                             ),
+                            phase=phase,
+                            message=message,
+                            completed=completed,
+                            total=total,
+                            step=step,
+                            steps=steps,
                         )
                     )
                 except Exception as error:  # pragma: no cover - defensive thread boundary

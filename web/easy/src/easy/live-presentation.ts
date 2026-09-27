@@ -42,6 +42,7 @@ export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySu
   const raw = (snapshot.recent_activity || []).filter((item) => item.visible !== false);
   const awaiting = snapshot.project.status === 'awaiting_scientist' || snapshot.decision !== null;
   const completed = ['complete', 'finished'].includes(snapshot.project.status);
+  const available = snapshot.project.status === 'available';
   const phase = snapshot.project.phase;
   const reviewComplete = raw.some((item) => {
     const text =
@@ -57,15 +58,17 @@ export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySu
     {
       id: 'phase-summary',
       title:
-        awaiting || completed
+        awaiting || completed || available
           ? READY_COPY[phase] || '当前阶段已整理'
           : RUNNING_COPY[phase] || '正在推进当前阶段',
       summary: awaiting
         ? '推荐方案和必要证据已经整理完成。'
         : completed
           ? '当前设计流程已完成。'
-          : '科学 Agent 正在处理当前阶段。',
-      status: awaiting || completed ? 'completed' : 'running',
+          : available
+            ? '当前步骤已准备好，系统将继续推进。'
+            : '科学 Agent 正在处理当前阶段。',
+      status: awaiting || completed || available ? 'completed' : 'running',
     },
   ];
   if (reviewComplete) {

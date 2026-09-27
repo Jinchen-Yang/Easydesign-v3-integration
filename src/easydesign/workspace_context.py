@@ -10,7 +10,10 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-from dataclasses import dataclass
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +23,12 @@ import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from easydesign.core import ConfigurationError, PathPolicyError
+from easydesign.execution_scope import (
+    EXECUTION_SCOPE_ENV,
+    ExecutionScope,
+    load_scope,
+    publish_scope,
+)
 from easydesign.runtime_guard import (
     LOCAL_WRITE_ROOTS_ENV,
     install_python_startup_guard,
@@ -28,6 +37,9 @@ from easydesign.runtime_guard import (
 WORKSPACE_MARKER = "easydesign-workspace.yaml"
 WORKSPACE_ENVIRONMENT_VARIABLE = "EASYDESIGN_WORKSPACE"
 CODE_ROOT_ENVIRONMENT_VARIABLE = "EASYDESIGN_CODE_ROOT"
+_ACTIVE_CONTEXT: ContextVar[WorkspaceContext | None] = ContextVar(
+    "easydesign_execution_context", default=None
+)
 # The first package cache generation could contain SHA-prefixed Conda archive
 # basenames produced by older installers. Conda scans every archive at startup,
 # so a new generation must not inherit those structurally invalid entries.
@@ -85,38 +97,82 @@ class WorkspaceContext:
     root: Path
     declaration_path: Path
     declaration: WorkspaceDeclaration
+    execution_scope: ExecutionScope | None = None
+    execution_scope_path: Path | None = None
+
+    @property
+    def shared_runtime_root(self) -> Path:
+        return self._resolve_declared(self.declaration.runtime_root)
+
+    def base_context(self) -> WorkspaceContext:
+        return replace(self, execution_scope=None, execution_scope_path=None)
+
+    @staticmethod
+    def scope_active() -> bool:
+        active = _ACTIVE_CONTEXT.get()
+        return bool(
+            (active is not None and active.execution_scope is not None)
+            or os.environ.get(EXECUTION_SCOPE_ENV)
+        )
+
+    def with_execution_scope(self, scope: ExecutionScope) -> WorkspaceContext:
+        if self.execution_scope is not None:
+            raise PathPolicyError("An execution scope cannot publish another scope")
+        path = publish_scope(
+            root=self.root,
+            runtime_root=self.shared_runtime_root,
+            declaration_path=self.declaration_path,
+            scope=scope,
+        )
+        return replace(self, execution_scope=scope, execution_scope_path=path)
+
+    @contextmanager
+    def activate(self) -> Iterator[WorkspaceContext]:
+        token = _ACTIVE_CONTEXT.set(self)
+        try:
+            yield self
+        finally:
+            _ACTIVE_CONTEXT.reset(token)
+
+    def _scoped(self, path: Path) -> Path:
+        if self.execution_scope is None:
+            return path
+        scoped = path / "scopes" / self.execution_scope.scope_id
+        if scoped.resolve() != scoped:
+            raise PathPolicyError("Scoped data roots cannot contain symlinks")
+        return scoped
 
     @property
     def runtime_root(self) -> Path:
-        return self._resolve_declared(self.declaration.runtime_root)
+        return self._scoped(self.shared_runtime_root)
 
     @property
     def projects_root(self) -> Path:
-        return self._resolve_declared(self.declaration.projects_root)
+        return self._scoped(self._resolve_declared(self.declaration.projects_root))
 
     @property
     def runs_root(self) -> Path:
-        return self._resolve_declared(self.declaration.runs_root)
+        return self._scoped(self._resolve_declared(self.declaration.runs_root))
 
     @property
     def archives_root(self) -> Path:
-        return self._resolve_declared(self.declaration.archives_root)
+        return self._scoped(self._resolve_declared(self.declaration.archives_root))
 
     @property
     def profile_path(self) -> Path:
-        return self.runtime_root / "profile.yaml"
+        return self.shared_runtime_root / "profile.yaml"
 
     @property
     def environment_registry_root(self) -> Path:
-        return self.runtime_root / "state" / "registries" / "environments"
+        return self.shared_runtime_root / "state" / "registries" / "environments"
 
     @property
     def asset_registry_root(self) -> Path:
-        return self.runtime_root / "state" / "registries" / "assets"
+        return self.shared_runtime_root / "state" / "registries" / "assets"
 
     @property
     def gpu_lease_root(self) -> Path:
-        return self.runtime_root / "state" / "gpu-leases"
+        return self.shared_runtime_root / "state" / "gpu-leases"
 
     @property
     def msa_cache_root(self) -> Path:
@@ -153,17 +209,31 @@ class WorkspaceContext:
         for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
 
-    def assert_write_path(self, path: Path, *, allow_git: bool = False) -> Path:
-        """Reject a mutable target outside the explicit workspace write roots."""
+    def write_roots(self) -> tuple[Path, ...]:
+        """The controller-declared mutable roots for this context.
 
-        target = path.expanduser().resolve(strict=False)
-        roots = [
+        Unscoped controllers own the four workspace roots; a scoped execution
+        additionally receives the shared GPU-lease registry so the native
+        runtime can acquire, heartbeat and release host devices.
+        """
+        roots: tuple[Path, ...] = (
             self.runtime_root,
             self.projects_root,
             self.runs_root,
             self.archives_root,
-        ]
+        )
+        if self.execution_scope is not None:
+            roots = (*roots, self.gpu_lease_root)
+        return roots
+
+    def assert_write_path(self, path: Path, *, allow_git: bool = False) -> Path:
+        """Reject a mutable target outside the explicit workspace write roots."""
+
+        target = path.expanduser().resolve(strict=False)
+        roots: list[Path] = list(self.write_roots())
         if allow_git:
+            if self.execution_scope is not None:
+                raise PathPolicyError("Scoped workers cannot modify Git metadata")
             roots.append((self.root / ".git").resolve(strict=False))
         if not any(target == root or target.is_relative_to(root) for root in roots):
             raise PathPolicyError(f"拒绝写入 EasyDesign 工作区外路径: {target}")
@@ -184,7 +254,8 @@ class WorkspaceContext:
         system_tmp = Path("/tmp")
         if not system_tmp.is_dir():
             raise PathPolicyError("本机缺少 /tmp，无法创建短路径运行时别名")
-        digest = hashlib.sha256(str(self.root).encode("utf-8")).hexdigest()[:16]
+        identity = self.root if self.execution_scope is None else self.runtime_root
+        digest = hashlib.sha256(str(identity).encode("utf-8")).hexdigest()[:16]
         alias = system_tmp / f"easydesign-{digest}"
         if not alias.is_symlink() and not alias.exists():
             try:
@@ -200,6 +271,27 @@ class WorkspaceContext:
     def child_environment(self) -> dict[str, str]:
         """Environment isolation applied only to EasyDesign child processes."""
 
+        # Asset verification may use the unscoped read context, but any helper
+        # process must retain the caller's execution confinement.
+        if self.execution_scope is None:
+            active = _ACTIVE_CONTEXT.get()
+            if (
+                active is not None
+                and active.root == self.root
+                and active.execution_scope is not None
+            ):
+                return active.child_environment()
+            configured = os.environ.get(EXECUTION_SCOPE_ENV)
+            if configured:
+                path = Path(configured)
+                scope = load_scope(
+                    runtime_root=self.shared_runtime_root,
+                    declaration_path=self.declaration_path,
+                    path=path,
+                )
+                return replace(
+                    self, execution_scope=scope, execution_scope_path=path
+                ).child_environment()
         self.ensure_layout()
         cache = self.runtime_root / "cache"
         git_config = self._git_config_path()
@@ -208,11 +300,9 @@ class WorkspaceContext:
         selected_code_root = os.environ.get(CODE_ROOT_ENVIRONMENT_VARIABLE)
         if selected_code_root:
             code_root = Path(selected_code_root).expanduser().resolve(strict=True)
-            allowed_root = (self.runtime_root / "tmp").resolve(strict=True)
+            allowed_root = (self.shared_runtime_root / "tmp").resolve(strict=True)
             if not code_root.is_relative_to(allowed_root):
-                raise PathPolicyError(
-                    f"{CODE_ROOT_ENVIRONMENT_VARIABLE} 必须位于 runtime/tmp 内"
-                )
+                raise PathPolicyError(f"{CODE_ROOT_ENVIRONMENT_VARIABLE} 必须位于 runtime/tmp 内")
             if not (
                 (code_root / ".git").exists()
                 and (code_root / "pyproject.toml").is_file()
@@ -249,17 +339,15 @@ class WorkspaceContext:
             "NPM_CONFIG_CACHE": str(cache / "npm"),
             "GIT_CONFIG_GLOBAL": str(git_config),
             WORKSPACE_ENVIRONMENT_VARIABLE: str(self.root),
-            LOCAL_WRITE_ROOTS_ENV: os.pathsep.join(
-                str(path)
-                for path in (
-                    self.runtime_root,
-                    self.projects_root,
-                    self.runs_root,
-                    self.archives_root,
-                )
-            ),
+            LOCAL_WRITE_ROOTS_ENV: os.pathsep.join(str(path) for path in self.write_roots()),
             "PYTHONPATH": os.pathsep.join(str(path) for path in python_path),
         }
+        if self.execution_scope is not None:
+            if self.execution_scope_path is None:
+                raise PathPolicyError("Execution scope was not published by the controller")
+            self.gpu_lease_root.mkdir(parents=True, exist_ok=True)
+            values[EXECUTION_SCOPE_ENV] = str(self.execution_scope_path)
+            values["CUDA_VISIBLE_DEVICES"] = ",".join(str(d) for d in self.execution_scope.devices)
         system_ca = Path("/etc/ssl/certs/ca-certificates.crt")
         if system_ca.is_file():
             values.update(
@@ -287,6 +375,8 @@ class WorkspaceContext:
             "NODE_EXTRA_CA_CERTS",
             LOCAL_WRITE_ROOTS_ENV,
             "PYTHONPATH",
+            EXECUTION_SCOPE_ENV,
+            "CUDA_VISIBLE_DEVICES",
         }
         for key, value in values.items():
             if key in non_directory_values:
@@ -336,12 +426,7 @@ class WorkspaceContext:
         """Create an isolated Git config without changing the user's config."""
 
         identity = hashlib.sha256(str(self.root).encode("utf-8")).hexdigest()[:12]
-        path = (
-            self.runtime_root
-            / "state"
-            / "git"
-            / f"workspace-{identity}-isolated-v1.config"
-        )
+        path = self.runtime_root / "state" / "git" / f"workspace-{identity}-isolated-v1.config"
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             return path
@@ -390,6 +475,16 @@ class WorkspaceContext:
     def discover(cls, start: Path | None = None) -> WorkspaceContext:
         """Find the nearest tracked workspace marker without scanning user config."""
 
+        active_context = _ACTIVE_CONTEXT.get()
+        if (
+            start is None
+            and active_context is not None
+            and (
+                active_context.execution_scope is not None
+                or not os.environ.get(EXECUTION_SCOPE_ENV)
+            )
+        ):
+            return active_context
         candidates: list[Path] = []
         if start is not None:
             candidates.append(start.expanduser().resolve(strict=False))
@@ -408,7 +503,22 @@ class WorkspaceContext:
                 visited.add(parent)
                 marker = parent / WORKSPACE_MARKER
                 if marker.is_file():
-                    return cls.from_root(parent)
+                    context = cls.from_root(parent)
+                    active = _ACTIVE_CONTEXT.get()
+                    if active is not None:
+                        if active.root != context.root:
+                            raise PathPolicyError("Execution cannot cross workspace roots")
+                        return active
+                    configured_scope = os.environ.get(EXECUTION_SCOPE_ENV)
+                    if configured_scope:
+                        path = Path(configured_scope).expanduser()
+                        scope = load_scope(
+                            runtime_root=context.shared_runtime_root,
+                            declaration_path=context.declaration_path,
+                            path=path,
+                        )
+                        return replace(context, execution_scope=scope, execution_scope_path=path)
+                    return context
         raise ConfigurationError(
             f"未找到 {WORKSPACE_MARKER}；请从 EasyDesign 仓库内运行 easydesign"
         )

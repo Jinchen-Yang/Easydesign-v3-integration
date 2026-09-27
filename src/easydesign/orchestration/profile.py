@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -40,9 +40,7 @@ class ProtenixV2Runtime(BaseModel):
         cls, value: tuple[tuple[str, str], ...]
     ) -> tuple[tuple[str, str], ...]:
         keys = [key for key, _ in value]
-        if len(keys) != len(set(keys)) or any(
-            not key or not item for key, item in value
-        ):
+        if len(keys) != len(set(keys)) or any(not key or not item for key, item in value):
             raise ValueError("Protenix extra_environment 必须使用唯一且非空的键值")
         return value
 
@@ -52,9 +50,7 @@ class OpenFold3TemplatePipelineRuntime(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    component_id: Literal["afo-local-template-pipeline-v1"] = (
-        "afo-local-template-pipeline-v1"
-    )
+    component_id: Literal["afo-local-template-pipeline-v1"] = "afo-local-template-pipeline-v1"
     component_receipt: Path
     component_receipt_sha256: str
     hmmbuild: Path
@@ -106,9 +102,7 @@ class OpenFold3TemplatePipelineRuntime(BaseModel):
     )
     @classmethod
     def require_asset_sha256(cls, value: str) -> str:
-        if len(value) != 64 or any(
-            character not in "0123456789abcdef" for character in value
-        ):
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
             raise ValueError("AFO template pipeline identity 必须是小写 SHA-256")
         return value
 
@@ -159,9 +153,7 @@ class OpenFold3Af3JaxRuntime(BaseModel):
     )
     @classmethod
     def require_sha256(cls, value: str) -> str:
-        if len(value) != 64 or any(
-            character not in "0123456789abcdef" for character in value
-        ):
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
             raise ValueError("OpenFold3 identity 必须是小写 SHA-256")
         return value
 
@@ -171,9 +163,7 @@ class OpenFold3Af3JaxRuntime(BaseModel):
         cls, value: tuple[tuple[str, str], ...]
     ) -> tuple[tuple[str, str], ...]:
         keys = [key for key, _ in value]
-        if len(keys) != len(set(keys)) or any(
-            not key or not item for key, item in value
-        ):
+        if len(keys) != len(set(keys)) or any(not key or not item for key, item in value):
             raise ValueError("OpenFold3 extra_environment 必须使用唯一且非空的键值")
         return value
 
@@ -275,6 +265,7 @@ class RuntimeProfile(BaseModel):
             raise ValueError("runs_root 必须是绝对路径")
         return value
 
+
 @dataclass(frozen=True, slots=True)
 class LoadedRuntimeProfile:
     path: Path
@@ -373,17 +364,12 @@ def _resolve_local_setup_backends(
         if (
             record is None
             or record.status != "available"
-            or record.lock_sha256
-            != expected_environment_lock_sha256(context, environment_id)
+            or record.lock_sha256 != expected_environment_lock_sha256(context, environment_id)
         ):
             return None
         prefix = (context.root / record.relative_prefix).resolve()
-        if prefix != context.runtime_root and not prefix.is_relative_to(
-            context.runtime_root
-        ):
-            raise ConfigurationError(
-                f"环境 registry 路径逃出当前 clone runtime: {environment_id}"
-            )
+        if prefix != context.runtime_root and not prefix.is_relative_to(context.runtime_root):
+            raise ConfigurationError(f"环境 registry 路径逃出当前 clone runtime: {environment_id}")
         return prefix if prefix.is_dir() else None
 
     def available_asset(asset_id: str) -> Path | None:
@@ -391,12 +377,8 @@ def _resolve_local_setup_backends(
         if record is None or record.status != "available":
             return None
         path = (context.root / record.relative_path).resolve()
-        if path != context.runtime_root and not path.is_relative_to(
-            context.runtime_root
-        ):
-            raise ConfigurationError(
-                f"资产 registry 路径逃出当前 clone runtime: {asset_id}"
-            )
+        if path != context.runtime_root and not path.is_relative_to(context.runtime_root):
+            raise ConfigurationError(f"资产 registry 路径逃出当前 clone runtime: {asset_id}")
         if not path.exists():
             return None
         if record.size_bytes is not None and path.is_file():
@@ -433,9 +415,7 @@ def _resolve_local_setup_backends(
 
     pymol_prefix = available_prefix("pymol-pse")
     pymol = (
-        PyMOLPseRuntime(python=pymol_prefix / "bin/python")
-        if pymol_prefix is not None
-        else None
+        PyMOLPseRuntime(python=pymol_prefix / "bin/python") if pymol_prefix is not None else None
     )
 
     scannet_prefix = available_prefix("scannet-epitope")
@@ -471,9 +451,7 @@ def _resolve_local_setup_backends(
             repository_root=boltzgen_root,
             cache_root=context.runtime_root / "models/boltzgen/huggingface",
         )
-        if boltzgen_prefix is not None
-        and boltzgen_root is not None
-        and boltzgen_validation_ready
+        if boltzgen_prefix is not None and boltzgen_root is not None and boltzgen_validation_ready
         else None
     )
     boltzgen = boltzgen_validation if boltzgen_ready else None
@@ -486,36 +464,20 @@ def _resolve_local_setup_backends(
             executable=tnp_root / "bin/TNP",
             repository_root=tnp_root,
         )
-        if tnp_prefix is not None
-        and tnp_root is not None
-        and assets_ready("tnp-source-29dcac72")
+        if tnp_prefix is not None and tnp_root is not None and assets_ready("tnp-source-29dcac72")
         else None
     )
 
     return RuntimeBackends(
-        protenix_v2=(
-            protenix if "protenix-v2" in environments else current.protenix_v2
-        ),
+        protenix_v2=(protenix if "protenix-v2" in environments else current.protenix_v2),
         openfold3_af3_jax=current.openfold3_af3_jax,
-        pymol_pse=(
-            pymol if "pymol-pse" in environments else current.pymol_pse
-        ),
-        scannet_epitope=(
-            scannet
-            if "scannet-epitope" in environments
-            else current.scannet_epitope
-        ),
+        pymol_pse=(pymol if "pymol-pse" in environments else current.pymol_pse),
+        scannet_epitope=(scannet if "scannet-epitope" in environments else current.scannet_epitope),
         boltzgen_validation=(
-            boltzgen_validation
-            if "boltzgen" in environments
-            else current.boltzgen_validation
+            boltzgen_validation if "boltzgen" in environments else current.boltzgen_validation
         ),
-        boltzgen=(
-            boltzgen if "boltzgen" in environments else current.boltzgen
-        ),
-        tnp=(
-            tnp if "tnp" in environments else current.tnp
-        ),
+        boltzgen=(boltzgen if "boltzgen" in environments else current.boltzgen),
+        tnp=(tnp if "tnp" in environments else current.tnp),
     )
 
 
@@ -548,7 +510,13 @@ def _load_runtime_profile_exact(selected: Path) -> LoadedRuntimeProfile:
         profile = RuntimeProfile.model_validate(raw)
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValidationError) as error:
         raise ConfigurationError(f"Runtime profile 无法读取: {selected}: {error}") from error
-    context = WorkspaceContext.discover(selected.parent)
+    execution_context = WorkspaceContext.discover(selected.parent)
+    context = execution_context.base_context()
+    if execution_context.execution_scope is not None:
+        canonical = context.profile_path.resolve()
+        revisions = canonical.with_name(canonical.name + ".revisions")
+        if selected != canonical and not selected.is_relative_to(revisions):
+            raise ConfigurationError("Scoped execution can only use the controller runtime profile")
     if not selected.is_relative_to(context.runtime_root):
         raise ConfigurationError("Runtime profile 必须位于当前 clone 的 runtime/ 内")
     _require_clone_local_profile(context, profile)
@@ -565,8 +533,7 @@ def _load_runtime_profile_exact(selected: Path) -> LoadedRuntimeProfile:
             or runtime.backend_version != component.backend_version
             or runtime.model_id != component.model_id
             or runtime.environment_lock_sha256 != component.environment_lock_sha256
-            or runtime.converted_weight_sha256
-            != component.converted_weight_sha256
+            or runtime.converted_weight_sha256 != component.converted_weight_sha256
             or runtime.runner_commit != component.runner_commit
             or runtime.runner_tree_sha256 != component.runner_tree_sha256
         ):
@@ -599,6 +566,38 @@ def _load_runtime_profile_exact(selected: Path) -> LoadedRuntimeProfile:
             }
         }
     )
+    if execution_context.execution_scope is not None:
+        scope = execution_context.execution_scope
+        import socket
+
+        from easydesign.execution_scope import require_active_allocation
+
+        require_active_allocation(
+            scope,
+            context.runtime_root / "state/product-device-allocations" / socket.gethostname(),
+        )
+        updates: dict[str, Any] = {}
+        if profile.backends.protenix_v2 is not None:
+            updates["protenix_v2"] = profile.backends.protenix_v2.model_copy(
+                update={"cuda_visible_devices": ",".join(str(d) for d in scope.devices)}
+            )
+        if profile.backends.openfold3_af3_jax is not None:
+            updates["openfold3_af3_jax"] = profile.backends.openfold3_af3_jax.model_copy(
+                update={
+                    "cuda_visible_devices": ",".join(str(d) for d in scope.devices),
+                    "cache_root": execution_context.runtime_root / "cache/openfold3-p2-af3-jax",
+                }
+            )
+        if profile.backends.scannet_epitope is not None and scope.devices:
+            updates["scannet_epitope"] = profile.backends.scannet_epitope.model_copy(
+                update={"gpu_device": scope.devices[0]}
+            )
+        profile = profile.model_copy(
+            update={
+                "runs_root": execution_context.runs_root,
+                "backends": profile.backends.model_copy(update=updates),
+            }
+        )
     return LoadedRuntimeProfile(
         path=selected,
         profile=profile,
@@ -623,9 +622,7 @@ def load_runtime_profile_by_identity(
 
     base = resolve_runtime_profile_path(path).resolve()
     revision_root = base.with_name(f"{base.name}.revisions")
-    candidates = ([base] if base.is_file() else []) + sorted(
-        revision_root.glob("revision-*.yaml")
-    )
+    candidates = ([base] if base.is_file() else []) + sorted(revision_root.glob("revision-*.yaml"))
     matches = [candidate for candidate in candidates if sha256_file(candidate) == identity.sha256]
     if len(matches) != 1:
         raise ConfigurationError(

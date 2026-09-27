@@ -181,6 +181,11 @@ def _build_plan(
     config = resolved.user_config.stage04
     if config is None:
         raise ManifestStateError("run config 没有 Stage 04 配置")
+    from easydesign.execution_scope import enforce_scoped_generation_budget
+
+    enforce_scoped_generation_budget(
+        sum(item.candidates_per_strategy for item in upstream.strategy_bundle.strategies), root
+    )
     strategies: list[PilotStrategyPlan] = []
     for strategy in upstream.strategy_bundle.strategies:
         specification = upstream.stage03.require_output(f"strategy-{strategy.strategy_id}")

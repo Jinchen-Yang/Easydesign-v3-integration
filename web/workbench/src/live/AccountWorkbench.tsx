@@ -10,6 +10,7 @@ import './live.css';
 export function AccountWorkbench() {
   const [value, setValue] = useState<{session: AccountSession; scope: AccountScope} | null>(null);
   const [config, setConfig] = useState<AccountConfig | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     let disposed = false;
@@ -32,9 +33,14 @@ export function AccountWorkbench() {
     return () => {disposed = true; stop();};
   }, []);
   const adapter = useMemo(() => value ? new LiveWorkbenchAdapter(scopedTransport(value.session, value.scope)) : null, [value]);
+  useEffect(() => {
+    if (!adapter) return;
+    return adapter.subscribe(event => setSelectedProject(event.snapshot.selectedProject));
+  }, [adapter]);
   if (error) return <main className="account-pro-status"><p role="alert">{error}</p><a href="/account/">返回账号与团队</a></main>;
   if (!value || !adapter) return <main className="account-pro-status">正在验证工作区权限…</main>;
   const {session, scope} = value;
+  const easyUrl = workspaceUrl(scope.id) + (selectedProject ? `&project=${encodeURIComponent(selectedProject)}` : '');
   return <div className="account-pro-root">
     <div className="account-pro-bar"><strong>{session.user.display_name}</strong><span>{scope.name}</span>
       <span>{scope.role === 'observer' ? '管理员只读访问 · 已审计' : scope.can_execute ? '科研审批人' : '协作成员'}</span>
@@ -42,7 +48,7 @@ export function AccountWorkbench() {
       <select aria-label="切换工作区" value={scope.id} onChange={event => location.assign(workspaceUrl(event.target.value, 'professional'))}>
         {!session.scopes.some(item => item.id === scope.id) && <option value={scope.id}>{scope.name}（只读）</option>}
         {session.scopes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-      </select><a href="/account/">账号、团队与资源</a><a href={workspaceUrl(scope.id)}>Easy 版</a>
+      </select><a href="/account/">账号、团队与资源</a><a href={easyUrl}>Easy 版</a>
     </div>
     <LiveWorkbench
       key={`${session.user.id}:${scope.id}`}

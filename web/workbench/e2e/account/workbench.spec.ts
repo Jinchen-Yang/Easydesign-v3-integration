@@ -89,6 +89,9 @@ test.describe('professional mode under accounts', () => {
     await expect(page.getByText('团队成员不能启动计算；请协作编辑团队草稿，由团队管理员创建项目。')).toBeVisible();
     await page.getByTestId('design-project').getByRole('button', {name: /open/i}).click();
     await expect(page.getByRole('region', {name: /Gate 2 decision/i})).toBeVisible();
+    await expect(page.getByRole('link', {name: 'Easy 版', exact: true})).toHaveAttribute(
+      'href', '/easy/?scope=team-1&project=proj-1',
+    );
     await expect(page.getByRole('button', {name: /Approve Site/i})).toBeDisabled();
     // Gate revise instructions are scientific submissions: members cannot send
     // them (backend execute check), so the affordance stays disabled.

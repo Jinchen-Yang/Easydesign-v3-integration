@@ -75,10 +75,17 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
   const currentDecisionText = recommendedTarget
     ? `Target Intelligence recommends ${recommendedTarget.label || recommendedTarget.option_id} as the prepared structure and chain. Review it, then approve the target or change the structure.`
     : v.decision?.question || v.current_action.message;
-  const result: ConversationItem[] = (v.conversation || []).map((m) => ({
-    ...m,
-    phase: phaseOf(m.phase || v.project.phase),
-  }));
+  // The asynchronous worker's generic wait is not a current scientific failure
+  // once Runtime has produced an evidence-bound Scientist review. Native history
+  // stays intact; do not hide real answers, user messages or unresolved waits.
+  const incompleteTurn =
+    'Scientific work remains incomplete. The previous action has not produced the required verified result; inspect its status before continuing.';
+  const result: ConversationItem[] = (v.conversation || [])
+    .filter((m) => !(v.decision && m.kind === 'summary' && m.text === incompleteTurn))
+    .map((m) => ({
+      ...m,
+      phase: phaseOf(m.phase || v.project.phase),
+    }));
   if (!result.some((m) => m.kind === 'user' && m.text === v.project.goal))
     result.unshift({ id: 'goal', phase: 'goal', kind: 'user', text: v.project.goal });
   if (!result.some((m) => m.phase === phase && m.kind === 'summary'))
@@ -335,7 +342,14 @@ export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
         1: 'Approve target',
         2: `Approve Site ${rank || option?.label || ''}`,
         3: 'Approve design',
-        4: 'Promote pilot',
+        4:
+          ({
+            PROMOTE_TO_SCALE: 'Promote pilot',
+            RUN_ANOTHER_PILOT: 'Prepare another pilot',
+            REVISE_DESIGN: 'Revise design',
+            REVISE_SITE: 'Revise site',
+            STOP: 'Stop campaign',
+          } as Record<string, string>)[option?.option_id || ''] || 'Approve pilot route',
         5: 'Finalize candidate panel',
       }[decision.gate]
     : '';

@@ -79,6 +79,70 @@ function install(page: import('@playwright/test').Page, username: 'bob' | 'root'
 }
 
 test.describe('professional mode under accounts', () => {
+  const incompleteTurn = 'Scientific work remains incomplete. The previous action has not produced the required verified result; inspect its status before continuing.';
+  for (const [routeId, label] of [['REVISE_DESIGN', 'Revise design'], ['STOP', 'Stop campaign']]) {
+    test(`Gate 4 ${routeId} labels the actual route and supersedes the old asynchronous wait`, async ({page}) => {
+      install(page, 'bob', true);
+      await page.route('**/workbench', route => {
+        const value = snapshot();
+        return route.fulfill({json: {...value,
+          project: {...value.project, phase: 'pilot'},
+          current_action: {...value.current_action, stage: 'scientist-gate4'},
+          conversation: [{id: 'old-wait', kind: 'summary', phase: 'pilot', text: incompleteTurn}],
+          decision: {...value.decision, gate: 4, type: 'pilot-promotion',
+            default_option_id: routeId, options: [
+              {option_id: 'PROMOTE_TO_SCALE', label: 'PROMOTE_TO_SCALE', eligible: false, actions: ['revise', 'reject']},
+              {option_id: routeId, label: routeId, eligible: true, actions: ['approve', 'revise', 'reject']},
+            ]},
+        }});
+      });
+      await page.goto('/?scope=user-b&project=proj-1');
+      await expect(page.getByRole('button', {name: label, exact: true})).toBeVisible();
+      await expect(page.getByRole('button', {name: 'Promote pilot', exact: true})).toHaveCount(0);
+      await expect(page.getByText(incompleteTurn, {exact: true})).toHaveCount(0);
+      await expect(page.getByRole('region', {name: 'Gate 4 decision', exact: true})).toBeVisible();
+    });
+  }
+  test('unresolved asynchronous work retains its incomplete message', async ({page}) => {
+    install(page, 'bob', true);
+    await page.route('**/workbench', route => {
+      const value = snapshot();
+      return route.fulfill({json: {...value, project: {...value.project, phase: 'pilot', status: 'running'},
+        decision: null, capabilities: {}, current_action: {...value.current_action, stage: 'pilot-running'},
+        conversation: [{id: 'current-wait', kind: 'summary', phase: 'pilot', text: incompleteTurn}],
+      }});
+    });
+    await page.goto('/?scope=user-b&project=proj-1');
+    await expect(page.getByText(incompleteTurn, {exact: true})).toBeVisible();
+  });
+  test('long Gate evidence stays scrollable and its real download remains reachable', async ({page}) => {
+    install(page, 'bob', true);
+    const evidence = {observations: Array.from({length: 100}, (_, i) => ({
+      candidate: `synthetic-candidate-${i}`, finding: 'Synthetic native evidence and retained uncertainty.'.repeat(3),
+    }))};
+    await page.route('**/workbench', route => {
+      const value = snapshot();
+      return route.fulfill({json: {...value, decision: {...value.decision, summary: evidence}}});
+    });
+    await page.route('**/projects/proj-1/review', route => route.fulfill({json: evidence}));
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({width, height: 900});
+      await page.goto('/?scope=user-b&project=proj-1');
+      await page.getByRole('button', {name: 'Edit', exact: true}).click();
+      const dialog = page.getByRole('dialog', {name: 'Review your decision', exact: true});
+      await dialog.getByText('Decision evidence and execution scope', {exact: true}).click();
+      const bounds = await dialog.boundingBox();
+      expect(bounds!.height).toBeLessThanOrEqual(860);
+      expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      const downloadPromise = page.waitForEvent('download', {timeout: 10000});
+      await dialog.getByRole('link', {name: 'Download complete review', exact: true}).click();
+      const download = await downloadPromise;
+      expect(await download.failure()).toBeNull();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+    }
+  });
   test('running Pilot exposes native progress instead of a completed empty result', async ({page}) => {
     install(page,'bob',true);
     let completed = 0;

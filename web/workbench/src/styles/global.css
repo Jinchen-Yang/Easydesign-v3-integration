@@ -308,6 +308,9 @@ textarea:focus-visible {
 }
 .modal {
   width: min(500px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 26px;
   background: #fff;
   border: 1px solid var(--line);

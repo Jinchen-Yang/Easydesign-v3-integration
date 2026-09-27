@@ -499,7 +499,7 @@ function SimulatedOrder({
       <h3>{order.receipt ? '模拟下单回执已生成' : '模拟实验下单'}</h3>
       <p>{order.disclaimer}</p>
       <div className="easy-live-order-candidates">
-        {order.candidates.map((item) => (
+        {order.candidates.map((item, index) => (
           <label key={item.id}>
             <input
               type="checkbox"
@@ -514,7 +514,7 @@ function SimulatedOrder({
               }
             />
             <span>
-              <strong>Top {item.selection_rank}</strong>
+              <strong>Top {index + 1}</strong>
               <small>
                 {item.selection_class === 'primary' ? '主候选' : '备选'} · {item.sequence_length} aa
                 · 完整序列已验证

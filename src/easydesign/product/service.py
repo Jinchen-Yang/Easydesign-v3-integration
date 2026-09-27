@@ -42,6 +42,62 @@ from .projection import (
     workbench,
 )
 
+UPLOAD_SUFFIXES = frozenset({".pdb", ".cif", ".mmcif"})
+UPLOAD_MAX_BYTES = 32 * 1024**2
+
+
+def upload_identity(filename: str, data: bytes) -> tuple[str, str]:
+    """Canonical upload identity shared by storage and quota accounting.
+
+    Identity is the content hash plus the normalized format suffix — the
+    filename is presentation only, so identical bytes under different names are
+    exactly one stored input and one charge. Validation happens before any
+    caller reserves quota or writes bytes.
+    """
+
+    suffix = Path(filename).suffix.lower()
+    if suffix not in UPLOAD_SUFFIXES or not 1 <= len(data) <= UPLOAD_MAX_BYTES:
+        raise ProductError("invalid_input", "Provide a PDB/mmCIF structure under 32 MiB")
+    key = digest({"sha256": hashlib.sha256(data).hexdigest(), "format": suffix})
+    return key, suffix
+
+
+def _open_session_store(root: Path) -> SessionStore:
+    """Open a project session store, tolerating the new-database WAL bootstrap.
+
+    Concurrent identical creates both reach ``SessionStore.__init__`` while the
+    first connection is still switching the fresh database into WAL mode; that
+    pragma can fail immediately with "database is locked". A bounded retry is
+    the idempotent path — the duplicate create must observe the winner's rows,
+    never surface an operational HTTP 500.
+    """
+
+    for attempt in range(6):
+        try:
+            return SessionStore(root)
+        except sqlite3.OperationalError as error:
+            text = str(error).lower()
+            if attempt == 5 or ("lock" not in text and "busy" not in text):
+                raise
+            time.sleep(0.2 * (attempt + 1))
+    raise AssertionError("unreachable retry loop")
+
+
+def _seed_thread(store: SessionStore, thread: str, mark: str, goal: str) -> None:
+    """Idempotent thread seeding for concurrent identical creates.
+
+    The thread identity derives from the request id, and ``journal.reserve``
+    already proved the payloads identical, so a UNIQUE race means the peer
+    connection inserted this very request's thread first.
+    """
+
+    try:
+        store.thread(thread, mark, goal)
+    except sqlite3.IntegrityError:
+        existing = store.db.execute("SELECT * FROM threads WHERE id=?", (thread,)).fetchone()
+        if existing is None or existing["fingerprint"] != mark or existing["goal"] != goal:
+            raise
+
 
 class ProductService:
     def __init__(
@@ -61,22 +117,16 @@ class ProductService:
         return RequestJournal(self.root / "requests.sqlite")
 
     def order_store(self) -> LabOrderStore:
-        return LabOrderStore(
-            self.root / "lab-orders.sqlite", self.root / "lab-order-receipts"
-        )
+        return LabOrderStore(self.root / "lab-orders.sqlite", self.root / "lab-order-receipts")
 
     @staticmethod
     def _current_handoff(session: Any) -> WetLabHandoffPackage:
         bridge = session.bridge
         if not isinstance(bridge, Phase34Runtime):
-            raise ProductError(
-                "gate5_required", "A current Gate 5 handoff is required", 409
-            )
+            raise ProductError("gate5_required", "A current Gate 5 handoff is required", 409)
         event = bridge.project_latest("phase34-wet-lab-handoff")
         if event is None:
-            raise ProductError(
-                "gate5_required", "A current Gate 5 handoff is required", 409
-            )
+            raise ProductError("gate5_required", "A current Gate 5 handoff is required", 409)
         return WetLabHandoffPackage.model_validate(bridge.document(event["ref"]))
 
     def lab_order(self, project: str) -> dict[str, Any]:
@@ -194,7 +244,7 @@ class ProductService:
         root = self.context.projects_root / value["id"]
         last_activity = 0
         if (root / "metadata/agent.sqlite").is_file():
-            store = SessionStore(root)
+            store = _open_session_store(root)
             try:
                 row = store.db.execute(
                     "SELECT COALESCE(MAX(seq),0) FROM events WHERE thread=?",
@@ -293,7 +343,7 @@ class ProductService:
 
     def _bootstrap_snapshot(self, registered: dict[str, Any]) -> dict[str, Any]:
         root = self.context.projects_root / registered["id"]
-        store = SessionStore(root)
+        store = _open_session_store(root)
         try:
             events = activity_rows(store, registered["thread"], limit=100, recent=True)
             project = self._bootstrap_project_view(registered)
@@ -488,7 +538,7 @@ class ProductService:
             registered is not None
             and not (self.context.projects_root / project / "PROJECT.yaml").is_file()
         ):
-            store = SessionStore(self.context.projects_root / project)
+            store = _open_session_store(self.context.projects_root / project)
             try:
                 items = activity_rows(store, registered["thread"], after, limit)
             finally:
@@ -499,10 +549,7 @@ class ProductService:
         return {"items": items, "cursor": items[-1]["id"] if items else after}
 
     def upload(self, filename: str, data: bytes) -> dict[str, Any]:
-        suffix = Path(filename).suffix.lower()
-        if suffix not in {".pdb", ".cif", ".mmcif"} or not 1 <= len(data) <= 32 * 1024**2:
-            raise ProductError("invalid_input", "Provide a PDB/mmCIF structure under 32 MiB")
-        key = digest({"sha256": hashlib.sha256(data).hexdigest(), "format": suffix})
+        key, suffix = upload_identity(filename, data)
         directory = self.root / "inputs" / key
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / ("structure" + suffix)
@@ -586,10 +633,10 @@ class ProductService:
             journal.close()
         root = self.context.projects_root / project
         root.mkdir(parents=True, exist_ok=True)
-        store = SessionStore(root)
+        store = _open_session_store(root)
         try:
             config = self.gateway.config()
-            store.thread(thread, fingerprint(config), request.goal)
+            _seed_thread(store, thread, fingerprint(config), request.goal)
             if registered_now:
                 store.event(thread, "product-title", {"title": request.title})
                 self._activity(
@@ -783,7 +830,9 @@ class ProductService:
                     except ProductError:
                         pass
                     try:
-                        failed_store = SessionStore(self.context.projects_root / row["project"])
+                        failed_store = _open_session_store(
+                            self.context.projects_root / row["project"]
+                        )
                         try:
                             self._activity(
                                 failed_store,
@@ -828,7 +877,7 @@ class ProductService:
         from easydesign.agent.models import create_models
 
         root = self.context.projects_root / project
-        store = SessionStore(root)
+        store = _open_session_store(root)
         # A real async provider client is loop-affine once its connection pool has
         # been used.  Goal bootstrap, native Runtime entry and post-job re-entry are
         # separate awaits in one product worker, so keep one Runner alive for all of
@@ -838,7 +887,7 @@ class ProductService:
             runner.get_loop()
             config = self.gateway.config()
             thread = self._thread(request.request_id)
-            store.thread(thread, fingerprint(config), request.goal)
+            _seed_thread(store, thread, fingerprint(config), request.goal)
             models = (self.gateway.model_factory or create_models)(config, downstream=True)
             ref: ArtifactRef | None = None
             if not (root / "PROJECT.yaml").is_file():

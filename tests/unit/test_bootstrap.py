@@ -88,9 +88,7 @@ def test_dry_run_does_not_create_environment_or_receipt(
             }
         ],
     }
-    (root / "config/bootstrap-indexes.json").write_text(
-        json.dumps(config), encoding="utf-8"
-    )
+    (root / "config/bootstrap-indexes.json").write_text(json.dumps(config), encoding="utf-8")
     monkeypatch.setattr(bootstrap, "ROOT", root)
     monkeypatch.setattr(bootstrap, "CONFIG_PATH", root / "config/bootstrap-indexes.json")
     monkeypatch.setattr(bootstrap, "LOCK_PATH", root / "uv.lock")
@@ -128,6 +126,14 @@ def test_named_source_failure_is_not_ranked_for_fallback() -> None:
     assert bootstrap.rank_probes([_probe("aliyun", available=False, throughput=None)]) == []
 
 
+def test_optional_agent_group_is_explicit_deduplicated_and_keeps_dev() -> None:
+    assert bootstrap._selected_extras(bootstrap.parser().parse_args([])) == ("dev",)
+    arguments = bootstrap.parser().parse_args(["--extra", "agent", "--extra", "agent"])
+    assert bootstrap._selected_extras(arguments) == ("dev", "agent")
+    with pytest.raises(SystemExit):
+        bootstrap.parser().parse_args(["--extra", "unlocked-group"])
+
+
 def test_git_identity_rejects_parent_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -154,9 +160,7 @@ def test_bootstrap_child_environment_is_fully_clone_local(
     environment = bootstrap._environment()
 
     assert environment["HOME"] == str(tmp_path / "runtime/home")
-    assert environment["UV_PYTHON_INSTALL_DIR"] == str(
-        tmp_path / "runtime/tools/uv-python"
-    )
+    assert environment["UV_PYTHON_INSTALL_DIR"] == str(tmp_path / "runtime/tools/uv-python")
     assert environment["XDG_CONFIG_HOME"] == str(tmp_path / "runtime/state/xdg-config")
     assert environment["PIP_CONFIG_FILE"] == os.devnull
     assert environment["UV_NO_CONFIG"] == "1"

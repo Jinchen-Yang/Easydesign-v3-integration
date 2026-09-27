@@ -22,6 +22,7 @@ StrategyBundle 0.3 还把 hypothesis、role、evidence、changed/held-constant f
 
 - 每个 strategy 一个稳定 task；每张 GPU 同时最多一个重型 task。
 - 启动前检查 GPU 占用和本地租约；不终止其他进程。
+- 多用户执行还需满足当前执行身份的候选数额度与 GPU 分配；超额明确拒绝，不自动缩减冻结预算。
 - 重试只补 deficit，不覆盖旧 attempt，不重跑 checksum 正确的候选。
 - `Ctrl-C` 只脱离观察；`job drain` 只在安全检查点停止新调度。
 - 进度由原子快照和 append-only event 提供，CLI 不解析日志猜状态。

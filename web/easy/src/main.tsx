@@ -6,6 +6,8 @@ import { EasyApp } from './easy/EasyApp';
 import { EasyDemoAdapter } from './easy/EasyDemoAdapter';
 import { EasyLiveApp } from './easy/EasyLiveApp';
 import { EasyProductAdapter } from './easy/EasyProductAdapter';
+import {accountMode} from '../../shared/account-client';
+import {AccountWorkspace} from './accounts/AccountWorkspace';
 import './styles/global.css';
 import './easy/easy.css';
 import './easy/product-live.css';
@@ -20,6 +22,8 @@ const demo = new URLSearchParams(location.search).get('mode') === 'demo';
 createRoot(document.getElementById('root')!).render(
   demo ? (
     <EasyApp adapter={new EasyDemoAdapter(storage)} />
+  ) : accountMode() ? (
+    <AccountWorkspace />
   ) : (
     <EasyLiveApp adapter={new EasyProductAdapter()} />
   ),

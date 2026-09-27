@@ -1,0 +1,49 @@
+body:has(.account-shell), body:has(.account-login), body:has(.account-loading) { min-width: 320px; background: #f5f7fb; color: #18263a; }
+.account-shell { max-width: 1240px; margin: 0 auto; padding: 24px; }
+.account-header, .account-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.account-header { padding: 20px 0; border-bottom: 1px solid #dce3ed; }
+.account-header > button { margin-left: auto; }
+.account-tabs { display: flex; gap: 10px; padding: 20px 0; flex-wrap: wrap; }
+.account-tabs button[aria-current] { color: #fff; background: #245edb; border-color: #245edb; }
+.account-panel { background: #fff; border: 1px solid #dce3ed; border-radius: 14px; padding: 24px; margin-bottom: 22px; }
+.account-panel h2, .account-panel h3 { margin-top: 0; }
+.account-panel p, .account-scope p { color: #586a82; line-height: 1.7; }
+.account-login { width: min(460px, calc(100% - 32px)); margin: 8vh auto; padding: 30px; background: #fff; border: 1px solid #dce3ed; border-radius: 18px; box-sizing: border-box; }
+.account-loading { padding: 60px; text-align: center; }
+.account-panel form, .account-login form { display: grid; gap: 15px; max-width: 560px; }
+.account-panel label, .account-login label { display: grid; gap: 7px; font-size: 15px; }
+.account-panel input, .account-panel select, .account-panel textarea, .account-login input, .account-workspace-bar select { border: 1px solid #bdc9db; border-radius: 8px; background: #fff; padding: 10px 12px; min-width: 0; color: #18263a; font: inherit; }
+.account-panel textarea { resize: vertical; }
+.account-draft-form { border: 1px dashed #b7c6dd; border-radius: 10px; padding: 16px; margin: 12px 0; background: #f8fafd; }
+.account-shell button, .account-login button, .account-primary { border: 1px solid #bdc9db; background: #fff; color: #23466d; border-radius: 8px; padding: 9px 13px; font: inherit; cursor: pointer; text-decoration: none; }
+.account-shell .account-primary, .account-login .account-primary { background: #245edb; border-color: #245edb; color: #fff; }
+.account-shell button:disabled, .account-login button:disabled { opacity: .55; cursor: not-allowed; }
+.account-shell button:focus-visible, .account-login button:focus-visible, .account-workspace-bar a:focus-visible { outline: 3px solid #83aafa; outline-offset: 2px; }
+.account-link { margin-top: 18px; }
+.account-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap: 18px; }
+.account-scope { border: 1px solid #dce3ed; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.account-error { color: #9f273b; background: #fff1f3; padding: 12px; border-radius: 8px; overflow-wrap: anywhere; }
+.account-field-error { color: #9f273b; font-size: 13px; }
+.account-success { color: #176b4a; background: #edf9f3; padding: 12px; border-radius: 8px; }
+.account-notice { padding: 12px; background: #fff6df; border-radius: 8px; }
+.account-table-scroll { overflow: auto; }
+.account-panel table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.account-panel th, .account-panel td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #e5eaf2; }
+.account-panel td small { display: block; color: #687b94; margin-top: 4px; }
+.account-actions { min-width: 220px; }
+.account-actions button, .account-actions a { display: inline-block; margin: 3px; }
+.account-panel code { overflow-wrap: anywhere; font-size: 12px; }
+.account-row { margin-bottom: 12px; }
+.account-workspace-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 12px 24px; background: #e9f0fc; color: #23466d; font-size: 13px; }
+.account-workspace-bar label { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.account-workspace-bar a { color: #245edb; }
+.account-permission-note { margin: 12px 0; padding: 12px; background: #eef3fb; color: #465e7d; border-radius: 8px; }
+.account-compute-off { padding: 3px 10px; border-radius: 999px; background: #fff6df; color: #7a5b12; font-weight: 600; }
+.account-compute-note { margin: 0 0 12px; }
+.account-readonly-order { border: 0; padding: 0; margin: 0; min-width: 0; }
+@media (max-width: 700px) {
+  .account-shell { padding: 12px; }
+  .account-panel { padding: 16px; }
+  .account-workspace-bar { padding: 12px; }
+  .account-workspace-bar label { margin-left: 0; }
+}

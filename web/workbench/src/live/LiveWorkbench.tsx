@@ -33,6 +33,7 @@ import type {
   WorkflowTask,
 } from '../adapters/WorkbenchAdapter';
 import type { LiveWorkbenchPort } from '../adapters/LiveWorkbenchAdapter';
+import {scopeDecisionLinks, surfaceRights} from '../../../shared/account-client';
 import type { GateInput, LiveState, ProductSnapshot } from './contracts';
 import { LiveContext } from './LiveContext';
 import { GateReview } from './GateReview';
@@ -132,7 +133,12 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
   result.splice(firstChat < 0 ? result.length : firstChat, 0, ...cards);
   return result;
 }
-export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
+export function LiveWorkbench({ adapter, access, computeAvailable = true }: {
+  adapter: LiveWorkbenchPort;
+  access?: {id?: string; can_edit: boolean; can_execute: boolean; role: string};
+  computeAvailable?: boolean;
+}) {
+  const {canExecute, canEdit, canDiscuss} = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState>();
   const [page, setPage] = useWorkbenchPage();
   const [projectsOpen, setProjectsOpen] = useState(
@@ -162,13 +168,17 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
   };
   useEffect(() => {
     const unsubscribe = adapter.subscribe((e) => setState(e.snapshot));
-    const access = new URLSearchParams(location.hash.slice(1)).get('access');
+    // Legacy single-user workspace tokens cannot authorize an account session;
+    // drop the parameter silently (never printed, never sent) when scoped. The
+    // unscoped token flow only remains for the non-account single-user surface.
+    const legacyToken = new URLSearchParams(location.hash.slice(1)).get('access');
+    const accountScoped = access !== undefined;
+    if (legacyToken) history.replaceState(null, '', location.pathname + location.search + '#projects');
     const project = new URLSearchParams(location.search).get('project');
-    if (access) history.replaceState(null, '', location.pathname + location.search + '#projects');
     void (async () => {
-      if (access) await adapter.authenticate(access);
+      if (legacyToken && !accountScoped) await adapter.authenticate(legacyToken);
       if (project) {
-        if (!location.hash || access) setPage('workspace');
+        if (!location.hash || legacyToken) setPage('workspace');
         // Open the requested workspace without waiting for every project card.
         await Promise.all([adapter.selectProject(project), adapter.load()]);
       } else setState(await adapter.load());
@@ -178,8 +188,14 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
       adapter.dispose();
     };
   }, [adapter]);
-  const v = state?.snapshot,
-    phase = phaseOf(v?.project.phase || 'goal');
+  // In account mode the snapshot is scope-projected; link fields the server does
+  // not rewrite (decision.details_url) must never fall back to unscoped calls.
+  const v = state?.snapshot
+    ? access?.id
+      ? scopeDecisionLinks(state.snapshot, access.id)
+      : state.snapshot
+    : undefined;
+  const phase = phaseOf(v?.project.phase || 'goal');
   useEffect(() => {
     setViewedPhase(phase);
     setLabOrderOpen(false);
@@ -227,6 +243,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
     });
   };
   const create = (goal: string) => {
+    if (!canExecute) {setError('当前身份不能启动计算，请由项目所有者或团队管理员执行。'); return;}
     run(async () => {
       await adapter.createProject(goal.slice(0, 80), goal, file);
       setNewDesign(false);
@@ -323,6 +340,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
       }[decision.gate]
     : '';
   const decide = async (input: GateInput) => {
+    if (!canExecute) throw new Error('当前身份不能批准或修改科学 Gate。');
     await adapter.decide(input);
     setModal(null);
   };
@@ -330,6 +348,11 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
     <div
       className={`app live-workbench ${inWorkbench ? 'in-workbench' : ''} ${projectsOpen ? 'projects-expanded' : ''}`}
     >
+      {access && !computeAvailable && (
+        <p className="account-permission-note account-compute-note">
+          当前服务未连接科学执行器（账号管理模式）：可以浏览与协作编辑，计算启动、审批与项目对话暂不可用。
+        </p>
+      )}
       <ProjectSidebar
         mode="live"
         expanded={projectsOpen}
@@ -340,6 +363,18 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
         onHelp={() => setModal('help')}
       />
       {state?.connection === 'authentication-required' ? (
+        access ? (
+          <main className="landing">
+            <div className="landing-center">
+              <Brand />
+              <h1>会话需要重新登录</h1>
+              <p>当前账号会话已过期或被撤销。工作区令牌不能替代账号登录。</p>
+              <a className="primary-button" href="/account/">
+                返回账号与团队 <ArrowRight size={15} />
+              </a>
+            </div>
+          </main>
+        ) : (
         <main className="landing">
           <div className="landing-center">
             <Brand />
@@ -369,6 +404,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
             </form>
           </div>
         </main>
+        )
       ) : !state || state.connection === 'loading' ? (
         <div className="app-loading">
           <Brand />
@@ -379,6 +415,14 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
           <ProjectsPage
             mode="live"
             snapshot={{ projects }}
+            canCreate={canExecute}
+            createDisabledReason={access
+              ? access.role === 'observer'
+                ? '管理员只读访问：不能创建项目、批准 Gate 或启动计算。'
+                : !computeAvailable
+                  ? '服务未连接科学执行器（账号管理模式）：暂不能创建项目；团队草稿协作仍可用。'
+                  : '团队成员不能启动计算；请协作编辑团队草稿，由团队管理员创建项目。'
+              : undefined}
             onNew={() => {
               setNewDesign(true);
               setDraftRevision((n) => n + 1);
@@ -386,11 +430,13 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
               closeProjects();
             }}
             onOpen={open}
-            onRename={(project) => {
-              setRenamingProject(project.id);
-              setProjectName(project.title);
-              setModal('rename');
-            }}
+            onRename={canEdit
+              ? (project) => {
+                  setRenamingProject(project.id);
+                  setProjectName(project.title);
+                  setModal('rename');
+                }
+              : undefined}
           />
           {state && state.projects.total > 20 && (
             <div className="project-pagination">
@@ -528,7 +574,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
             {labOrderOpen && v.lab_order ? (
               <LiveLabOrderPage
                 order={v.lab_order}
-                busy={busy}
+                busy={busy || !canExecute}
                 error={error}
                 onApply={(action, draft, acknowledgement) =>
                   adapter.applyLabOrder(action, draft, acknowledgement)
@@ -549,7 +595,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                   onFocus={focus}
                   onSkip={() => {}}
                   onRetry={(id) => run(() => adapter.retryRequest(id))}
-                  disabled={state?.connection !== 'connected'}
+                  disabled={state?.connection !== 'connected' || !canDiscuss}
                   sending={answering}
                   error={error}
                   onSend={async (text) => {
@@ -625,7 +671,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                       )}
                       <button
                         className="secondary-button"
-                        disabled={busy}
+                        disabled={busy || !canExecute}
                         onClick={() => setModal('edit')}
                       >
                         <PencilLine size={14} />
@@ -639,6 +685,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                         className="primary-button"
                         disabled={
                           busy ||
+                          !canExecute ||
                           !v.capabilities.decide ||
                           !option?.eligible ||
                           !(
@@ -661,7 +708,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                   ) : failedCreate ? (
                     <button
                       className="primary-button"
-                      disabled={busy}
+                      disabled={busy || !canExecute}
                       onClick={() => run(() => adapter.retryRequest(failedCreate.id))}
                     >
                       Retry Target Intelligence <ArrowRight size={15} />
@@ -669,7 +716,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
                   ) : v.capabilities.resume ? (
                     <button
                       className="primary-button"
-                      disabled={busy}
+                      disabled={busy || !canExecute}
                       onClick={() => run(() => adapter.resume())}
                     >
                       Continue research <ArrowRight size={15} />
@@ -753,7 +800,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
           <GateReview
             decision={decision}
             selectedOptionId={option?.option_id}
-            busy={busy || !v?.capabilities.decide}
+            busy={busy || !v?.capabilities.decide || !canExecute}
             onSelect={setSite}
             onSubmit={(input) => run(() => decide(input))}
           />
@@ -764,6 +811,7 @@ export function LiveWorkbench({ adapter }: { adapter: LiveWorkbenchPort }) {
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (!canEdit) {setError('当前是只读访问。'); return;}
               run(async () => {
                 await adapter.renameProject(renamingProject, projectName);
                 setModal(null);

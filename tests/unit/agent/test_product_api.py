@@ -519,6 +519,7 @@ def http_api(service, *, web_root=None, easy_web_root=None, rabbit_chat=None):
             base_url=f"http://127.0.0.1:{server.server_port}",
             headers={"Authorization": "Bearer test-product-access"},
             timeout=60,
+            trust_env=False,
         ) as client:
             yield client
     finally:
@@ -548,10 +549,7 @@ def test_same_origin_server_keeps_pro_and_easy_static_roots_isolated(bridge, tmp
         assert client.get("/easy/").text == "easy-index"
         assert client.get("/easy/assets/app.js").text == "easy-asset"
         assert client.get("/easy/mascot/rabbit/rabbit-mascot.png").content == b"rabbit-png"
-        assert (
-            client.get("/easy/mascot/rabbit/originals/01-welcome.jpg").content
-            == b"rabbit-album"
-        )
+        assert client.get("/easy/mascot/rabbit/originals/01-welcome.jpg").content == b"rabbit-album"
         assert client.get("/easy/%2e%2e/assets/app.js").status_code == 403
         assert client.get("/easy/mascot/%2e%2e/assets/app.js").status_code == 403
         assert client.get("/easy/unknown.js").status_code == 404
@@ -1376,8 +1374,7 @@ def test_product_journal_adds_surface_column_to_existing_database(tmp_path):
     journal = RequestJournal(path)
     try:
         columns = {
-            str(row["name"])
-            for row in journal.db.execute("PRAGMA table_info(product_projects)")
+            str(row["name"]) for row in journal.db.execute("PRAGMA table_info(product_projects)")
         }
         assert "surface" in columns
     finally:

@@ -8,5 +8,8 @@ export default defineConfig({
   // are deliberately not loaded into the product build.
   plugins: [react()],
   test: { include: ['tests/**/*.test.ts'] },
-  build: { chunkSizeWarningLimit: 2200 },
+  build: {
+    chunkSizeWarningLimit: 2200,
+    rollupOptions: {input: {easy: 'index.html', account: 'account/index.html'}},
+  },
 });

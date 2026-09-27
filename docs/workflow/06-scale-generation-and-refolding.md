@@ -22,6 +22,7 @@ production run。
 - 计划、分片、候选索引和 coverage 必须消费同一人工子集；
 - 启动前验证 GPU、backend、磁盘峰值和 25% 文件系统余量；
 - 未确认时不得创建 run、job、attempt 或 shard。
+- 多用户执行须满足当前执行身份的候选数额度和 GPU 分配；资源限制不能自动改小已批准的 exact count。
 - plan 必须冻结 total count、逐策略 allocation、shard/resource totals、backend/profile、
   source pilot manifest 与 mapping/foundation identity；任一字段改变都会产生新 plan SHA，
   旧 DecisionRecord 不得复用。

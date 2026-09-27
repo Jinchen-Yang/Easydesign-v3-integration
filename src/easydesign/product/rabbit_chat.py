@@ -94,8 +94,15 @@ def public_event(value: Any) -> dict[str, Any] | None:
 class SubprocessChatProvider:
     """Run the audited stdlib bridge locally on the credential host."""
 
-    def __init__(self, script: Path, env_file: Path) -> None:
+    def __init__(
+        self,
+        script: Path,
+        env_file: Path,
+        *,
+        environment: Callable[[], dict[str, str]] | None = None,
+    ) -> None:
         self.script, self.env_file = script, env_file
+        self.environment = environment
 
     def __call__(self, request: dict[str, Any]) -> Iterator[dict[str, Any]]:
         process = subprocess.Popen(
@@ -103,6 +110,7 @@ class SubprocessChatProvider:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            env=None if self.environment is None else self.environment(),
         )
         selector = selectors.DefaultSelector()
         try:

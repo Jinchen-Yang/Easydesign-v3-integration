@@ -27,6 +27,7 @@ from easydesign.core import (
     ConfigurationError,
 )
 from easydesign.core.artifacts import ID_PATTERN
+from easydesign.execution_scope import read_device_allocations, require_active_allocation
 from easydesign.workspace_context import WorkspaceContext
 
 
@@ -70,17 +71,11 @@ def local_target_with_runtime_limit(
         try:
             runtime_limit = int(raw_limit)
         except ValueError as error:
-            raise ConfigurationError(
-                "EASYDESIGN_LOCAL_MAXIMUM_GPUS 必须是正整数"
-            ) from error
+            raise ConfigurationError("EASYDESIGN_LOCAL_MAXIMUM_GPUS 必须是正整数") from error
         if runtime_limit < 1:
-            raise ConfigurationError(
-                "EASYDESIGN_LOCAL_MAXIMUM_GPUS 必须是正整数"
-            )
+            raise ConfigurationError("EASYDESIGN_LOCAL_MAXIMUM_GPUS 必须是正整数")
     configured_limit = (
-        len(allowed_devices)
-        if allowed_devices is not None
-        else configured_maximum_devices
+        len(allowed_devices) if allowed_devices is not None else configured_maximum_devices
     )
     maximum = runtime_limit if runtime_limit is not None else configured_limit
     if configured_limit is not None and runtime_limit is not None:
@@ -170,9 +165,7 @@ class GpuLeaseStore:
         if context is not None and lease_root is not None:
             raise ValueError("context 与 lease_root 不能同时提供")
         self.context = (
-            WorkspaceContext.discover()
-            if context is None and lease_root is None
-            else context
+            WorkspaceContext.discover() if context is None and lease_root is None else context
         )
         self.host = socket.gethostname() if host is None else host
         if stale_after_seconds <= 0:
@@ -180,14 +173,51 @@ class GpuLeaseStore:
         self.stale_after = timedelta(seconds=stale_after_seconds)
         if lease_root is None:
             assert self.context is not None
-            self.root = (
-                self.context.runtime_root / "state" / "gpu-leases" / self.host
-            )
+            self.root = self.context.gpu_lease_root / self.host
             self.context.assert_write_path(self.root)
         else:
             if not lease_root.is_absolute():
                 raise ValueError("lease_root 必须是绝对路径")
             self.root = lease_root.resolve(strict=False) / self.host
+
+    def _scope_owner_prefix(self) -> str | None:
+        if self.context is None or self.context.execution_scope is None:
+            return None
+        import hashlib
+
+        scope = self.context.execution_scope
+        namespace = hashlib.sha256(scope.scope_id.encode()).hexdigest()[:12]
+        return f"scope-{namespace}-{scope.grant_id or 'unallocated'}-"
+
+    def _require_owned_lease(self, lease: GpuLeaseRevision) -> None:
+        prefix = self._scope_owner_prefix()
+        if prefix is not None:
+            assert self.context is not None and self.context.execution_scope is not None
+            if (
+                not lease.owner_id.startswith(prefix)
+                or lease.device not in self.context.execution_scope.devices
+            ):
+                raise BackendContractError("拒绝操作其他执行身份的 GPU lease")
+
+    def _reserved_by_other_grants(self) -> set[int]:
+        if self.context is None:
+            return set()
+        scope = self.context.execution_scope
+        own_grant = None if scope is None else scope.grant_id
+        root = self.context.shared_runtime_root / "state/product-device-allocations" / self.host
+        return {
+            device
+            for record in read_device_allocations(root)
+            if record.status == "reserved" and record.grant_id != own_grant
+            for device in record.devices
+        }
+
+    def _require_current_allocation(self) -> None:
+        if self.context is not None and self.context.execution_scope is not None:
+            require_active_allocation(
+                self.context.execution_scope,
+                self.context.shared_runtime_root / "state/product-device-allocations" / self.host,
+            )
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
@@ -210,9 +240,7 @@ class GpuLeaseStore:
         paths = self._revision_paths(device)
         if not paths:
             return None
-        return GpuLeaseRevision.model_validate_json(
-            paths[-1].read_text(encoding="utf-8")
-        )
+        return GpuLeaseRevision.model_validate_json(paths[-1].read_text(encoding="utf-8"))
 
     @staticmethod
     def _pid_exists(pid: int) -> bool:
@@ -257,9 +285,7 @@ class GpuLeaseStore:
             acquired_at=acquired_at,
             heartbeat_at=now,
             updated_at=now,
-            previous_revision_sha256=(
-                None if previous_path is None else _sha256(previous_path)
-            ),
+            previous_revision_sha256=(None if previous_path is None else _sha256(previous_path)),
         )
         path = self._device_root(device) / f"revision-{revision_number:06d}.json"
         _write_new_json(path, model)
@@ -275,9 +301,7 @@ class GpuLeaseStore:
         if not paths:
             return None
         latest_path = paths[-1]
-        latest = GpuLeaseRevision.model_validate_json(
-            latest_path.read_text(encoding="utf-8")
-        )
+        latest = GpuLeaseRevision.model_validate_json(latest_path.read_text(encoding="utf-8"))
         if latest.status != "active":
             return latest
         if now - latest.heartbeat_at <= self.stale_after:
@@ -310,14 +334,21 @@ class GpuLeaseStore:
         now: datetime | None = None,
     ) -> GpuInventory:
         observed_at = datetime.now(UTC) if now is None else now
+        self._require_current_allocation()
         allowed = None if target.allowed_devices is None else set(target.allowed_devices)
+        if self.context is not None and self.context.execution_scope is not None:
+            scoped_devices = set(self.context.execution_scope.devices)
+            allowed = scoped_devices if allowed is None else allowed & scoped_devices
         rows: list[GpuEligibility] = []
         selected: list[int] = []
         with self._locked():
+            reserved = self._reserved_by_other_grants()
             for snapshot in sorted(snapshots, key=lambda item: item.device):
                 reasons: list[str] = []
                 if allowed is not None and snapshot.device not in allowed:
                     reasons.append("not-allowed")
+                if snapshot.device in reserved:
+                    reasons.append("product-resource-reservation")
                 if snapshot.compute_process_pids:
                     reasons.append("external-compute-process")
                 if snapshot.memory_used_mib > max_memory_used_mib:
@@ -329,8 +360,7 @@ class GpuLeaseStore:
                     reasons.append("easydesign-lease")
                 eligible = not reasons
                 if eligible and (
-                    target.maximum_devices is None
-                    or len(selected) < target.maximum_devices
+                    target.maximum_devices is None or len(selected) < target.maximum_devices
                 ):
                     selected.append(snapshot.device)
                 rows.append(
@@ -367,10 +397,22 @@ class GpuLeaseStore:
     ) -> tuple[GpuLeaseRevision, ...]:
         if not devices or len(devices) != len(set(devices)):
             raise ConfigurationError("GPU lease 需要非空且不重复的 device")
+        self._require_current_allocation()
+        if self.context is not None and self.context.execution_scope is not None:
+            scope = self.context.execution_scope
+            if not set(devices).issubset(scope.devices) or len(devices) > scope.max_gpu_devices:
+                raise ConfigurationError("GPU device 超出当前执行身份获分配的资源")
         timestamp = datetime.now(UTC) if now is None else now
         process_id = os.getpid() if pid is None else pid
+        prefix = self._scope_owner_prefix()
+        if prefix is not None:
+            import hashlib
+
+            owner_id = prefix + hashlib.sha256(owner_id.encode()).hexdigest()[:16]
         leases: list[GpuLeaseRevision] = []
         with self._locked():
+            if set(devices) & self._reserved_by_other_grants():
+                raise BackendContractError("GPU 已由其他产品请求预留")
             for device in devices:
                 current = self._expire_if_abandoned(device, now=timestamp)
                 if current is not None and current.status == "active":
@@ -425,6 +467,7 @@ class GpuLeaseStore:
                 )
                 if latest.lease_id != lease.lease_id or latest.status != "active":
                     raise BackendContractError("GPU lease 已不是当前 active revision")
+                self._require_owned_lease(latest)
                 updated.append(
                     self._append(
                         previous=latest,
@@ -463,6 +506,7 @@ class GpuLeaseStore:
                 )
                 if latest.lease_id != lease.lease_id:
                     raise BackendContractError("拒绝释放其他任务的 GPU lease")
+                self._require_owned_lease(latest)
                 if latest.status != "active":
                     released.append(latest)
                     continue
@@ -495,10 +539,10 @@ def gpu_lease_store_for_run(run_root: Path) -> GpuLeaseStore:
     try:
         return GpuLeaseStore(context=WorkspaceContext.discover(root))
     except ConfigurationError:
+        if WorkspaceContext.scope_active():
+            raise
         base = root.parents[2] if len(root.parents) >= 3 else root.parent
-        return GpuLeaseStore(
-            lease_root=(base / "runtime" / "state" / "gpu-leases").resolve()
-        )
+        return GpuLeaseStore(lease_root=(base / "runtime" / "state" / "gpu-leases").resolve())
 
 
 def wait_for_eligible_gpus(
@@ -544,7 +588,5 @@ def wait_for_eligible_gpus(
                 f"gpu={item.snapshot.device},reasons={','.join(item.reasons) or 'eligible'}"
                 for item in inventory.devices
             )
-            raise BackendContractError(
-                f"GPU 在有界等待后仍不可用: {details or 'no devices'}"
-            )
+            raise BackendContractError(f"GPU 在有界等待后仍不可用: {details or 'no devices'}")
         time.sleep(poll_seconds)

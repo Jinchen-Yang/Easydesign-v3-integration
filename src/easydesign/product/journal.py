@@ -12,37 +12,72 @@ from .artifacts import digest
 from .contracts import ProductError
 
 
+def _enable_wal(db: sqlite3.Connection) -> None:
+    """Switch the journal into WAL mode, tolerating the new-file bootstrap race.
+
+    Concurrent first opens all try to flip the fresh database's journal mode
+    at once, and SQLite reports that exclusive conversion as "database is
+    locked" WITHOUT invoking the busy handler (journal-mode changes never
+    do). A bounded retry converges: one peer commits the conversion — WAL is
+    a persistent file flag — and every later attempt observes it and becomes
+    a no-op. Only lock/busy errors are retried; everything else re-raises.
+    """
+    for attempt in range(6):
+        if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal":
+            return
+        try:
+            db.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as error:
+            text = str(error).lower()
+            if attempt == 5 or ("lock" not in text and "busy" not in text):
+                raise
+            time.sleep(0.2 * (attempt + 1))
+    raise AssertionError("unreachable WAL bootstrap retry loop")
+
+
 class RequestJournal:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path, timeout=15)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.execute(
-            "CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, project TEXT NOT NULL, "
-            "hash TEXT NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL, "
-            "result TEXT, created REAL NOT NULL, updated REAL NOT NULL)"
-        )
-        self.db.execute(
-            "CREATE TABLE IF NOT EXISTS project_labels "
-            "(project TEXT PRIMARY KEY, title TEXT NOT NULL)"
-        )
-        self.db.execute(
-            "CREATE TABLE IF NOT EXISTS product_projects ("
-            "id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, title TEXT NOT NULL, "
-            "goal TEXT NOT NULL, thread TEXT NOT NULL, input_id TEXT, state TEXT NOT NULL, "
-            "detail TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL, surface TEXT)"
-        )
-        columns = {
-            str(row["name"])
-            for row in self.db.execute("PRAGMA table_info(product_projects)")
-        }
-        if "surface" not in columns:
-            self.db.execute("ALTER TABLE product_projects ADD COLUMN surface TEXT")
-        if "projection" not in columns:
-            self.db.execute("ALTER TABLE product_projects ADD COLUMN projection TEXT")
-        self.db.commit()
+        try:
+            self.db.row_factory = sqlite3.Row
+            _enable_wal(self.db)
+            self.db.execute("PRAGMA synchronous=FULL")
+            # CREATE + the check-then-ALTER upgrade share one write transaction:
+            # BEGIN IMMEDIATE serializes concurrent opens across threads and
+            # processes (the busy timeout waits for a peer migration to commit,
+            # so the re-read table_info observes the peer's columns instead of
+            # colliding with a duplicate ALTER). executescript would COMMIT any
+            # open transaction before running and break that serialization.
+            self.db.execute("BEGIN IMMEDIATE")
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS requests ("
+                "id TEXT PRIMARY KEY, project TEXT NOT NULL, hash TEXT NOT NULL, "
+                "payload TEXT NOT NULL, state TEXT NOT NULL, result TEXT, "
+                "created REAL NOT NULL, updated REAL NOT NULL)"
+            )
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS project_labels "
+                "(project TEXT PRIMARY KEY, title TEXT NOT NULL)"
+            )
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS product_projects ("
+                "id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, title TEXT NOT NULL, "
+                "goal TEXT NOT NULL, thread TEXT NOT NULL, input_id TEXT, state TEXT NOT NULL, "
+                "detail TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL, surface TEXT)"
+            )
+            columns = {
+                str(row["name"]) for row in self.db.execute("PRAGMA table_info(product_projects)")
+            }
+            if "surface" not in columns:
+                self.db.execute("ALTER TABLE product_projects ADD COLUMN surface TEXT")
+            if "projection" not in columns:
+                self.db.execute("ALTER TABLE product_projects ADD COLUMN projection TEXT")
+            self.db.commit()
+        except BaseException:
+            self.db.close()
+            raise
 
     def close(self) -> None:
         self.db.close()
@@ -121,9 +156,7 @@ class RequestJournal:
             return None
         value = dict(row)
         value["detail"] = json.loads(value["detail"])
-        value["projection"] = (
-            json.loads(value["projection"]) if value.get("projection") else None
-        )
+        value["projection"] = json.loads(value["projection"]) if value.get("projection") else None
         return value
 
     def register_project(
@@ -236,9 +269,13 @@ class RequestJournal:
                 "COALESCE(projection,'')<>?",
                 (encoded, project, encoded),
             ).rowcount
-            if changed == 0 and self.db.execute(
-                "SELECT 1 FROM product_projects WHERE id=?", (project,)
-            ).fetchone() is None:
+            if (
+                changed == 0
+                and self.db.execute(
+                    "SELECT 1 FROM product_projects WHERE id=?", (project,)
+                ).fetchone()
+                is None
+            ):
                 raise ProductError("not_found", "Unknown product project", 404)
 
     def for_project(self, project: str, limit: int = 10) -> list[dict[str, Any]]:

@@ -74,12 +74,7 @@ def main() -> int:
     try:
         declared_roots = os.environ.get(LOCAL_WRITE_ROOTS_ENV, "").split(os.pathsep)
         writable_roots = tuple(Path(value) for value in declared_roots if value)
-        expected_roots = (
-            context.runtime_root,
-            context.projects_root,
-            context.runs_root,
-            context.archives_root,
-        )
+        expected_roots = context.write_roots()
         if writable_roots != expected_roots:
             raise OSError("local worker write-root declaration does not match workspace")
         apply_local_write_sandbox(writable_roots)

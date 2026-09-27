@@ -73,9 +73,7 @@ class _LinkParser(HTMLParser):
         super().__init__()
         self.links: list[str] = []
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "a":
             return
         href = dict(attrs).get("href")
@@ -103,9 +101,7 @@ def _safe_index_url(value: str) -> str:
         raise BootstrapError("package index URL 必须有主机且不能包含凭据")
     if parsed.query or parsed.fragment:
         raise BootstrapError("package index URL 不能包含 query 或 fragment")
-    return urllib.parse.urlunsplit(
-        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "")
-    )
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
 def _load_config() -> tuple[dict[str, Any], tuple[IndexSource, ...]]:
@@ -229,9 +225,7 @@ def _artifact_url(index_url: str, package: str, body: bytes) -> str:
     links = [urllib.parse.urljoin(f"{index_url}/{package}/", link) for link in parser.links]
     wheels = [link for link in links if ".whl" in urllib.parse.urlsplit(link).path]
     preferred = [
-        link
-        for link in wheels
-        if "manylinux" in link and "x86_64" in link and "cp311" in link
+        link for link in wheels if "manylinux" in link and "x86_64" in link and "cp311" in link
     ]
     candidates = preferred or wheels
     if not candidates:
@@ -253,9 +247,9 @@ def probe_source(
         latency = max(time.monotonic() - started, 0.000001)
         artifact_url = _artifact_url(source.index_url, package, body)
         artifact_started = time.monotonic()
-        sample = _fetch_bytes(
-            artifact_url, timeout=timeout, byte_range=(0, probe_bytes - 1)
-        )[:probe_bytes]
+        sample = _fetch_bytes(artifact_url, timeout=timeout, byte_range=(0, probe_bytes - 1))[
+            :probe_bytes
+        ]
         artifact_duration = max(time.monotonic() - artifact_started, 0.000001)
         if not sample:
             raise BootstrapError("representative artifact 返回空响应")
@@ -309,9 +303,7 @@ def _run(
         text=True,
     )
     if check and completed.returncode != 0:
-        raise BootstrapError(
-            f"命令失败 (rc={completed.returncode}): {' '.join(command)}"
-        )
+        raise BootstrapError(f"命令失败 (rc={completed.returncode}): {' '.join(command)}")
     return completed
 
 
@@ -326,8 +318,7 @@ def _capture(command: Sequence[str], *, environment: dict[str, str]) -> str:
     )
     if completed.returncode != 0:
         raise BootstrapError(
-            f"命令失败 (rc={completed.returncode}): {' '.join(command)}: "
-            f"{completed.stderr.strip()}"
+            f"命令失败 (rc={completed.returncode}): {' '.join(command)}: {completed.stderr.strip()}"
         )
     return completed.stdout.strip()
 
@@ -415,9 +406,7 @@ def _quarantine_path(path: Path, *, operation: str, reason: str) -> Path:
         raise BootstrapError(f"待隔离路径不存在: {path}")
     QUARANTINE_ROOT.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")  # noqa: UP017
-    destination = (
-        QUARANTINE_ROOT / f"{stamp}-{operation}-{uuid.uuid4().hex[:12]}"
-    )
+    destination = QUARANTINE_ROOT / f"{stamp}-{operation}-{uuid.uuid4().hex[:12]}"
     destination.mkdir(parents=False, exist_ok=False)
     moved = destination / path.name
     shutil.move(str(path), str(moved))
@@ -469,9 +458,7 @@ def _create_staged_venv(
         environment=environment,
     )
     if version != expected:
-        raise BootstrapError(
-            f"staging .venv Python={version}，但 .python-version={expected}"
-        )
+        raise BootstrapError(f"staging .venv Python={version}，但 .python-version={expected}")
 
 
 @contextmanager
@@ -570,7 +557,21 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--timeout", type=float, default=10.0, help="Probe timeout in seconds.")
     result.add_argument("--dry-run", action="store_true", help="Probe and plan without writing.")
     result.add_argument("--json", action="store_true", help="Print the result as JSON.")
+    result.add_argument(
+        "--extra",
+        action="append",
+        choices=("agent",),
+        default=[],
+        help="Include a locked optional runtime group while creating the new environment.",
+    )
     return result
+
+
+def _selected_extras(arguments: argparse.Namespace) -> tuple[str, ...]:
+    extras = tuple(dict.fromkeys(("dev", *getattr(arguments, "extra", ()))))
+    if set(extras) - {"dev", "agent"}:
+        raise BootstrapError("Unsupported bootstrap dependency group")
+    return extras
 
 
 def bootstrap(arguments: argparse.Namespace) -> dict[str, Any]:
@@ -580,9 +581,7 @@ def bootstrap(arguments: argparse.Namespace) -> dict[str, Any]:
     config, configured_sources = _load_config()
     if arguments.index_url:
         requested = "custom"
-        selected_sources = (
-            IndexSource("custom", "Custom", _safe_index_url(arguments.index_url)),
-        )
+        selected_sources = (IndexSource("custom", "Custom", _safe_index_url(arguments.index_url)),)
     else:
         requested = arguments.index
         selected_sources = (
@@ -606,6 +605,7 @@ def bootstrap(arguments: argparse.Namespace) -> dict[str, Any]:
             "probes": [asdict(probe) for probe in probes],
             "uv_lock_sha256": _sha256(LOCK_PATH),
             "would_write": False,
+            "extras": list(_selected_extras(arguments)),
         }
 
     with _bootstrap_lock():
@@ -625,6 +625,8 @@ def _install_environment(
     requested: str,
 ) -> dict[str, Any]:
     started = time.monotonic()
+    extras = _selected_extras(arguments)
+    extra_arguments = [part for name in extras for part in ("--extra", name)]
     before = {"uv.lock": _sha256(LOCK_PATH), "pyproject.toml": _sha256(PROJECT_PATH)}
     receipt: dict[str, Any] = {
         "schema_version": "0.1",
@@ -645,24 +647,21 @@ def _install_environment(
         "input_sha256": before,
         "requirements_sha256": None,
         "verification": {},
+        "extras": list(extras),
         "error": None,
     }
     staging_root: Path | None = None
     published_venv = False
     try:
         if VENV_ROOT.exists() or VENV_ROOT.is_symlink():
-            raise BootstrapError(
-                "现有 .venv 属于受保护环境；bootstrap 拒绝覆盖，请先人工检查"
-            )
+            raise BootstrapError("现有 .venv 属于受保护环境；bootstrap 拒绝覆盖，请先人工检查")
         probes = _probe_sources(config, selected_sources, timeout=arguments.timeout)
         receipt["probes"] = [asdict(probe) for probe in probes]
         ranked = rank_probes(probes)
         if not ranked:
             raise BootstrapError("没有可用的 package index；未修改环境")
         if requested != "auto" and len(ranked) != 1:
-            raise BootstrapError(
-                f"显式 package index {requested} 不可用；不会静默 fallback"
-            )
+            raise BootstrapError(f"显式 package index {requested} 不可用；不会静默 fallback")
         environment = _environment()
         uv = _find_uv(environment)
         receipt["uv_version"] = _uv_version(uv, environment)
@@ -686,8 +685,7 @@ def _install_environment(
                 "export",
                 "--quiet",
                 "--frozen",
-                "--extra",
-                "dev",
+                *extra_arguments,
                 "--no-emit-project",
                 "--format",
                 "requirements-txt",
@@ -742,7 +740,7 @@ def _install_environment(
             environment=install_environment,
         )
         _run(
-            [str(uv), "sync", "--frozen", "--extra", "dev", "--check"],
+            [str(uv), "sync", "--frozen", *extra_arguments, "--check"],
             environment=install_environment,
         )
         staging_version = _capture(
@@ -755,9 +753,7 @@ def _install_environment(
             raise BootstrapError("发布前发现 .venv 已存在；拒绝覆盖")
         staging_venv.rename(VENV_ROOT)
         published_venv = True
-        final_version = _capture(
-            [str(VENV_ENTRYPOINT), "--version"], environment=environment
-        )
+        final_version = _capture([str(VENV_ENTRYPOINT), "--version"], environment=environment)
         if final_version != staging_version:
             raise BootstrapError("relocatable .venv 发布后版本探针不一致")
         receipt["verification"] = {

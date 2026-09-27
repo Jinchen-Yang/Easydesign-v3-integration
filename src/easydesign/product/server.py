@@ -14,6 +14,7 @@ import secrets
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -73,7 +74,7 @@ class LocalGpuMonitor:
             return None
 
     def _query(self, kind: str, fields: str) -> str:
-        completed = self.runner(
+        completed: Any = self.runner(
             [
                 "nvidia-smi",
                 f"--query-{kind}={fields}",
@@ -84,15 +85,16 @@ class LocalGpuMonitor:
             text=True,
             timeout=5,
         )
-        return completed.stdout
+        return str(completed.stdout)
 
     def _collect(self) -> dict[str, Any]:
-        counts: dict[str, set[str]] | None = {}
+        counts: dict[str, set[str]] | None
         try:
+            counts = {}
             for uuid, pid in csv.reader(io.StringIO(self._query("compute-apps", "gpu_uuid,pid"))):
                 counts.setdefault(uuid.strip(), set()).add(pid.strip())
         except (OSError, subprocess.SubprocessError, ValueError):
-            counts = None
+            counts = None  # unknown process occupancy, never "no processes"
         gpus: list[dict[str, Any]] = []
         rows = csv.reader(io.StringIO(self._query("gpu", self._GPU_QUERY)))
         for row in rows:
@@ -152,9 +154,13 @@ class ProductServer(ThreadingHTTPServer):
         web_root: Path | None = None,
         easy_web_root: Path | None = None,
         token: str | None = None,
+        service_provider: Callable[[], ProductService] | None = None,
+        handler_type: type[BaseHTTPRequestHandler] | None = None,
         rabbit_chat: RabbitChatService | None = None,
     ) -> None:
-        self.service, self.web_root, self.easy_web_root = service, web_root, easy_web_root
+        self._service, self.web_root, self.easy_web_root = service, web_root, easy_web_root
+        self.service_provider = service_provider
+        self.asset_root = service.context.root
         self.rabbit_chat = rabbit_chat or RabbitChatService()
         self.compute_monitor = LocalGpuMonitor()
         token_path = service.root / "access-token"
@@ -167,7 +173,11 @@ class ProductServer(ThreadingHTTPServer):
                 pass
             token = token_path.read_text().strip()
         self.token = token
-        super().__init__(("127.0.0.1", port), Handler)
+        super().__init__(("127.0.0.1", port), handler_type or Handler)
+
+    @property
+    def service(self) -> ProductService:
+        return self.service_provider() if self.service_provider is not None else self._service
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -454,10 +464,45 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, data, mimetypes.guess_type(relative)[0] or "application/octet-stream")
 
 
+def load_provider_credentials(gateway: NativeGateway, env_file: Path | None) -> None:
+    """Load only declared provider variables; never execute a credential file."""
+    import shlex
+
+    config = gateway.config()
+    names = {p.secret_env for p in [config.default, *config.roles.values()]}
+    if env_file:
+        env_path = confined(gateway.context.root, gateway.context.root / env_file)
+        for line in env_path.read_text().splitlines():
+            line = line.strip().removeprefix("export ")
+            name, separator, value = line.partition("=")
+            if separator and name.strip() in names:
+                parts = shlex.split(value, comments=True)
+                if len(parts) == 1:
+                    os.environ[name.strip()] = parts[0]
+    missing = sorted(name for name in names if not os.environ.get(name))
+    if missing:
+        raise ProductError(
+            "model_not_configured", "Provider credential missing: " + ", ".join(missing)
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Local EasyDesign Workbench product service")
     parser.add_argument("--port", type=int, default=14380)
     parser.add_argument("--models", type=Path, default=Path("config/llm.yaml"))
+    parser.add_argument(
+        "--multi-user", action="store_true", help="Serve isolated accounts and team workspaces"
+    )
+    parser.add_argument(
+        "--accounts-only",
+        action="store_true",
+        help="Explicitly enable account administration without scientific execution",
+    )
+    parser.add_argument("--public-origin", help="Explicit trusted HTTPS origin for a reverse proxy")
+    parser.add_argument(
+        "--gpu-devices",
+        help="Optional comma-separated physical GPU indices available to this product",
+    )
     parser.add_argument("--web", type=Path, default=Path("web/workbench/dist"))
     parser.add_argument(
         "--easy-web",
@@ -476,6 +521,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Private provider credentials; parsed as values, never executed",
     )
     args = parser.parse_args(argv)
+    if args.accounts_only and not args.multi_user:
+        parser.error("--accounts-only requires --multi-user")
+    if args.multi_user:
+        from .accounts_cli import serve_accounts
+
+        return serve_accounts(
+            port=args.port,
+            models=args.models,
+            env_file=args.env_file,
+            web=args.web,
+            easy_web=args.easy_web,
+            prediction_backend=args.prediction_backend,
+            public_origin=args.public_origin,
+            accounts_only=args.accounts_only,
+            gpu_devices=args.gpu_devices,
+        )
     context = WorkspaceContext.discover()
     # A product launch owns its workspace-local writable metadata.  This creates
     # only the empty default profile/registries when no explicit runtime link has
@@ -486,26 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         confined(context.root, context.root / args.models),
         prediction_backend=args.prediction_backend,
     )
-    # A live product must be ready to answer, not merely serve saved screenshots.
-    # Only declared credential names are read; shell syntax is never executed.
-    import shlex
-
-    config = gateway.config()
-    names = {p.secret_env for p in [config.default, *config.roles.values()]}
-    if args.env_file:
-        env_path = confined(context.root, context.root / args.env_file)
-        for line in env_path.read_text().splitlines():
-            line = line.strip().removeprefix("export ")
-            name, separator, value = line.partition("=")
-            if separator and name.strip() in names:
-                parts = shlex.split(value, comments=True)
-                if len(parts) == 1:
-                    os.environ[name.strip()] = parts[0]
-    missing = sorted(name for name in names if not os.environ.get(name))
-    if missing:
-        raise ProductError(
-            "model_not_configured", "Provider credential missing: " + ", ".join(missing)
-        )
+    load_provider_credentials(gateway, args.env_file)
     web_root = confined(context.root, context.root / args.web)
     if not (web_root / "index.html").is_file():
         raise ProductError(
@@ -521,9 +563,7 @@ def main(argv: list[str] | None = None) -> int:
             "inside web/easy",
         )
     source_root = Path(__file__).resolve().parents[3]
-    rabbit_script = confined(
-        context.root, source_root / "web/easy/server/rabbit_chat.py"
-    )
+    rabbit_script = confined(context.root, source_root / "web/easy/server/rabbit_chat.py")
     server = ProductServer(
         ProductService(gateway, actor=f"local-workbench:uid:{os.getuid()}"),
         port=args.port,
@@ -534,8 +574,7 @@ def main(argv: list[str] | None = None) -> int:
                 rabbit_script,
                 confined(context.root, context.root / (args.env_file or Path(".env.local"))),
             )
-            if os.environ.get("DEEPSEEK_API_KEY")
-            and rabbit_script.is_file()
+            if os.environ.get("DEEPSEEK_API_KEY") and rabbit_script.is_file()
             else None
         ),
     )

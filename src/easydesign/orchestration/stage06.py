@@ -601,6 +601,9 @@ def execute_stage06(
     now = datetime.now(UTC) if executed_at is None else executed_at
     profile = ScaleProfile(config.scale_profile)
     requested_candidate_count = config.total_candidate_count
+    from easydesign.execution_scope import enforce_scoped_generation_budget
+
+    enforce_scoped_generation_budget(requested_candidate_count, root)
     multi_strategy = isinstance(upstream.stage05_bundle, Stage05BundleV0_2)
     strategy_by_id = {item.strategy_id: item for item in upstream.strategy_bundle.strategies}
     if multi_strategy:

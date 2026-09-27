@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowUp, RotateCcw, Settings2, Square, X } from 'lucide-react';
 import { CHAT_ENDPOINT, streamChat, type ChatContext, type ChatMessage } from './chat';
 import { translate, type Locale } from './i18n';
 import './rabbit-chat.css';
+import {AccountTransportContext} from '../accounts/AccountTransportContext';
 
 type Message = ChatMessage & { complete: boolean };
 export function RabbitChat({
@@ -22,6 +23,9 @@ export function RabbitChat({
   onSettings: () => void;
   onActivity: (activity: 'idle' | 'waiting' | 'replying') => void;
 }) {
+  const account = useContext(AccountTransportContext);
+  const transport = account?.transport || fetch;
+  const readOnly = account ? !account.scope.can_edit : false;
   const t = (key: string) => translate(locale, key);
   const [messages, setMessages] = useState<Message[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -41,12 +45,12 @@ export function RabbitChat({
     }
     field.current?.focus();
     const abort = new AbortController();
-    fetch(CHAT_ENDPOINT, { signal: abort.signal })
+    transport(CHAT_ENDPOINT, { signal: abort.signal })
       .then((r) => r.json())
       .then((v) => setConfigured(v.configured === true))
       .catch(() => {});
     return () => abort.abort();
-  }, [open]);
+  }, [open, transport]);
   useEffect(
     () => () => {
       sequence.current++;
@@ -54,13 +58,28 @@ export function RabbitChat({
     },
     [],
   );
+  // A scope or sign-in change swaps the transport identity; an in-flight reply
+  // from the previous scope must never keep streaming or render here.
+  useEffect(
+    () => () => {
+      sequence.current++;
+      controller.current?.abort('scope-change');
+      controller.current = null;
+      setMessages([]);
+      setSuggestions([]);
+      setError('');
+      setRetryText('');
+      setBusy(false);
+    },
+    [transport],
+  );
   useEffect(() => {
     if (log.current) log.current.scrollTop = log.current.scrollHeight;
   }, [messages, suggestions, open, error]);
 
   async function send(text = input, retrying = false) {
     const content = text.trim();
-    if (!content || content.length > 4000 || controller.current) return;
+    if (!content || content.length > 4000 || controller.current || readOnly) return;
     const id = ++sequence.current;
     let history = messages
       .filter((m) => m.complete)
@@ -109,6 +128,7 @@ export function RabbitChat({
             (questions) => {
               nextQuestions = questions;
             },
+            transport,
           );
           break;
         } catch (failure) {
@@ -125,6 +145,7 @@ export function RabbitChat({
             );
             onActivity('waiting');
             await new Promise((resolve) => setTimeout(resolve, 800));
+            if (sequence.current !== id || abort.signal.aborted) return;
             continue;
           }
           throw failure;
@@ -240,7 +261,7 @@ export function RabbitChat({
             <p>{t('Hi! What would you like to know?')}</p>
             <div className="rabbit-chat-suggestions">
               {['What is happening in this step?', 'What is a VHH?'].map((s) => (
-                <button key={s} onClick={() => void send(t(s))}>
+                <button key={s} disabled={readOnly} onClick={() => void send(t(s))}>
                   {t(s)}
                 </button>
               ))}
@@ -263,7 +284,7 @@ export function RabbitChat({
         {!busy && suggestions.length > 0 && (
           <div className="rabbit-chat-suggestions" role="group" aria-label={t('Keep chatting')}>
             {suggestions.map((question) => (
-              <button key={question} onClick={() => void send(question)}>
+              <button key={question} disabled={readOnly} onClick={() => void send(question)}>
                 {question}
               </button>
             ))}
@@ -272,6 +293,7 @@ export function RabbitChat({
         {configured === false && !error && (
           <p className="rabbit-chat-error">{t(errors.not_configured)}</p>
         )}
+        {readOnly && <p className="rabbit-chat-error">当前是只读访问，请切换到自己的工作区后使用豆豆。</p>}
         {error && (
           <div className="rabbit-chat-error" role="status">
             <p>{t(errors[error])}</p>
@@ -293,6 +315,7 @@ export function RabbitChat({
           value={input}
           maxLength={4000}
           rows={2}
+          disabled={readOnly}
           placeholder={t('Ask bunny…')}
           aria-label={t('Message bunny')}
           onChange={(e) => setInput(e.target.value)}
@@ -319,7 +342,7 @@ export function RabbitChat({
             className="rabbit-chat-send"
             title={t('Send message')}
             aria-label={t('Send message')}
-            disabled={!input.trim()}
+            disabled={!input.trim() || readOnly}
           >
             <ArrowUp size={20} />
           </button>

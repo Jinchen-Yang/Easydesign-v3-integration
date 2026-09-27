@@ -266,6 +266,14 @@
   margin-top: 33px;
   line-height: 1.7;
 }
+.platform-create-note {
+  margin: -6px 0 18px;
+  color: #6d5f22;
+  background: #fff6df;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
 .compute-connection {
   display: flex;
   align-items: center;

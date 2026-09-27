@@ -21,6 +21,7 @@ import {
   summarizeGoal,
 } from './live-presentation';
 import type { EasyProductPort } from './EasyProductAdapter';
+import {scopeProductUrl, surfaceRights} from '../../../shared/account-client';
 import type {
   GateInput,
   LabOrderDraftInput,
@@ -217,10 +218,12 @@ function GatePanel({
   snapshot,
   busy,
   onDecide,
+  canDecide = true,
 }: {
   snapshot: ProductSnapshot;
   busy: boolean;
   onDecide: (input: GateInput) => Promise<void>;
+  canDecide?: boolean;
 }) {
   const decision = snapshot.decision!;
   const [selected, setSelected] = useState(decision.default_option_id);
@@ -244,6 +247,7 @@ function GatePanel({
       ? 'override'
       : null;
   async function submit(input: GateInput) {
+    if (!canDecide) return;
     setError('');
     try {
       await onDecide(input);
@@ -302,7 +306,7 @@ function GatePanel({
       <div className="easy-live-gate-actions">
         <button
           className="easy-primary"
-          disabled={!approveAction || busy}
+          disabled={!approveAction || busy || !canDecide}
           onClick={() =>
             void submit({
               action: approveAction || 'approve',
@@ -320,13 +324,13 @@ function GatePanel({
           {approveAction === 'override' ? '确认并覆盖' : '批准并继续'}
           <ArrowRight size={15} />
         </button>
-        <button className="easy-outline" onClick={() => setShowRevise((value) => !value)}>
+        <button className="easy-outline" disabled={!canDecide} onClick={() => setShowRevise((value) => !value)}>
           修改
         </button>
         {showRevise && (
           <button
             className="easy-outline"
-            disabled={!instruction.trim() || busy}
+            disabled={!instruction.trim() || busy || !canDecide}
             onClick={() =>
               void submit({
                 action: 'revise',
@@ -498,7 +502,12 @@ function SimulatedOrder({
   );
 }
 
-export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
+export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
+  adapter: EasyProductPort;
+  access?: {id: string; can_edit: boolean; can_execute: boolean; role: string};
+  computeAvailable?: boolean;
+}) {
+  const {canExecute} = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState | null>(null);
   const [input, setInput] = useState<EasyInput>(() => emptyInput());
   const [file, setFile] = useState<File | null>(null);
@@ -512,9 +521,11 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     const unsubscribe = adapter.subscribe((event) => setState(event.snapshot));
     void (async () => {
       const params = new URLSearchParams(location.search);
-      const access = params.get('token');
-      if (access) {
-        await adapter.authenticate(access);
+      const legacyToken = params.get('token');
+      if (legacyToken) {
+        // Account sessions are the only identity here; a stale single-user
+        // workspace token must be dropped silently (never printed, never sent)
+        // instead of attempting an authentication the scoped API rejects.
         params.delete('token');
         history.replaceState(
           {},
@@ -541,6 +552,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const completed = snapshot?.current_action.stage === 'handoff-complete';
   useEffect(() => {
     if (
+      !canExecute || // team members, read-only observers and compute-off surfaces never auto-resume
       !snapshot ||
       !canAutoContinue(snapshot, Boolean(state?.pending), state?.pendingRequest?.state)
     )
@@ -549,7 +561,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     if (autoContinuation.current === key) return;
     autoContinuation.current = key;
     void adapter.resume().catch((reason) => setError((reason as Error).message));
-  }, [adapter, snapshot, state?.pending, state?.pendingRequest?.state]);
+  }, [adapter, canExecute, snapshot, state?.pending, state?.pendingRequest?.state]);
   useEffect(() => {
     const defaultSite = snapshot?.scientific_context.approved_site?.selected_candidate_id;
     setSelectedSite(defaultSite || snapshot?.decision?.default_option_id || undefined);
@@ -586,7 +598,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const candidates = state?.candidates.items || [];
 
   async function start() {
-    if (issue || !state) return;
+    if (issue || !state || !canExecute) return;
     setError('');
     try {
       const goal = productGoal(input);
@@ -632,7 +644,15 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       </div>
     );
   if (state.connection === 'authentication-required')
-    return (
+    return access ? (
+      <main className="easy-live-login">
+        <Brand />
+        <h1>会话需要重新登录</h1>
+        <p>当前账号会话已过期或被撤销，正在返回账号页。</p>
+        <a className="easy-primary" href="/account/">返回账号与团队</a>
+        {error && <p className="easy-error">{error}</p>}
+      </main>
+    ) : (
       <main className="easy-live-login">
         <Brand />
         <h1>连接本地研究工作区</h1>
@@ -679,13 +699,18 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
           <button className="easy-help" onClick={() => void adapter.refresh()}>
             <RefreshCw size={14} /> 刷新
           </button>
-          <a className="easy-pro-link" href="/">
+          <a className="easy-pro-link" href={access ? `/?scope=${encodeURIComponent(access.id)}` : '/'}>
             打开专业版
           </a>
         </div>
       </header>
 
       <main className="easy-main">
+        {!canExecute && <p className="account-permission-note">{access?.role === 'observer'
+          ? '管理员只读查看：不能修改他人项目、批准 Gate 或启动计算。'
+          : !computeAvailable
+            ? '当前服务未连接科学执行器（账号管理模式）：可以浏览与协作编辑，计算启动与审批暂不可用。'
+            : '团队协作成员：可以查看和讨论，科学审批及计算启动由团队管理员负责。'}</p>}
         <section className="easy-intro">
           <h1>
             从一句话开始<span>真实设计</span>
@@ -766,7 +791,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
             </div>
             <button
               className="easy-primary easy-start"
-              disabled={state.pending || !!issue}
+              disabled={state.pending || !!issue || !canExecute}
               onClick={() => void start()}
             >
               {state.pending ? <LoaderCircle className="easy-spin" size={16} /> : '开始设计'}{' '}
@@ -852,6 +877,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     key={snapshot.decision.id}
                     snapshot={snapshot}
                     busy={state.pending}
+                    canDecide={canExecute}
                     onDecide={async (value) => {
                       if (value.selected_option_id) setSelectedSite(value.selected_option_id);
                       await adapter.decide(value);
@@ -877,15 +903,22 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     <LoaderCircle className="easy-spin" size={22} />
                     <div>
                       <h3>
-                        {snapshot.capabilities.auto_continue ? '正在自动继续' : '当前步骤可以继续'}
+                        {snapshot.capabilities.auto_continue && canExecute
+                          ? '正在自动继续'
+                          : '当前步骤可以继续'}
                       </h3>
                       <p>{snapshot.current_action.message || snapshot.current_action.stage}</p>
                     </div>
-                    {!snapshot.capabilities.auto_continue && (
+                    {/* Unauthorized roles never auto-continue; keep the explicit
+                        disabled control visible instead of hiding it behind
+                        capabilities.auto_continue. */}
+                    {(!snapshot.capabilities.auto_continue || !canExecute) && (
                       <button
                         className="easy-primary"
-                        disabled={state.pending}
-                        onClick={() => void adapter.resume()}
+                        disabled={state.pending || !canExecute}
+                        onClick={() => {
+                          if (canExecute) void adapter.resume();
+                        }}
                       >
                         继续研究 <ArrowRight size={14} />
                       </button>
@@ -917,7 +950,15 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       <details className="easy-live-technical-details">
                         <summary>查看技术详情</summary>
                         {snapshot.decision?.details_url && (
-                          <a href={snapshot.decision.details_url} target="_blank" rel="noreferrer">
+                          <a
+                            href={
+                              access
+                                ? scopeProductUrl(access.id, snapshot.decision.details_url)
+                                : snapshot.decision.details_url
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                          >
                             查看当前 Gate 的审查与 provenance
                           </a>
                         )}
@@ -983,7 +1024,9 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
               </aside>
             </div>
             {shownIndex === index && order && (
-              <SimulatedOrder order={order} adapter={adapter} onUpdate={setOrder} />
+              <fieldset className="account-readonly-order" disabled={!canExecute}>
+                <SimulatedOrder order={order} adapter={adapter} onUpdate={setOrder} />
+              </fieldset>
             )}
           </section>
         )}

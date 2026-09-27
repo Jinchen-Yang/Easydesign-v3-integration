@@ -50,4 +50,8 @@ describe('Easy live automatic continuation', () => {
   it('waits while a continuation request is already active', () => {
     expect(canAutoContinue(snapshot('available', 'pilot-card'), false, 'running')).toBe(false);
   });
+
+  it('keeps a plain available resumable step eligible so authorized surfaces still auto-continue', () => {
+    expect(canAutoContinue(snapshot('available', 'pilot-card'), false)).toBe(true);
+  });
 });

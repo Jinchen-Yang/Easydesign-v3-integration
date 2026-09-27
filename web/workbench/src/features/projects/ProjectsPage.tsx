@@ -22,6 +22,8 @@ export function ProjectsPage({
   onOpen,
   onRename,
   onDelete,
+  canCreate = true,
+  createDisabledReason,
 }: {
   mode?: 'demo' | 'live';
   snapshot: Pick<WorkbenchSnapshot, 'projects'>;
@@ -29,11 +31,19 @@ export function ProjectsPage({
   onOpen: (id: string) => void;
   onRename?: (project: DesignProject) => void;
   onDelete?: (project: DesignProject) => void;
+  /**
+   * Mirror of the backend creation right for affordance gating only. When
+   * false, creation controls render disabled with the reason instead of a
+   * no-op callback; the server remains the authority.
+   */
+  canCreate?: boolean;
+  createDisabledReason?: string;
 }) {
   const [query, setQuery] = useState('');
   const projects = snapshot.projects.filter((project) =>
     `${project.title} ${project.goal}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
+  const createTitle = canCreate ? undefined : createDisabledReason;
   return (
     <main className="platform-page" aria-label="Projects">
       <header className="platform-header">
@@ -47,10 +57,13 @@ export function ProjectsPage({
             <h1>Projects</h1>
             <p>A space for every question. A clear path to your next candidate.</p>
           </div>
-          <button className="primary-button" onClick={onNew}>
+          <button className="primary-button" onClick={onNew} disabled={!canCreate} title={createTitle}>
             <Plus size={16} /> New project
           </button>
         </div>
+        {!canCreate && createDisabledReason && (
+          <p className="platform-create-note" role="note">{createDisabledReason}</p>
+        )}
         {snapshot.projects.length === 0 ? (
           <section className="platform-empty first-project">
             <span className="empty-orbit">
@@ -61,13 +74,20 @@ export function ProjectsPage({
               Keep your research goal, agent conversation and scientific context together in one
               project.
             </p>
-            <button className="text-button" onClick={onNew}>
+            <button
+              className="text-button"
+              onClick={onNew}
+              disabled={!canCreate}
+              title={createTitle}
+            >
               Create your first project <ArrowRight size={15} />
             </button>
             <small>
-              {mode === 'demo'
-                ? 'Start with the guided lysozyme / VHH demo.'
-                : 'Start with a target and your research goal.'}
+              {!canCreate && createDisabledReason
+                ? createDisabledReason
+                : mode === 'demo'
+                  ? 'Start with the guided lysozyme / VHH demo.'
+                  : 'Start with a target and your research goal.'}
             </small>
           </section>
         ) : (

@@ -692,6 +692,38 @@ class Phase34Runtime(Phase34Bridge):
             job = self.controller.load(execution["job_id"])
             if job.status in ACTIVE_JOB_STATUSES:
                 return RuntimeAction("scale-running", job.job_id, "observe_downstream")
+            # Dispatch, measurement and finalization are separate idempotent
+            # advances.  Their authority must change when either the durable
+            # worker receipt or the batch receipt changes; otherwise a resumed
+            # graph sees the original advance_downstream ToolMessage and
+            # correctly suppresses what appears to be a duplicate action.
+            from .phase34_scale import current_batch_store
+
+            journal = current_batch_store(self)
+            receipt_states = tuple(
+                (
+                    batch.batch_id,
+                    None
+                    if (receipt := journal.read(batch.batch_id)) is None
+                    else receipt.state,
+                )
+                for batch in journal.manifest.batches
+            )
+            return RuntimeAction(
+                "scale-advance",
+                identity(
+                    {
+                        "manifest": manifest["contract_sha256"],
+                        "job_id": job.job_id,
+                        "job_status": job.status,
+                        "run_manifest": None
+                        if job.run_manifest is None
+                        else str(job.run_manifest),
+                        "batch_receipts": receipt_states,
+                    }
+                ),
+                "advance_downstream",
+            )
         return RuntimeAction(
             "scale-execution",
             identity(self.project_latest("phase34-scale-authority")),

@@ -69,14 +69,6 @@ export function canAutoContinue(
   return !pending && !['running', 'accepted'].includes(requestState || '') && safeStatus;
 }
 
-export function autoContinuationKey(snapshot: ProductSnapshot) {
-  // A terminal continuation can legitimately retain the same scientific
-  // revision and action id while appending a durable terminal event.  Include
-  // the event cursor so that the next bounded workflow step is not suppressed
-  // as a duplicate, while the adapter still deduplicates the exact request.
-  return `${snapshot.project.id}:${snapshot.revision}:${snapshot.event_cursor}:${snapshot.current_action.id}`;
-}
-
 function stageStatus(snapshot: ProductSnapshot | null, index: number) {
   if (!snapshot) return 'waiting';
   const phase = STEPS[index].toLowerCase();
@@ -480,7 +472,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       !canAutoContinue(snapshot, Boolean(state?.pending), state?.pendingRequest?.state)
     )
       return;
-    const key = autoContinuationKey(snapshot);
+    const key = `${snapshot.project.id}:${snapshot.revision}:${snapshot.current_action.id}`;
     if (autoContinuation.current === key) return;
     autoContinuation.current = key;
     void adapter.resume().catch((reason) => setError((reason as Error).message));

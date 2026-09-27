@@ -433,3 +433,46 @@ async def test_final_dossier_without_card_recovers_without_judge():
     result = await Phase34Runtime.advance(bridge)
     assert result["card_id"] == final_card(dossier).card_id
     assert published[0]["card"].assessment_id is None
+
+
+def test_scale_advance_identity_changes_with_durable_batch_receipt(monkeypatch):
+    from types import SimpleNamespace
+
+    from easydesign.agent import phase34_scale
+
+    manifest_event = {"contract_sha256": "a" * 64}
+    execution = {
+        "manifest": manifest_event["contract_sha256"],
+        "job_id": "job-scale",
+    }
+    events = {
+        "phase34-scale-authority": {"contract_sha256": "b" * 64},
+        "phase34-scale-batch-manifest": manifest_event,
+        "phase34-scale-execution": execution,
+    }
+    bridge = SimpleNamespace(
+        project_id="project",
+        current_final_dossier=lambda: None,
+        project_latest=lambda kind: events.get(kind),
+        controller=SimpleNamespace(
+            load=lambda _: SimpleNamespace(
+                job_id="job-scale",
+                status="succeeded",
+                run_manifest="/runs/scale/manifests/run-manifest.v0004.json",
+            )
+        ),
+    )
+    receipt = None
+    journal = SimpleNamespace(
+        manifest=SimpleNamespace(batches=(SimpleNamespace(batch_id="batch-1"),)),
+        read=lambda _: receipt,
+    )
+    monkeypatch.setattr(phase34_scale, "current_batch_store", lambda _: journal)
+
+    before = Phase34Runtime.next_scale_action(bridge)
+    assert before.stage == "scale-advance"
+    receipt = SimpleNamespace(state="completed")
+    after = Phase34Runtime.next_scale_action(bridge)
+
+    assert after.stage == "scale-advance"
+    assert after.action_id != before.action_id

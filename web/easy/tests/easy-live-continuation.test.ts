@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoContinuationKey, canAutoContinue } from '../src/easy/EasyLiveApp';
+import { canAutoContinue } from '../src/easy/EasyLiveApp';
 import type { ProductSnapshot } from '../src/easy/product-contracts';
 
 function snapshot(status: string, stage: string): ProductSnapshot {
@@ -49,12 +49,5 @@ describe('Easy live automatic continuation', () => {
 
   it('waits while a continuation request is already active', () => {
     expect(canAutoContinue(snapshot('available', 'pilot-card'), false, 'running')).toBe(false);
-  });
-
-  it('allows a new bounded continuation after a terminal event advances the cursor', () => {
-    const before = snapshot('available', 'scale-execution');
-    const after = { ...before, event_cursor: before.event_cursor + 1 };
-
-    expect(autoContinuationKey(after)).not.toBe(autoContinuationKey(before));
   });
 });

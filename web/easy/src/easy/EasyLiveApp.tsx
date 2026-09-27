@@ -556,6 +556,11 @@ export function EasyLiveApp({
   const autoContinuationEligible = canExecute && canAutoContinue(snapshot, false);
   const executionBlocked =
     snapshot !== null && ['blocked', 'incomplete'].includes(snapshot.project.status);
+  const failedCreate = !snapshot?.capabilities.resume
+    ? snapshot?.requests.find(
+        (request) => request.kind === 'create' && ['failed', 'interrupted'].includes(request.state),
+      )
+    : undefined;
   const completed = snapshot?.current_action.stage === 'handoff-complete';
   useEffect(() => {
     if (
@@ -962,6 +967,25 @@ export function EasyLiveApp({
                         }}
                       >
                         继续研究 <ArrowRight size={14} />
+                      </button>
+                    )}
+                    {failedCreate && (
+                      <button
+                        className="easy-primary"
+                        disabled={
+                          state.pending ||
+                          !canExecute ||
+                          ['accepted', 'running'].includes(state.pendingRequest?.state || '')
+                        }
+                        onClick={() => {
+                          if (!canExecute) return;
+                          setError('');
+                          void adapter
+                            .retryRequest(failedCreate.id)
+                            .catch((reason) => setError((reason as Error).message));
+                        }}
+                      >
+                        重试目标解析 <RefreshCw size={14} />
                       </button>
                     )}
                   </section>

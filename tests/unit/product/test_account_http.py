@@ -87,6 +87,28 @@ def test_account_api_requires_individual_sessions_and_disables_workspace_token(p
         )
 
 
+def test_member_can_leave_team_without_a_post_mutation_read_failure(product):
+    server, accounts, _admin, users, _context = product
+    alice, bob = users
+    team = accounts.create_team(alice, "Self-leave fixture")
+    invitation = accounts.invite(alice, team["id"], "bob")
+    accounts.respond_invitation(bob, invitation["id"], accept=True)
+    with client(server, "bob") as member:
+        response = member.post(
+            f"/api/v1/teams/{team['id']}/members/{bob.id}", json={"remove": True}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "left-team"}
+        assert all(
+            scope["id"] != team["id"]
+            for scope in member.get("/api/v1/accounts/me").json()["scopes"]
+        )
+        assert member.get(f"/api/v1/teams/{team['id']}").status_code == 404
+        assert member.get(f"/api/v1/scopes/{team['id']}/usage").status_code == 404
+    with client(server, "alice") as owner:
+        assert owner.get(f"/api/v1/teams/{team['id']}").status_code == 200
+
+
 def test_admin_approval_does_not_grant_other_users_administration(product):
     server, accounts, _admin, users, _context = product
     with client(server, "alice") as alice:

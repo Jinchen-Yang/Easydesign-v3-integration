@@ -52,8 +52,12 @@ interface RecordedAction {
   csrf: string | undefined;
 }
 
-function installResumableRoutes(page: Page, username: string, compute = true, status = 'available'): RecordedAction[] {
+function installResumableRoutes(page: Page, username: string, compute = true, status = 'available', bootstrap = false): RecordedAction[] {
   const actions: RecordedAction[] = [];
+  const snapshot = () => {
+    const value = resumableSnapshot(status);
+    return bootstrap ? {...value,capabilities:{resume:false,auto_continue:false},requests:[{kind:'create',id:'req-create-failed',project:'proj-1',state:'failed',result:null,created:1,updated:1}]} : value;
+  };
   void page.route(url => url.pathname === '/easy/', async route => injectAccountMode(route));
   void page.route('**/api/v1/**', async route => {
     const request = route.request();
@@ -63,12 +67,16 @@ function installResumableRoutes(page: Page, username: string, compute = true, st
       return reply({mode: 'multi-user', registration: 'admin-review', setup_required: false, compute_available: compute});
     if (path === '/api/v1/accounts/me') return reply(sessionFor(username));
     if (path.endsWith('/projects') && request.method() === 'GET')
-      return reply({items: [resumableSnapshot(status).project], total: 1, offset: 0, limit: 5});
-    if (path.endsWith('/workbench') && request.method() === 'GET') return reply(resumableSnapshot(status));
+      return reply({items: [snapshot().project], total: 1, offset: 0, limit: 5});
+    if (path.endsWith('/workbench') && request.method() === 'GET') return reply(snapshot());
     if (path.endsWith('/candidates') && request.method() === 'GET') return reply(emptyPage);
     if (path.endsWith('/projects') && request.method() === 'POST') {
       actions.push({body: request.postDataJSON() as Record<string, unknown>, csrf: request.headers()['x-csrf-token']});
       return reply({kind:'action', id:'req-create-1', project:'proj-1', state:'succeeded', result:null, created:1, updated:1});
+    }
+    if (path === '/api/v1/scopes/team-1/requests/req-create-failed/resume' && request.method() === 'POST') {
+      actions.push({body:request.postDataJSON() as Record<string,unknown>,csrf:request.headers()['x-csrf-token']});
+      return reply({kind:'create',id:'req-create-failed',project:'proj-1',state:'accepted',result:null,created:1,updated:2});
     }
     if (path === '/api/v1/scopes/team-1/projects/proj-1/actions' && request.method() === 'POST') {
       actions.push({body: request.postDataJSON() as Record<string, unknown>, csrf: request.headers()['x-csrf-token']});
@@ -165,6 +173,17 @@ test.describe('account-mode Easy workspace', () => {
 });
 
 test.describe('account-mode automatic continuation', () => {
+  test('a failed bootstrap retries the original scoped request instead of leaving a dead end', async ({page}) => {
+    const actions = installResumableRoutes(page,'alice',true,'blocked',true);
+    await page.goto('/easy/?scope=team-1&project=proj-1');
+    const retry=page.getByRole('button',{name:/重试目标解析/});
+    await expect(retry).toBeEnabled();
+    await retry.click();
+    await expect.poll(()=>actions.length).toBe(1);
+    expect(actions[0]!.csrf).toBe('csrf-alice-synthetic');
+    await expect(retry).toBeDisabled();
+    await expect(page.getByText('正在自动继续')).toHaveCount(0);
+  });
   test('typed target identifiers reach the scoped API without a prose-only source', async ({page}) => {
     const actions = installResumableRoutes(page, 'alice', true, 'blocked');
     await page.goto('/easy/?scope=team-1&project=proj-1');

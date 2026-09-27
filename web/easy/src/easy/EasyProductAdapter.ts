@@ -366,8 +366,18 @@ export class EasyProductAdapter implements EasyProductPort {
     });
   }
   async retryRequest(id: string) {
-    await this.post('/requests/' + id + '/resume', {});
-    await this.refresh();
+    if (this.state.pending) return;
+    this.emit({ pending: true, error: null });
+    try {
+      const request = await this.post<RequestState>('/requests/' + id + '/resume', {});
+      this.observeRequest(request);
+    } catch (reason) {
+      this.emit({ error: (reason as Error).message });
+      throw reason;
+    } finally {
+      this.emit({ pending: false });
+      await this.refresh();
+    }
   }
 
   async labOrder() {

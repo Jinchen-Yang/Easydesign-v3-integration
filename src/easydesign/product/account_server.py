@@ -273,7 +273,13 @@ class AccountHandler(Handler):
             store.set_member(
                 user, tail[1], tail[3], role=fields.get("role"), remove=fields.get("remove", False)
             )
-            self.send(200, {"team": store.team(user, tail[1])})
+            if fields.get("remove") and tail[3] == user.id:
+                # Membership has already been removed. Reading the roster now
+                # correctly fails closed, but must not turn a successful leave
+                # into an HTTP failure or disclose the no-longer-visible team.
+                self.send(200, {"status": "left-team"})
+            else:
+                self.send(200, {"team": store.team(user, tail[1])})
             return True
         if len(tail) == 2 and tail[0] == "invitations" and self.command == "POST":
             fields = self._fields({"accept"}, {"accept"})

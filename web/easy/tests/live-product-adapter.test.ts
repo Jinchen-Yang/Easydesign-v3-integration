@@ -96,6 +96,29 @@ function fixture(post: (path: string, body: Record<string, unknown>) => Promise<
 }
 
 describe('Easy live adapter preserves Product API authority', () => {
+  it('lists only Easy projects and marks every new Easy project explicitly', async () => {
+    const calls: { path: string; body?: Record<string, unknown> }[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ path, body });
+      if (init?.method === 'POST')
+        return Response.json({ id: 'request', project: project.id, state: 'succeeded' });
+      if (path.endsWith('/workbench')) return Response.json(snapshot());
+      return Response.json({ total: 1, offset: 0, limit: 5, items: [project] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    expect(calls[0].path).toContain('/projects?surface=easy&offset=0&limit=5');
+    await adapter.createProject('Easy design', 'Design an extracellular VHH.');
+    expect(calls.find((call) => call.body?.title === 'Easy design')?.body).toMatchObject({
+      title: 'Easy design',
+      goal: 'Design an extracellular VHH.',
+      surface: 'easy',
+    });
+  });
+
   it('submits the exact Gate card and deduplicates simultaneous approval', async () => {
     let resolve!: (response: Response) => void;
     const post = vi.fn(

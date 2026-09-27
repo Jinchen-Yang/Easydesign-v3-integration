@@ -15,6 +15,11 @@ import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from '
 import { fileTypes, inputLabel, readInputFile, validateInput } from './inputs';
 import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
+import {
+  awaitingDecisionRecovery,
+  summarizeEasyActivity,
+  summarizeGoal,
+} from './live-presentation';
 import type { EasyProductPort } from './EasyProductAdapter';
 import type {
   GateInput,
@@ -394,10 +399,11 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     snapshot?.scientific_context.structure ||
     null;
   const roles = state?.selectedCandidate?.structure_roles || {};
-  const activity = (snapshot?.recent_activity || [])
+  const technicalActivity = (snapshot?.recent_activity || [])
     .filter((item) => item.visible !== false && !(completed && item.type === 'gate.awaiting'))
     .slice(-8)
     .reverse();
+  const activity = snapshot ? summarizeEasyActivity(snapshot) : [];
   const projects = state?.projects.items || [];
   const gateOption = snapshot?.decision?.options.find((item) => item.option_id === selectedSite);
   const visibleSite = gateOption?.rank
@@ -417,11 +423,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
         const params = new URLSearchParams(location.search);
         params.delete('token');
         params.set('project', created.selectedProject);
-        history.replaceState(
-          {},
-          '',
-          `${location.pathname}?${params.toString()}${location.hash}`,
-        );
+        history.replaceState({}, '', `${location.pathname}?${params.toString()}${location.hash}`);
       }
       setFile(null);
     } catch (reason) {
@@ -644,6 +646,21 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       await adapter.decide(value);
                     }}
                   />
+                ) : awaitingDecisionRecovery(snapshot) ? (
+                  <section className="easy-live-progress-card easy-live-gate-recovery" role="alert">
+                    <ShieldCheck size={22} />
+                    <div>
+                      <h3>正在恢复审批卡</h3>
+                      <p>项目正在等待 Scientist 批准；在审批选项恢复前不会显示为 Agent 工作中。</p>
+                    </div>
+                    <button
+                      className="easy-primary"
+                      disabled={state.pending}
+                      onClick={() => void adapter.refresh()}
+                    >
+                      刷新审批卡 <RefreshCw size={14} />
+                    </button>
+                  </section>
                 ) : snapshot.capabilities.resume ? (
                   <section className="easy-live-progress-card">
                     <LoaderCircle className="easy-spin" size={22} />
@@ -679,6 +696,27 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       </div>
                     </article>
                   ))}
+                  {technicalActivity.length > 0 && (
+                    <details className="easy-live-technical-details">
+                      <summary>查看技术详情</summary>
+                      {snapshot.decision?.details_url && (
+                        <a href={snapshot.decision.details_url} target="_blank" rel="noreferrer">
+                          查看当前 Gate 的审查与 provenance
+                        </a>
+                      )}
+                      <div>
+                        {technicalActivity.map((item) => (
+                          <article key={`technical-${item.id}`}>
+                            <span className={item.status || ''} />
+                            <div>
+                              <strong>{item.title || item.role || item.type}</strong>
+                              <p>{item.summary || item.text}</p>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </section>
               </div>
               <aside className="easy-live-science">
@@ -735,6 +773,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
             <h2>
               我的设计 <span>{projects.length}</span>
             </h2>
+            <p>最近 5 个有效设计</p>
           </div>
           <div className="easy-history-table">
             <table>
@@ -751,7 +790,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                   <tr key={project.id}>
                     <td>
                       <strong>{project.title}</strong>
-                      <small>{project.goal}</small>
+                      <small>{summarizeGoal(project.goal)}</small>
                     </td>
                     <td>{project.phase}</td>
                     <td>{project.status}</td>

@@ -140,7 +140,7 @@ export class EasyProductAdapter implements EasyProductPort {
     try {
       if (!this.projectsAt || Date.now() - this.projectsAt > 30000) {
         const projects = await this.api<Page<Project>>(
-          `/projects?offset=${this.state.projects.offset}&limit=20`,
+          `/projects?surface=easy&offset=${this.state.projects.offset}&limit=5`,
         );
         if (generation !== this.generation) return;
         this.projectsAt = Date.now();
@@ -196,7 +196,9 @@ export class EasyProductAdapter implements EasyProductPort {
     });
   }
   async projectPage(offset: number) {
-    this.emit({ projects: await this.api<Page<Project>>(`/projects?offset=${offset}&limit=20`) });
+    this.emit({
+      projects: await this.api<Page<Project>>(`/projects?surface=easy&offset=${offset}&limit=5`),
+    });
   }
   async selectProject(id: string) {
     this.generation++;
@@ -246,6 +248,7 @@ export class EasyProductAdapter implements EasyProductPort {
       this.observeRequest(request);
       if (path === '/projects') {
         this.generation++;
+        this.projectsAt = 0;
         this.emit({
           selectedProject: request.project,
           snapshot: null,
@@ -273,7 +276,12 @@ export class EasyProductAdapter implements EasyProductPort {
       );
       input_id = input.id;
     }
-    await this.command('/projects', { title, goal, ...(input_id ? { input_id } : {}) });
+    await this.command('/projects', {
+      title,
+      goal,
+      surface: 'easy',
+      ...(input_id ? { input_id } : {}),
+    });
   }
   async decide(input: GateInput) {
     const v = this.state.snapshot;

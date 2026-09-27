@@ -204,6 +204,36 @@
   line-height: 1.45;
 }
 
+.easy-live-technical-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #efedf4;
+  color: #625a73;
+  font-size: 12px;
+}
+
+.easy-live-technical-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #6756d8;
+  font-weight: 700;
+}
+
+.easy-live-technical-details > a {
+  display: inline-block;
+  margin-top: 12px;
+  color: #6756d8;
+}
+
+.easy-live-technical-details article {
+  padding-left: 4px;
+}
+
+.easy-live-gate-recovery {
+  border-color: #d8d0ff;
+  background: #fbfaff;
+}
+
 .easy-live-science .live-molecule {
   min-height: 420px;
   border: 1px solid #e3e0eb;
@@ -348,6 +378,9 @@
 .easy-history-table td:first-child strong,
 .easy-history-table td:first-child small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .easy-history-table td:first-child small {

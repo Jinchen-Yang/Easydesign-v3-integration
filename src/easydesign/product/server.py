@@ -294,7 +294,8 @@ class Handler(BaseHTTPRequestHandler):
                 if tail == ["health"]:
                     result: Any = {"schema_version": "1", "mode": "live", "status": "ready"}
                 elif tail == ["projects"]:
-                    result = service.projects(offset, limit)
+                    surface = query.get("surface", [None])[0]
+                    result = service.projects(offset, limit, surface=surface)
                 elif len(tail) == 2 and tail[0] == "requests":
                     result = service.request(tail[1])
                 elif len(tail) == 2 and tail[0] == "artifacts":

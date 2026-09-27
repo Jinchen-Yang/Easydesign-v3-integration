@@ -222,13 +222,25 @@ class ProductService:
             notice=(value["detail"].get("message") if value["state"] == "failed" else None),
         )
 
-    def projects(self, offset: int = 0, limit: int = 30) -> dict[str, Any]:
+    def projects(
+        self, offset: int = 0, limit: int = 30, *, surface: str | None = None
+    ) -> dict[str, Any]:
+        if surface not in {None, "professional", "easy"}:
+            raise ProductError("invalid_filter", "Unknown product surface", 400)
         journal = self.journal()
         try:
-            registered = {row["id"]: row for row in journal.projects()}
+            registered = {
+                row["id"]: row
+                for row in journal.projects()
+                if surface is None or row.get("surface") == surface
+            }
         finally:
             journal.close()
-        names = sorted(set(self.gateway.projects()) | set(registered))
+        names = (
+            sorted(set(self.gateway.projects()) | set(registered))
+            if surface is None
+            else sorted(registered)
+        )
         items = []
         for project in names:
             try:
@@ -252,6 +264,10 @@ class ProductService:
                 logging.getLogger(__name__).warning(
                     "Project projection unavailable: %s (%s)", project, type(error).__name__
                 )
+                if surface is not None:
+                    # A surface-scoped user list contains usable product projects only.
+                    # The canonical project remains intact and directly addressable for repair.
+                    continue
                 items.append(
                     {
                         "id": project,
@@ -551,7 +567,11 @@ class ProductService:
         journal = self.journal()
         try:
             row, created = journal.reserve(
-                project, {"operation": "create", **request.model_dump(mode="json")}
+                project,
+                {
+                    "operation": "create",
+                    **request.model_dump(mode="json", exclude_none=True),
+                },
             )
             registered, registered_now = journal.register_project(
                 project,
@@ -560,6 +580,7 @@ class ProductService:
                 goal=request.goal,
                 thread=thread,
                 input_id=request.input_id,
+                surface=request.surface,
             )
         finally:
             journal.close()

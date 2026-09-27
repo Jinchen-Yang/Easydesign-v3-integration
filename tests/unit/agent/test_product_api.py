@@ -91,6 +91,33 @@ def test_goal_only_create_is_immediately_persistent_and_reloadable(bridge, tmp_p
     assert restarted.snapshot(project)["project"]["title"] == "NK2R program"
 
 
+def test_easy_project_listing_is_explicit_recent_and_excludes_other_surfaces(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    professional = CreateProject(
+        request_id=str(uuid4()),
+        title="Professional validation",
+        goal="Validate a professional workflow.",
+        surface="professional",
+    )
+    easy = CreateProject(
+        request_id=str(uuid4()),
+        title="Easy NK2R design",
+        goal="Design an extracellular NK2R VHH.",
+        surface="easy",
+    )
+    professional_id = service.create(professional)["project"]
+    easy_id = service.create(easy)["project"]
+
+    scoped = service.projects(limit=5, surface="easy")
+    assert scoped["total"] == 1
+    assert [item["id"] for item in scoped["items"]] == [easy_id]
+    assert professional_id not in {item["id"] for item in scoped["items"]}
+    assert service.projects(limit=5, surface="professional")["items"][0]["id"] == professional_id
+    assert {professional_id, easy_id} <= {
+        item["id"] for item in service.projects(limit=100)["items"]
+    }
+
+
 def test_gate1_remote_structure_candidates_have_checksum_bound_previews(tmp_path):
     workspace = tmp_path / "workspace"
     root = workspace / "runs" / "project" / "run"
@@ -1167,6 +1194,33 @@ def test_conversation_retry_respects_active_lane_and_does_not_lock_gate(tmp_path
         assert journal.retry("failed-question")
         assert not journal.retry("failed-question")
         assert journal.get("gate-decision")["state"] == "accepted"
+    finally:
+        journal.close()
+
+
+def test_product_journal_adds_surface_column_to_existing_database(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-requests.sqlite"
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE product_projects ("
+        "id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, title TEXT NOT NULL, "
+        "goal TEXT NOT NULL, thread TEXT NOT NULL, input_id TEXT, state TEXT NOT NULL, "
+        "detail TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)"
+    )
+    db.commit()
+    db.close()
+
+    from easydesign.product.journal import RequestJournal
+
+    journal = RequestJournal(path)
+    try:
+        columns = {
+            str(row["name"])
+            for row in journal.db.execute("PRAGMA table_info(product_projects)")
+        }
+        assert "surface" in columns
     finally:
         journal.close()
 

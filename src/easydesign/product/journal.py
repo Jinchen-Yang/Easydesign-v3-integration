@@ -32,8 +32,14 @@ class RequestJournal:
             "CREATE TABLE IF NOT EXISTS product_projects ("
             "id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, title TEXT NOT NULL, "
             "goal TEXT NOT NULL, thread TEXT NOT NULL, input_id TEXT, state TEXT NOT NULL, "
-            "detail TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)"
+            "detail TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL, surface TEXT)"
         )
+        columns = {
+            str(row["name"])
+            for row in self.db.execute("PRAGMA table_info(product_projects)")
+        }
+        if "surface" not in columns:
+            self.db.execute("ALTER TABLE product_projects ADD COLUMN surface TEXT")
         self.db.commit()
 
     def close(self) -> None:
@@ -124,6 +130,7 @@ class RequestJournal:
         goal: str,
         thread: str,
         input_id: str | None,
+        surface: str | None,
     ) -> tuple[dict[str, Any], bool]:
         """Persist product identity before a scientific target/config exists."""
         with self.db:
@@ -141,6 +148,7 @@ class RequestJournal:
                 "goal": goal,
                 "thread": thread,
                 "input_id": input_id,
+                "surface": surface,
             }
             if previous is not None:
                 if any(previous[key] != value for key, value in expected.items()):
@@ -152,7 +160,9 @@ class RequestJournal:
                 return previous, False
             now = time.time()
             self.db.execute(
-                "INSERT INTO product_projects VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO product_projects("
+                "id,request_id,title,goal,thread,input_id,state,detail,created,updated,surface"
+                ") VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     project,
                     request_id,
@@ -164,6 +174,7 @@ class RequestJournal:
                     "{}",
                     now,
                     now,
+                    surface,
                 ),
             )
         saved = self.project(project)

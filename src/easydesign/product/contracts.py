@@ -37,6 +37,7 @@ class CreateProject(Value):
     title: str = Field(min_length=1, max_length=120)
     goal: str = Field(min_length=1, max_length=1500)
     input_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    surface: Literal["professional", "easy"] | None = None
 
 
 class RenameProject(Value):

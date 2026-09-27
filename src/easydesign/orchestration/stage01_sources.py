@@ -521,6 +521,55 @@ def _search_matches(payload: dict[str, Any], query: str) -> list[dict[str, Any]]
     )
 
 
+def resolve_unique_reviewed_uniprot_seed(
+    *,
+    evidence_dir: Path,
+    query: str,
+    taxon_id: int,
+    cache_mode: str = "prefer-cache",
+) -> dict[str, Any]:
+    """Resolve a typed structural input to one reviewed exact UniProt seed.
+
+    This is deliberately only a seed for native Stage 01.  Stage 01 still has to
+    verify that the submitted sequence/structure maps to this identity before it
+    can become Target authority.
+    """
+
+    with ScientificHttpClient(
+        evidence_dir=evidence_dir,
+        cache_mode=cache_mode,
+    ) as client:
+        payload = uniprot_search(client, query=query, taxon_id=taxon_id).json()
+        if not isinstance(payload, dict):
+            raise TargetInputError("UniProt search 响应必须是 mapping")
+        matches = _search_matches(payload, query)
+        exact = [item for item in matches if item["exact"] and item["reviewed"]]
+        if len(exact) != 1:
+            candidates = ", ".join(item["accession"] for item in matches[:5]) or "none"
+            raise TargetInputError(
+                "typed-target-canonical-identity-ambiguous: "
+                f"query={query!r}, taxon_id={taxon_id}, "
+                f"reviewed_exact_matches={len(exact)}, candidates={candidates}"
+            )
+        selected = exact[0]
+        return {
+            "schema_version": "0.1",
+            "status": "verified-seed",
+            "authority": "stage01-input-only",
+            "query": query,
+            "taxon_id": taxon_id,
+            "accession": selected["accession"],
+            "entry_id": selected["entry_id"],
+            "recommended_name": selected["recommended_name"],
+            "gene_names": selected["gene_names"],
+            "reviewed": True,
+            "resolution": "unique-reviewed-exact-search",
+            "retrieval_records": [
+                record.model_dump(mode="json") for record in client.records
+            ],
+        }
+
+
 def _entry_method(entry: dict[str, Any]) -> tuple[str, float | None]:
     methods = entry.get("exptl", [])
     method = (
@@ -1019,10 +1068,46 @@ def _remote_selection(
                         attempt_id=attempt_id,
                     )
                 raise TargetInputError("structure-chain-ambiguous")
-            expected, start, end, scope_report = _scope(
-                config,
-                reference_sequence=reference,
-            )
+            canonical_reference: str | None = None
+            canonical_accession: str | None = None
+            if source.identity.uniprot_accession is not None:
+                identity_payload = uniprot_accession(
+                    client,
+                    source.identity.uniprot_accession,
+                ).json()
+                if not isinstance(identity_payload, dict):
+                    raise TargetInputError("UniProt accession 响应必须是 mapping")
+                canonical_accession, canonical_reference, canonical_identity = (
+                    _uniprot_identity(identity_payload)
+                )
+                if not canonical_identity["reviewed"]:
+                    raise TargetInputError(
+                        "显式 PDB canonical identity 必须是 reviewed UniProt entry"
+                    )
+                if (
+                    source.identity.taxon_id is not None
+                    and canonical_identity["taxonomy_id"] != source.identity.taxon_id
+                ):
+                    raise TargetInputError("显式 PDB UniProt taxonomy 与配置不一致")
+                resolved_scope = _scope_with_decision(
+                    prepared,
+                    reference_sequence=canonical_reference,
+                    features=(
+                        identity_payload.get("features")
+                        if isinstance(identity_payload.get("features"), list)
+                        else None
+                    ),
+                    approved_option=approved_option,
+                    attempt_id=attempt_id,
+                )
+                if isinstance(resolved_scope, Stage01SourceOutcome):
+                    return resolved_scope
+                expected, start, end, scope_report = resolved_scope
+            else:
+                expected, start, end, scope_report = _scope(
+                    config,
+                    reference_sequence=reference,
+                )
             candidate, path = _candidate(
                 client=client,
                 pdb_id=source.pdb_id.upper(),
@@ -1030,9 +1115,64 @@ def _remote_selection(
                 expected_scope=expected,
                 preferred_chain=selected_direct_chain,
                 preferred_chain_namespace=source.chain_namespace,
-                biological_identity_resolved=False,
+                biological_identity_resolved=canonical_reference is not None,
+                declared_relationship=(
+                    None
+                    if source.identity.relationship is None
+                    else ConstructRelationship(source.identity.relationship)
+                ),
+                accession=canonical_accession,
+                canonical_scope_start=start if canonical_reference is not None else None,
+                canonical_scope_end=end if canonical_reference is not None else None,
+                canonical_sequence=canonical_reference,
             )
-            if not candidate["eligible"] or path is None:
+            identity_review_reason = "target-identity-human-review-required"
+            identity_review_only = (
+                canonical_reference is not None
+                and candidate.get("review_eligible") is True
+                and identity_review_reason in candidate["reasons"]
+                and all(reason == identity_review_reason for reason in candidate["reasons"])
+            )
+            identity_review_approved = (
+                approved_payload.get("action") == "approve-target-identity"
+            )
+            if identity_review_only and not identity_review_approved:
+                if config.workflow.execution_mode is ExecutionMode.UNATTENDED:
+                    raise TargetInputError("target-identity-review-required: unattended 停止")
+                return _pause_for_decision(
+                    prepared,
+                    gate="target-identity-review",
+                    message=(
+                        "显式 PDB construct 与 canonical target 非 exact；"
+                        "请审核 residue mapping 与 construct edits。"
+                    ),
+                    options=(
+                        DecisionOption(
+                            option_id=(
+                                f"pdb-{source.pdb_id.lower()}-"
+                                f"chain-{str(candidate['chain']).lower()}"
+                            ),
+                            label=(
+                                f"Approve mapped {source.pdb_id.upper()} "
+                                f"chain {candidate['chain']}"
+                            ),
+                            description=(
+                                f"relationship={candidate['identity_report']['relationship']}; "
+                                "canonical residue mapping will remain authoritative"
+                            ),
+                            payload={
+                                "action": "approve-target-identity",
+                                "entity_id": entity_id,
+                                "chain": candidate["chain"],
+                            },
+                        ),
+                    ),
+                    attempt_id=attempt_id,
+                )
+            if (
+                (not candidate["eligible"] and not identity_review_only)
+                or path is None
+            ):
                 raise TargetInputError(
                     "显式 PDB ID 未通过 experimental-strict-v1；禁止自动换结构: "
                     f"{candidate['reasons']}"
@@ -1042,7 +1182,7 @@ def _remote_selection(
                 source_path=path,
                 selected_chain=str(candidate["chain"]),
                 expected_scope_sequence=expected,
-                reference_sequence=reference,
+                reference_sequence=canonical_reference or reference,
                 reference_start=start,
                 identity_report=direct_identity,
                 scope_report=scope_report,

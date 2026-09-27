@@ -15,6 +15,7 @@ import pytest
 from easydesign.agent.cli import run_session
 from easydesign.agent.contracts import DecisionCard
 from easydesign.agent.harness import fingerprint
+from easydesign.agent.session_store import SessionStore
 from easydesign.product.artifacts import ArtifactCatalog, confined_bytes, immutable_json
 from easydesign.product.contracts import (
     ActionRequest,
@@ -63,6 +64,41 @@ def service_for(bridge, tmp_path):
 
     return ProductService(
         NativeGateway(context, models, model_factory=factory), launcher=lambda _: None
+    )
+
+
+def patch_structural_identity_seed(monkeypatch):
+    from easydesign.agent.bootstrap import GoalTargetIntent
+
+    async def resolve_goal_target(**_kwargs):
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Bounded identity discovery for the supplied material.",
+            limitations=["Native Stage 01 must verify the material-to-identity mapping."],
+        )
+
+    monkeypatch.setattr(
+        "easydesign.agent.bootstrap.resolve_goal_target", resolve_goal_target
+    )
+    monkeypatch.setattr(
+        "easydesign.product.service.resolve_unique_reviewed_uniprot_seed",
+        lambda **_kwargs: {
+            "schema_version": "0.1",
+            "status": "verified-seed",
+            "authority": "stage01-input-only",
+            "query": "TACR2",
+            "taxon_id": 9606,
+            "accession": "P21452",
+            "entry_id": "NK2R_HUMAN",
+            "recommended_name": "Substance-K receptor",
+            "gene_names": ["tacr2"],
+            "reviewed": True,
+            "resolution": "unique-reviewed-exact-search",
+            "retrieval_records": [],
+        },
     )
 
 
@@ -335,11 +371,14 @@ def test_goal_bootstrap_and_runtime_reentry_share_one_worker_event_loop(
     assert service.snapshot(accepted["project"])["decision"] is None
 
 
-def test_product_api_keeps_uploaded_structure_as_optional_seed(bridge, tmp_path):
+def test_product_api_keeps_uploaded_structure_as_optional_seed(
+    bridge, tmp_path, monkeypatch
+):
     from easydesign.orchestration.config import LocalFileSourceConfig, load_run_config
     from easydesign.orchestration.local_project import project_config_path
     from tests.agent_support import structure
 
+    patch_structural_identity_seed(monkeypatch)
     service = service_for(bridge, tmp_path)
     uploaded = service.upload("optional-seed.pdb", structure("A").encode())
     request = CreateProject(
@@ -377,8 +416,9 @@ def test_product_api_binds_typed_database_inputs_without_flattening_into_goal(
         return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
 
     async def resolve_explicit_name(**kwargs):
-        assert "Explicit target name: TACR2" in kwargs["goal"]
-        assert "Explicit organism: Homo sapiens" in kwargs["goal"]
+        if "Explicit target name:" in kwargs["goal"]:
+            assert "Explicit target name: TACR2" in kwargs["goal"]
+            assert "Explicit organism: Homo sapiens" in kwargs["goal"]
         return GoalTargetIntent(
             target_label="NK2R",
             uniprot_query="this model value must not replace TACR2",
@@ -390,6 +430,23 @@ def test_product_api_binds_typed_database_inputs_without_flattening_into_goal(
 
     monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_native_bootstrap)
     monkeypatch.setattr("easydesign.agent.bootstrap.resolve_goal_target", resolve_explicit_name)
+    monkeypatch.setattr(
+        "easydesign.product.service.resolve_unique_reviewed_uniprot_seed",
+        lambda **_kwargs: {
+            "schema_version": "0.1",
+            "status": "verified-seed",
+            "authority": "stage01-input-only",
+            "query": "TACR2",
+            "taxon_id": 9606,
+            "accession": "P21452",
+            "entry_id": "NK2R_HUMAN",
+            "recommended_name": "Substance-K receptor",
+            "gene_names": ["tacr2"],
+            "reviewed": True,
+            "resolution": "unique-reviewed-exact-search",
+            "retrieval_records": [],
+        },
+    )
     service = service_for(bridge, tmp_path)
     cases = [
         (
@@ -423,6 +480,8 @@ def test_product_api_binds_typed_database_inputs_without_flattening_into_goal(
         ).config.target.source
         assert isinstance(configured, source_type)
         assert getattr(configured, expected[0]) == expected[1]
+        if isinstance(configured, PdbIdSourceConfig):
+            assert configured.identity.uniprot_accession == "P21452"
         journal = service.journal()
         try:
             registered = journal.project(accepted["project"])
@@ -444,6 +503,7 @@ def test_product_api_binds_typed_sequence_artifact_by_checksum(bridge, tmp_path,
         return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
 
     monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_native_bootstrap)
+    patch_structural_identity_seed(monkeypatch)
     service = service_for(bridge, tmp_path)
     sequence = b">NK2R construct\n" + (
         b"MNGTEGPNFYVPFSNKTGVVRSPFEYPQYYLAEPWQFSMLAAYMFLLIVLGFPINFLTLYVTVQH\n"
@@ -464,8 +524,19 @@ def test_product_api_binds_typed_sequence_artifact_by_checksum(bridge, tmp_path,
     configured = load_run_config(project_config_path(root))
     assert isinstance(configured.config.target.source, LocalFileSourceConfig)
     assert configured.config.target.source.format is TargetInputFormat.FASTA
+    assert configured.config.target.source.identity.uniprot_accession == "P21452"
     assert configured.source_path is not None
     assert configured.source_path.read_bytes() == sequence
+    store = SessionStore(root)
+    try:
+        seeds = [
+            event["payload"]["seed"]
+            for event in store.events(service._thread(request.request_id))
+            if event["kind"] == "product-canonical-target-seed"
+        ]
+    finally:
+        store.close()
+    assert seeds[-1]["authority"] == "stage01-input-only"
 
 
 def test_product_api_rejects_invalid_or_mistyped_sequence_artifacts(bridge, tmp_path):

@@ -28,6 +28,9 @@ from easydesign.agent.session_store import SessionStore
 from easydesign.core import ArtifactRef, sha256_file
 from easydesign.core.errors import ContractError
 from easydesign.orchestration.research import initialize_research_project
+from easydesign.orchestration.stage01_sources import (
+    resolve_unique_reviewed_uniprot_seed,
+)
 
 from .artifacts import ArtifactCatalog, confined_bytes, digest, immutable_bytes, immutable_json
 from .contracts import (
@@ -1104,6 +1107,85 @@ class ProductService:
                             "authority": "discovery-input-only",
                         },
                     )
+                canonical_seed: dict[str, Any] | None = None
+                if artifact_id is not None or isinstance(target_input, PDBTargetInput):
+                    previous_seeds = [
+                        event["payload"]["seed"]
+                        for event in store.events(thread)
+                        if event["kind"] == "product-canonical-target-seed"
+                        and isinstance(event["payload"].get("seed"), dict)
+                    ]
+                    if previous_seeds:
+                        canonical_seed = previous_seeds[-1]
+                    else:
+                        self._activity(
+                            store,
+                            thread,
+                            "specialist.started",
+                            task_id="canonical-target-seed",
+                            title="Canonical target identity",
+                            status="running",
+                            summary=(
+                                "Resolving a reviewed canonical identity before mapping the "
+                                "submitted structural input."
+                            ),
+                            specialist="target",
+                        )
+                        intent = runner.run(
+                            resolve_goal_target(
+                                store=store,
+                                thread=thread,
+                                goal=request.goal,
+                                model=models["target"],
+                                config=config,
+                            )
+                        )
+                        try:
+                            canonical_seed = resolve_unique_reviewed_uniprot_seed(
+                                evidence_dir=(
+                                    root / "metadata" / "product-target-identity"
+                                ),
+                                query=intent.uniprot_query,
+                                taxon_id=intent.taxon_id,
+                            )
+                        except ContractError as error:
+                            raise ProductError(
+                                "canonical_target_unresolved",
+                                (
+                                    "The submitted PDB, structure or sequence could not be "
+                                    "bound to one reviewed canonical target identity: "
+                                    f"{error}"
+                                ),
+                                422,
+                            ) from error
+                        store.event(
+                            thread,
+                            "product-canonical-target-seed",
+                            {
+                                "seed": canonical_seed,
+                                "intent": intent.model_dump(mode="json"),
+                                "authority": "stage01-input-only",
+                            },
+                        )
+                        self._activity(
+                            store,
+                            thread,
+                            "specialist.completed",
+                            task_id="canonical-target-seed",
+                            title="Canonical target identity",
+                            status="completed",
+                            summary=(
+                                "A unique reviewed UniProt identity seed was recorded; native "
+                                "Target preparation must still verify the submitted material."
+                            ),
+                            specialist="target",
+                        )
+                    if not isinstance(canonical_seed.get("accession"), str):
+                        raise ProductError(
+                            "canonical_target_unresolved",
+                            "The persisted canonical target seed is incomplete",
+                            409,
+                        )
                 if artifact_id is not None:
                     directory = self.root / "inputs" / artifact_id
                     ref = ArtifactRef.model_validate_json(
@@ -1132,6 +1214,7 @@ class ProductService:
                         project_root=root,
                         project_id=project,
                         target=source,
+                        identity_uniprot=canonical_seed["accession"],
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
@@ -1141,6 +1224,7 @@ class ProductService:
                         project_id=project,
                         pdb_id=target_input.pdb_id.upper(),
                         chain=target_input.chain,
+                        identity_uniprot=canonical_seed["accession"],
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )

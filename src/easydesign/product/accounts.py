@@ -72,6 +72,18 @@ class ResourceLimits(BaseModel):
     max_upload_bytes: int = Field(default=32 * 1024**2, ge=1024, le=32 * 1024**2)
     max_stored_upload_bytes: int = Field(default=10 * 1024**3, ge=1024, le=10 * 1024**4)
     max_candidates_per_job: int = Field(default=50_000, ge=1, le=1_000_000)
+    # Per-person cumulative final-design allowance. The billing unit is one
+    # candidate in the published Scale global candidate pool of a Gate-4 approved
+    # production campaign (scientifically negative candidates included; Pilot
+    # pools and Gate-5 panel revisions never count). Personal only: a value on a
+    # team subject is stored but never bills. null means unrestricted.
+    final_designs_allowance: int | None = Field(default=30, ge=0, le=1_000_000)
+    # Workflow stage defaults for NEW projects created in this scope (personal
+    # row -> personal projects, team row -> team projects). Existing projects keep
+    # their frozen phase34-scope budgets; changing these never mutates them.
+    # null means the native default (no product stage budget).
+    pilot_stage_budget: int | None = Field(default=30, ge=1, le=10_000)
+    scale_stage_budget: int | None = Field(default=30, ge=1, le=10_000)
 
 
 @dataclass(frozen=True)

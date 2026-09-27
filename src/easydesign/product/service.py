@@ -108,17 +108,23 @@ class ProductService:
         *,
         actor: str = "local-scientist",
         launcher: Callable[[str], None] | None = None,
+        stage_budgets: dict[str, int | None] | None = None,
     ) -> None:
         self.gateway, self.context, self.actor = gateway, gateway.context, actor
+        # Stage budgets captured by the controller at command authorization; the
+        # worker never re-reads mutable admin settings for a frozen thread.
+        self.stage_budgets = {
+            key: value if type(value) is int else None
+            for key, value in (stage_budgets or {}).items()
+            if key in {"pilot", "scale"}
+        }
         self.root = self.context.runtime_root / "state/product"
         self.root.mkdir(parents=True, exist_ok=True)
         self.catalog = ArtifactCatalog(self.context.root, self.root / "artifacts")
         self.launcher = launcher or self.launch
         self._cache_lock = threading.Lock()
         self._stable_snapshots: dict[str, dict[str, Any]] = {}
-        self._compact_candidate_pages: dict[
-            tuple[str, int, int, str | None], dict[str, Any]
-        ] = {}
+        self._compact_candidate_pages: dict[tuple[str, int, int, str | None], dict[str, Any]] = {}
 
     def _invalidate_projection_cache(self, project: str) -> None:
         with self._cache_lock:
@@ -966,6 +972,30 @@ class ProductService:
             finally:
                 journal.close()
 
+    @staticmethod
+    def _resolved_stage_budgets(
+        store: Any, thread: str, surface: str | None, captured: dict[str, int | None]
+    ) -> tuple[int | None, int | None]:
+        """A frozen thread scope always wins; captured budgets seed only new ones.
+
+        Returning ``None`` lets ``Phase34Runtime`` inherit its own recorded
+        budgets, so later admin changes can neither rewrite a frozen plan nor
+        trip the immutable-scope guard on retries.
+        """
+        prior_scope = next(
+            (
+                event["payload"]
+                for event in reversed(store.events(thread))
+                if event["kind"] == "phase34-scope"
+            ),
+            None,
+        )
+        if prior_scope is not None:
+            return None, None
+        if surface == "easy":
+            return captured.get("pilot", 30), captured.get("scale", 30)
+        return None, None
+
     def _create_and_start(self, project: str, request: CreateProject) -> dict[str, Any]:
         import asyncio
 
@@ -1082,14 +1112,17 @@ class ProductService:
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
+            pilot_budget, scale_budget = self._resolved_stage_budgets(
+                store, thread, request.surface, self.stage_budgets
+            )
             bridge = Phase34Runtime(
                 root,
                 thread,
                 store,
                 through="handoff",
                 prediction_backend=self.gateway.prediction_backend,
-                pilot_candidate_budget=30 if request.surface == "easy" else None,
-                scale_candidate_budget=30 if request.surface == "easy" else None,
+                pilot_candidate_budget=pilot_budget,
+                scale_candidate_budget=scale_budget,
                 product_auto_continue=request.surface == "easy",
             )
             loaded = bridge.validate_project()

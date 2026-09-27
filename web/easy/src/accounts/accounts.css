@@ -41,6 +41,11 @@ body:has(.account-shell), body:has(.account-login), body:has(.account-loading) {
 .account-compute-off { padding: 3px 10px; border-radius: 999px; background: #fff6df; color: #7a5b12; font-weight: 600; }
 .account-compute-note { margin: 0 0 12px; }
 .account-readonly-order { border: 0; padding: 0; margin: 0; min-width: 0; }
+.account-nullable-limit { display: grid; gap: 7px; }
+.account-null-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #465e7d; }
+.account-null-toggle input { width: auto; }
+.account-field-help { color: #5b6b82; font-size: 13px; line-height: 1.6; }
+.account-warn { color: #a5341f; }
 @media (max-width: 700px) {
   .account-shell { padding: 12px; }
   .account-panel { padding: 16px; }

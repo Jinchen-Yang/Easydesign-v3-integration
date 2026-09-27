@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -18,7 +19,8 @@ from easydesign.workspace_context import WorkspaceContext
 from .artifacts import immutable_json
 from .contracts import ProductError
 from .device_pool import ProductDevicePool
-from .resource_control import Admission
+from .journal import RequestJournal
+from .resource_control import Admission, contract_digest
 from .service import ProductService
 from .tenancy import MultiUserRuntime, ScopedProductService
 
@@ -55,6 +57,86 @@ def native_active(service: ProductService, request_id: str) -> bool:
             str(job.status) in {"queued", "running", "dispatching", "drain-requested"}
             for job in controller.list(project_id=session.bridge.project_id)
         )
+
+
+def plan_final_design_action(
+    row: dict[str, Any],
+    project: dict[str, Any],
+    row_facts: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Decide one held reservation from authoritative native facts only.
+
+    A completed HTTP request is never campaign completion: reservations hold
+    while native work is live, queued, resumable or uncertain, and release only
+    on provable abandonment or never-applied approval. ``phase34-scale-
+    inconclusive`` is NOT no-delivery evidence. Delivery is charged from the
+    published checksum-verified pool, or — when no pool exists — from the
+    checksum-bound batch receipts of the reservation's own campaign: a fully
+    complete native campaign with complete evidence (all-FAIL qualifies) settles
+    in full, while technically invalid, evidence-unknown or operationally
+    incomplete campaigns hold as recoverable. A superseded campaign settles its
+    verified retained population BEFORE any release is considered, so designs a
+    controller missed while down are never refunded by a newer Gate-4 round.
+    """
+    pools = [p for p in project["pools"] if p["card_id"] == row["authority_key"]]
+    if pools:
+        pool = pools[-1]
+        if pool["resumable"]:
+            return "hold", {"reason": "resumable_batches"}
+        if project["scale_jobs_active"]:
+            return "hold", {"reason": "native_scale_active"}
+        return "settle", {
+            "campaign_sha256": pool["contract_sha256"],
+            "delivered": pool["candidates"],
+        }
+    if project["scale_jobs_active"]:
+        return "hold", {"reason": "native_scale_active"}
+    authority = project["authority"]
+    superseded = authority is not None and authority["card_id"] != row["authority_key"]
+    receipts = project["receipt_pools"].get(row["authority_key"])
+    if receipts is not None:
+        if receipts.get("unverified"):
+            # Missing or corrupted artifact evidence is unreadable, not absent.
+            return "hold", {"reason": "receipts_unverified"}
+        if superseded and receipts["native_determined"]:
+            # Abandonment is proved by a newer promotion: this campaign can
+            # never dispatch again, so its verified retained population —
+            # complete or not — is the final delivery.
+            return "settle", {
+                "campaign_sha256": receipts["manifest_sha256"],
+                "delivered": receipts["candidates"],
+            }
+        if receipts["resumable"] or receipts["failed"]:
+            # Operationally incomplete or inconclusive: recoverable by contract,
+            # never proof of no delivery.
+            return "hold", {"reason": "campaign_incomplete"}
+        if not receipts["native_determined"]:
+            # Technical/unknown outcomes never become verified final designs —
+            # not even through supersession abandonment. A newer approval
+            # cannot convert unknown results into delivered designs.
+            return "hold", {"reason": "evidence_undetermined"}
+        # Complete durable native population (all-FAIL qualifies): charge in
+        # full from the checksum-bound manifest and its batch receipts.
+        return "settle", {
+            "campaign_sha256": receipts["manifest_sha256"],
+            "delivered": receipts["candidates"],
+        }
+    if superseded:
+        # A newer Gate-4 promotion replaced this authority and this authority
+        # never registered a campaign: nothing was ever produced under it.
+        return "release", {"reason": "superseded_authority"}
+    response = row_facts.get("card_response")
+    if response is None or not response.get("delivered"):
+        if row_facts.get("admission_active") or row_facts.get("request_state") in {
+            "accepted",
+            "running",
+            "interrupted",
+        }:
+            return "hold", {"reason": "request_in_flight"}
+        if row_facts.get("request_state") == "succeeded":
+            return "hold", {"reason": "uncertain"}
+        return "release", {"reason": "approval_not_applied"}
+    return "hold", {"reason": "awaiting_campaign_outcome"}
 
 
 class ResourceSupervisor:
@@ -152,6 +234,9 @@ class ResourceSupervisor:
                     self.pool.assignment_path(current.id).relative_to(self.context.root)
                 ),
                 "secret_names": secret_names,
+                # Stage budgets captured once at command authorization; the worker
+                # never re-reads mutable admin settings for a frozen thread.
+                "stage_budgets": self.ledger.command_budgets(current.scope_id, current.request_id),
             }
             config_path = (
                 self.context.runtime_root / "state/accounts/worker-config" / (current.id + ".json")
@@ -209,6 +294,233 @@ class ResourceSupervisor:
                         )
                     else:
                         raise
+            self._reconcile_final_designs()
+
+    def _final_designs_project_facts(
+        self, scope_id: str, subject_id: str, project_id: str, authority_keys: set[str]
+    ) -> dict[str, Any] | None:
+        scoped = self.context.with_execution_scope(
+            ExecutionScope(scope_id=scope_id, actor_id=subject_id, purpose="interactive")
+        )
+        # Native bridges discover the ambient workspace; activation keeps every
+        # verified read inside this reservation's scope, exactly like a bound
+        # product service.
+        with scoped.activate():
+            gateway = self.runtime.gateway_factory(scoped)
+            with gateway.session(project_id) as session:
+                bridge = session.bridge
+                project_latest = getattr(bridge, "project_latest", None)
+                if project_latest is None:
+                    return None
+
+                def verified_document(event: dict[str, Any]) -> dict[str, Any]:
+                    # Settlement must read checksum-verified contracts; a document
+                    # that does not match its published identity defers (holds).
+                    contract: Any = bridge.document(event["ref"])
+                    if not isinstance(contract, dict) or (
+                        contract_digest(contract) != event.get("contract_sha256")
+                    ):
+                        raise ProductError(
+                            "final_designs_unverified", "契约校验和不匹配，暂缓结算", 503
+                        )
+                    return contract
+
+                authority_event = project_latest("phase34-scale-authority")
+                authority = None
+                if authority_event is not None:
+                    contract = verified_document(authority_event)
+                    authority = {
+                        "card_id": contract.get("gate4_card_id"),
+                        "contract_sha256": authority_event.get("contract_sha256"),
+                    }
+                manifests: dict[str, dict[str, Any]] = {}
+                for event in bridge.store.events(bridge.thread):
+                    if event["kind"] == "phase34-scale-batch-manifest":
+                        contract = verified_document(event["payload"])
+                        card_id = contract["campaign"]["promotion_authority"]["gate4_card_id"]
+                        # Latest manifest event per reserved authority: a
+                        # superseded round's manifest stays chargeable evidence.
+                        manifests[card_id] = {
+                            "contract_sha256": event["payload"].get("contract_sha256"),
+                            "contract": contract,
+                        }
+                receipt_pools: dict[str, dict[str, Any]] = {}
+                for key in authority_keys:
+                    found = manifests.get(key)
+                    if found is None:
+                        continue
+                    try:
+                        population = self._receipt_population(bridge, found["contract"])
+                        receipt_pools[key] = {
+                            **population,
+                            "manifest_sha256": found["contract_sha256"],
+                        }
+                    except Exception:
+                        # Missing or corrupted evidence keeps the reservation
+                        # held with a truthful reason instead of settling.
+                        receipt_pools[key] = {
+                            "unverified": True,
+                            "manifest_sha256": found["contract_sha256"],
+                        }
+                pools: list[dict[str, Any]] = []
+                for event in bridge.store.events(bridge.thread):
+                    if event["kind"] == "phase34-global-candidate-pool":
+                        contract = verified_document(event["payload"])
+                        pools.append(
+                            {
+                                "card_id": contract["campaign"]["promotion_authority"][
+                                    "gate4_card_id"
+                                ],
+                                "contract_sha256": event["payload"].get("contract_sha256"),
+                                # Delivered unit: every retained pool candidate,
+                                # scientifically negative results included.
+                                "candidates": len(contract.get("candidates") or ()),
+                                "resumable": bool(contract.get("resumable_batch_ids")),
+                            }
+                        )
+                controller = getattr(bridge, "controller", None)
+                if controller is None:
+                    # Without the durable job controller, liveness is uncertain;
+                    # the caller defers this project and reservations stay held.
+                    raise ProductError("native_state_unavailable", "原生执行状态暂时无法核对", 409)
+                scale_jobs_active = any(
+                    str(job.status) in {"queued", "running", "dispatching", "drain-requested"}
+                    and (getattr(job, "run_id", None) or "").startswith("scale-v3-")
+                    for job in controller.list(project_id=bridge.project_id)
+                )
+                responses = {
+                    key: (bridge.store.response(bridge.thread, key) if key else None)
+                    for key in authority_keys
+                }
+                return {
+                    "authority": authority,
+                    "pools": pools,
+                    "receipt_pools": receipt_pools,
+                    "scale_jobs_active": scale_jobs_active,
+                    "responses": responses,
+                }
+
+    @staticmethod
+    def _receipt_population(bridge: Any, manifest_contract: dict[str, Any]) -> dict[str, Any]:
+        """Verified durable Scale population from the native batch receipt API.
+
+        Reads the checksum-bound manifest journal exactly as the native runtime
+        does and verifies every retained candidate's artifact refs against the
+        run declared by its receipt (the same ``bridge.run``/``ref.verify``
+        pattern ``finalize_scale_inputs`` uses). Any inconsistency raises and
+        the reservation stays held. Never scans artifact directories and never
+        mutates native evidence: a missing manifest journal is unreadable
+        state, not something to recreate. ``native_determined`` reuses the
+        native completeness criterion from ``finalize_scale_inputs``: only a
+        fully populated native campaign whose every candidate carries complete
+        evidence counts as scientifically determined (an all-FAIL population
+        qualifies); technical/unknown outcomes and legacy zero-evaluable
+        populations do not.
+        """
+        from easydesign.agent.phase34_batches import ScaleBatchManifest, ScaleBatchStore
+        from easydesign.agent.phase34_contracts import ExecutionMode
+        from easydesign.agent.session_store import confined
+
+        campaign_id = manifest_contract["campaign"]["campaign_id"]
+        root = confined(bridge.project, bridge.project / "agent/phase34-scale" / campaign_id)
+        if not (root / "manifest.json").is_file():
+            raise ProductError("final_designs_unverified", "Scale 批次台账缺失，暂缓结算", 503)
+        manifest = ScaleBatchManifest.model_validate(manifest_contract)
+        journal = ScaleBatchStore(root, manifest)
+        pool = journal.pool()
+        synthetic = pool.campaign.execution.mode is ExecutionMode.SYNTHETIC_STRESS
+        for batch_id in pool.completed_batch_ids:
+            receipt = journal.read(batch_id)
+            if receipt is None:
+                continue
+            for candidate in receipt.candidates:
+                if not receipt.source_run_id:
+                    # Real Scale candidates must declare their source run, the
+                    # same boundary the native finalizer enforces.
+                    if not synthetic:
+                        raise ProductError(
+                            "final_designs_unverified", "Scale 候选缺少来源 run", 503
+                        )
+                    continue
+                run_root, _unused = bridge.run(receipt.source_run_id)
+                for ref in candidate.lineage.artifact_refs:
+                    ref.verify(run_root)
+        candidates = pool.candidates
+        native = pool.campaign.evidence_policy == "boltzgen-native-v1"
+        complete_evidence = bool(candidates) and all(
+            item.native_evidence is not None and item.native_evidence.native_pass is not None
+            for item in candidates
+        )
+        return {
+            "candidates": len(candidates),
+            "resumable": len(pool.resumable_batch_ids),
+            "failed": len(pool.failed_batch_ids),
+            "native_determined": native and complete_evidence,
+        }
+
+    def _reconcile_final_designs(self) -> None:
+        rows = self.ledger.reserved_final_designs()
+        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for row in rows:
+            groups.setdefault((row["scope_id"], row["project_id"]), []).append(row)
+        for (scope_id, project_id), entries in groups.items():
+            journal: RequestJournal | None = None
+            try:
+                facts = self._final_designs_project_facts(
+                    scope_id,
+                    entries[0]["subject_id"],
+                    project_id,
+                    {row["authority_key"] for row in entries},
+                )
+                if facts is None:
+                    continue
+                # The request journal lives in the scope-remapped runtime root.
+                scoped = self.context.with_execution_scope(
+                    ExecutionScope(
+                        scope_id=scope_id,
+                        actor_id=entries[0]["subject_id"],
+                        purpose="interactive",
+                    )
+                )
+                journal = RequestJournal(scoped.runtime_root / "state/product/requests.sqlite")
+                for row in entries:
+                    request = journal.get(row["request_id"])
+                    row_facts = {
+                        "card_response": facts["responses"].get(row["authority_key"]),
+                        "request_state": None if request is None else request["state"],
+                        "admission_active": self.ledger.request_admission_active(
+                            scope_id, row["request_id"]
+                        ),
+                    }
+                    decision, payload = plan_final_design_action(row, facts, row_facts)
+                    try:
+                        if decision == "settle":
+                            self.ledger.settle_final_designs(
+                                row["id"],
+                                campaign_sha256=payload["campaign_sha256"],
+                                delivered=payload["delivered"],
+                            )
+                        elif decision == "release":
+                            self.ledger.release_final_designs(row["id"], payload["reason"])
+                        else:
+                            self.ledger.note_final_designs_hold(row["id"], payload["reason"])
+                    except ProductError as error:
+                        if error.code not in {
+                            "campaign_mismatch",
+                            "final_designs_already_settled",
+                            "final_designs_not_held",
+                        }:
+                            raise
+                        self.ledger.note_final_designs_hold(row["id"], error.code)
+            except Exception:
+                # Unreadable native state stays held; observation trouble must
+                # never release or settle a reservation on guesswork.
+                logging.getLogger(__name__).warning(
+                    "Final-design reconciliation deferred: %s/%s", scope_id, project_id
+                )
+            finally:
+                if journal is not None:
+                    journal.close()
 
     def _tick_one(self, admission: Admission, memo: list[Any]) -> None:
         if admission.worker_pid is None:

@@ -327,6 +327,9 @@ class AccountHandler(Handler):
         if tail == ["admin", "admissions"] and self.command == "GET":
             self.send(200, {"admissions": self.server.runtime.resources.all_admissions(user)})
             return True
+        if tail == ["admin", "final-designs"] and self.command == "GET":
+            self.send(200, self.server.runtime.resources.final_designs_admin(user))
+            return True
         if tail == ["health"] and self.command == "GET":
             self.send(200, {"status": "ready", "mode": "multi-user"})
             return True

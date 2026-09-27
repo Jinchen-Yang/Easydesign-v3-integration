@@ -1,8 +1,9 @@
 import {useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode} from 'react';
 import {
-  accountApi, AccountApiError, draftsApi, fetchAccountConfig, fetchScopeUsage, notifySessionChange,
-  scopedTransport, watchSessionChanges, workspaceUrl, type AccountConfig, type AccountScope,
-  type AccountSession, type AccountUser, type ProjectDraft, type QuotaLimits, type ScopeUsage,
+  accountApi, AccountApiError, draftsApi, fetchAccountConfig, fetchFinalDesignsOverview, fetchScopeUsage,
+  notifySessionChange, scopedTransport, watchSessionChanges, workspaceUrl, type AccountConfig, type AccountScope,
+  type AccountSession, type AccountUser, type FinalDesignEntry, type FinalDesignsBlock,
+  type FinalDesignsOverview, type ProjectDraft, type QuotaLimits, type ScopeUsage,
 } from '../../../shared/account-client';
 import {Brand} from '../components/Brand';
 import './accounts.css';
@@ -356,6 +357,9 @@ const LIMIT_LABELS: Record<keyof QuotaLimits, string> = {
   max_active_jobs: '并发科学请求', max_active_chats: '并发对话',
   max_gpu_devices: 'GPU 槽位上限', max_upload_bytes: '单文件上传上限',
   max_stored_upload_bytes: '上传存储额度', max_candidates_per_job: '单次生成候选上限',
+  final_designs_allowance: '最终设计个人累计额度',
+  pilot_stage_budget: 'Pilot 阶段预算（新项目）',
+  scale_stage_budget: 'Scale 阶段预算（新项目）',
 };
 
 function UsagePanel({usage}: {usage: ScopeUsage}) {
@@ -363,13 +367,16 @@ function UsagePanel({usage}: {usage: ScopeUsage}) {
   const jobs = active.filter(item => item.kind === 'scientific').length;
   const chats = active.filter(item => item.kind === 'conversation').length;
   const gpus = active.reduce((total, item) => total + item.gpu_slots, 0);
+  const stageBudget = (value: number | null) => value === null ? '原生默认' : String(value);
   const rows: Array<[string, string]> = [
     [LIMIT_LABELS.max_active_jobs, `${jobs} / ${usage.limits.max_active_jobs}${usage.limits.max_active_jobs === 0 ? '（暂停新请求）' : ''}`],
     [LIMIT_LABELS.max_active_chats, `${chats} / ${usage.limits.max_active_chats}`],
     [LIMIT_LABELS.max_gpu_devices, `${gpus} / ${usage.limits.max_gpu_devices}`],
     [LIMIT_LABELS.max_upload_bytes, bytes(usage.limits.max_upload_bytes)],
     [LIMIT_LABELS.max_stored_upload_bytes, `${bytes(usage.stored_upload_bytes)} / ${bytes(usage.limits.max_stored_upload_bytes)}`],
-    [LIMIT_LABELS.max_candidates_per_job, String(usage.limits.max_candidates_per_job)],
+    [LIMIT_LABELS.max_candidates_per_job, `${usage.limits.max_candidates_per_job}（单次执行上限，非累计余额）`],
+    [LIMIT_LABELS.pilot_stage_budget, stageBudget(usage.limits.pilot_stage_budget)],
+    [LIMIT_LABELS.scale_stage_budget, stageBudget(usage.limits.scale_stage_budget)],
   ];
   return <section className="account-panel" aria-label="资源用量">
     <div className="account-row"><h2>{usage.scope.name} · 资源用量</h2>
@@ -378,6 +385,8 @@ function UsagePanel({usage}: {usage: ScopeUsage}) {
     <div className="account-grid">{rows.map(([label, value]) => <article className="account-scope" key={label}>
       <h3>{value}</h3><span>{label}</span>
     </article>)}</div>
+    <p className="account-field-help">阶段预算是本范围内新建项目的冻结默认值；已有项目的冻结预算不受后续修改影响。</p>
+    <FinalDesignsBalance block={usage.final_designs}/>
     <h3>最近准入记录</h3>
     <div className="account-table-scroll"><table><thead><tr><th>类型</th><th>状态</th><th>GPU</th><th>请求</th><th>时间</th></tr></thead>
       <tbody>{usage.admissions.map(item => <tr key={item.id}>
@@ -420,7 +429,16 @@ function Usage({session}: {session: AccountSession}) {
  * values the server would reject. The server remains the authority; this only
  * gives field-level feedback instead of a guaranteed-invalid request.
  */
-const LIMIT_CONSTRAINTS: Record<keyof QuotaLimits, {min: number; max: number; label: string}> = {
+export type RequiredLimitKey =
+  | 'max_active_jobs'
+  | 'max_active_chats'
+  | 'max_gpu_devices'
+  | 'max_upload_bytes'
+  | 'max_stored_upload_bytes'
+  | 'max_candidates_per_job';
+export type NullableLimitKey = 'final_designs_allowance' | 'pilot_stage_budget' | 'scale_stage_budget';
+
+const LIMIT_CONSTRAINTS: Record<RequiredLimitKey, {min: number; max: number; label: string}> = {
   max_active_jobs: {min: 0, max: 64, label: '并发科学请求（0 表示暂停新请求）'},
   max_active_chats: {min: 0, max: 64, label: '并发对话'},
   max_gpu_devices: {min: 1, max: 64, label: 'GPU 槽位上限'},
@@ -428,11 +446,61 @@ const LIMIT_CONSTRAINTS: Record<keyof QuotaLimits, {min: number; max: number; la
   max_stored_upload_bytes: {min: 1024, max: 10 * 1024 ** 4, label: '上传存储字节额度'},
   max_candidates_per_job: {min: 1, max: 1_000_000, label: '单次生成候选数量上限'},
 };
-const LIMIT_KEYS = Object.keys(LIMIT_CONSTRAINTS) as Array<keyof QuotaLimits>;
-type LimitDraft = Record<keyof QuotaLimits, string>;
+const LIMIT_KEYS = Object.keys(LIMIT_CONSTRAINTS) as Array<RequiredLimitKey>;
 
-const draftOf = (limits: QuotaLimits): LimitDraft =>
-  Object.fromEntries(LIMIT_KEYS.map(key => [key, String(limits[key])])) as LimitDraft;
+/** Nullable limits carry an explicit meaning; `unlimited` submits null. */
+export interface NullableLimitDraft {
+  unlimited: boolean;
+  text: string;
+}
+
+const NULLABLE_LIMIT_CONSTRAINTS: Record<NullableLimitKey, {
+  min: number; max: number; label: string; nullLabel: string; help: string;
+}> = {
+  final_designs_allowance: {
+    min: 0, max: 1_000_000,
+    label: '最终设计个人累计额度',
+    nullLabel: '不限制（不启用余额检查）',
+    help: '按审批人个人累计计费：依据经过核验的 Scale 全局候选池或完整原生批次回执，'
+      + '完整科学负结果同样计入已交付；技术失败、证据不完整或待恢复时保留预留。'
+      + 'Pilot 候选池与 Gate-5 面板修订不消耗该额度。'
+      + '修改额度只影响之后的预留，不会改写已冻结的科学计划或已消耗数量。',
+  },
+  pilot_stage_budget: {
+    min: 1, max: 10_000,
+    label: 'Pilot 阶段预算（新项目默认）',
+    nullLabel: '使用原生默认（不设阶段预算）',
+    help: '只作为本范围内新建项目冻结的阶段预算默认值；已有项目的冻结预算不变。',
+  },
+  scale_stage_budget: {
+    min: 1, max: 10_000,
+    label: 'Scale 阶段预算（新项目默认）',
+    nullLabel: '使用原生默认（不设阶段预算）',
+    help: '只作为本范围内新建项目冻结的阶段预算默认值；已有项目的冻结预算不变。',
+  },
+};
+const NULLABLE_LIMIT_KEYS = Object.keys(NULLABLE_LIMIT_CONSTRAINTS) as Array<NullableLimitKey>;
+
+export type LimitDraft = Record<RequiredLimitKey, string> & Record<NullableLimitKey, NullableLimitDraft>;
+
+const draftOf = (limits: QuotaLimits): LimitDraft => ({
+  ...Object.fromEntries(LIMIT_KEYS.map(key => [key, String(limits[key])])) as Record<RequiredLimitKey, string>,
+  ...Object.fromEntries(NULLABLE_LIMIT_KEYS.map(key => [
+    key,
+    {unlimited: limits[key] === null, text: limits[key] === null ? '' : String(limits[key])},
+  ])) as Record<NullableLimitKey, NullableLimitDraft>,
+});
+
+/** Turns a validated draft into the POST body; `unlimited` fields become null. */
+export function limitPayloadFromDraft(draft: LimitDraft): QuotaLimits {
+  return {
+    ...Object.fromEntries(LIMIT_KEYS.map(key => [key, Number(draft[key])])) as Record<RequiredLimitKey, number>,
+    ...Object.fromEntries(NULLABLE_LIMIT_KEYS.map(key => [
+      key,
+      draft[key].unlimited ? null : Number(draft[key].text),
+    ])) as Record<NullableLimitKey, number | null>,
+  } as QuotaLimits;
+}
 
 /** Returns the first human-readable problem for each invalid field. */
 export function limitDraftProblems(draft: LimitDraft): Partial<Record<keyof QuotaLimits, string>> {
@@ -451,10 +519,27 @@ export function limitDraftProblems(draft: LimitDraft): Partial<Record<keyof Quot
     }
     if (value < min || value > max) problems[key] = `必须在 ${min} 到 ${max} 之间。`;
   }
+  for (const key of NULLABLE_LIMIT_KEYS) {
+    const {min, max} = NULLABLE_LIMIT_CONSTRAINTS[key];
+    if (draft[key].unlimited) continue; // null is an explicit, valid choice
+    const raw = draft[key].text.trim();
+    if (!raw) {
+      problems[key] = `不能为空；请填写 ${min} 到 ${max} 之间的整数，或勾选“${NULLABLE_LIMIT_CONSTRAINTS[key].nullLabel}”。`;
+      continue;
+    }
+    const value = Number(raw);
+    if (!Number.isInteger(value)) {
+      problems[key] = '请输入有效整数。';
+      continue;
+    }
+    if (value < min || value > max) problems[key] = `必须在 ${min} 到 ${max} 之间。`;
+  }
   return problems;
 }
 
-function QuotaEditor({session, subject, name}: {session: AccountSession; subject: string; name: string}) {
+function QuotaEditor({session, subject, name, subjectKind}: {
+  session: AccountSession; subject: string; name: string; subjectKind: 'personal' | 'team';
+}) {
   const {value: limits, error, busy, load} = useGuardedLoad<QuotaLimits>();
   const [draft, setDraft] = useState<LimitDraft | null>(null);
   const action = useAction();
@@ -471,8 +556,7 @@ function QuotaEditor({session, subject, name}: {session: AccountSession; subject
     {error && <p className="account-error" role="alert">{error}</p>}
     {limits && draft && <form onSubmit={event => {event.preventDefault(); void action.run(async () => {
       // Invalid fields cannot reach the submit button, so the parse is total.
-      const parsed = Object.fromEntries(LIMIT_KEYS.map(key => [key, Number(draft[key])])) as unknown as QuotaLimits;
-      const saved = await accountApi<{limits: QuotaLimits}>(`/admin/quotas/${subject}`, session, parsed);
+      const saved = await accountApi<{limits: QuotaLimits}>(`/admin/quotas/${subject}`, session, limitPayloadFromDraft(draft));
       setDraft(draftOf(saved.limits));
     }, '资源额度已保存，后续准入按新额度检查');}}>
       {LIMIT_KEYS.map(key => <label key={key}>{LIMIT_CONSTRAINTS[key].label}
@@ -488,16 +572,124 @@ function QuotaEditor({session, subject, name}: {session: AccountSession; subject
         />
         {problems[key] && <small className="account-field-error" role="alert">{problems[key]}</small>}
       </label>)}
+      <p className="account-field-help">单次生成候选数量上限是一次执行内的即时上限，不是累计最终设计余额；后者由下面的个人累计额度控制。</p>
+      {NULLABLE_LIMIT_KEYS.map(key => {const constraint = NULLABLE_LIMIT_CONSTRAINTS[key]; const field = draft[key]; return <label key={key}>
+        {constraint.label}
+        <span className="account-nullable-limit">
+          <input
+            type="number"
+            step={1}
+            min={constraint.min}
+            max={constraint.max}
+            required={!field.unlimited}
+            disabled={field.unlimited}
+            aria-invalid={problems[key] ? true : undefined}
+            value={field.text}
+            onChange={event => setDraft({...draft, [key]: {...field, text: event.target.value}})}
+          />
+          <span className="account-null-toggle">
+            <input
+              type="checkbox"
+              checked={field.unlimited}
+              aria-label={`${constraint.label}：${constraint.nullLabel}`}
+              onChange={event => setDraft({...draft, [key]: {unlimited: event.target.checked, text: event.target.checked ? '' : field.text}})}
+            />
+            {constraint.nullLabel}
+          </span>
+        </span>
+        {problems[key] && <small className="account-field-error" role="alert">{problems[key]}</small>}
+        <small className="account-field-help">{constraint.help}</small>
+        {key === 'final_designs_allowance' && subjectKind === 'team' &&
+          <small className="account-field-help">该额度只按审批人个人计费：在团队主体上保存的数值不会形成团队池，也不会改变计费单位。</small>}
+      </label>;})}
       <button className="account-primary" disabled={action.busy || invalid || busy}>保存额度</button>
       {invalid && <p className="account-field-error" role="alert">仍有字段超出服务端允许范围，修正后才能保存。</p>}
     </form>}{action.feedback}</section>;
 }
 
+function FinalDesignsEntriesTable({entries}: {entries: FinalDesignEntry[]}) {
+  return <div className="account-table-scroll"><table><thead><tr><th>项目</th><th>计费人</th><th>预留</th><th>已交付</th><th>状态</th><th>更新</th></tr></thead>
+    <tbody>{entries.map(entry => <tr key={entry.id}>
+      <td><code>{entry.project_id.slice(0, 12)}</code><small>{entry.scope_id === entry.subject_id ? '个人范围' : `范围 ${entry.scope_id.slice(0, 8)}`}</small></td>
+      <td><code>{entry.subject_id.slice(0, 12)}</code></td>
+      <td>{entry.amount}</td>
+      <td>{entry.delivered === null ? '—' : entry.delivered}</td>
+      <td>{entry.state}{entry.reason ? <small>{entry.reason}</small> : null}</td>
+      <td>{when(entry.updated_at)}</td>
+    </tr>)}</tbody></table></div>;
+}
+
+function FinalDesignsBalance({block}: {block: FinalDesignsBlock}) {
+  const personal = block.kind === 'personal';
+  const cards: Array<[string, string, string?]> = personal
+    ? [
+      ['额度', block.allowance === null ? '不限制' : String(block.allowance)],
+      ['已预留（进行中的战役）', String(block.reserved)],
+      ['已交付（含科学负结果）', String(block.delivered)],
+      ['剩余可用', block.remaining === null ? '不限制' : String(block.remaining),
+        block.remaining === null ? undefined : block.remaining <= 0 ? 'account-warn' : undefined],
+    ]
+    : [
+      ['已预留（本团队，进行中的战役）', String(block.reserved)],
+      ['已交付（本团队，含科学负结果）', String(block.delivered)],
+    ];
+  const stateText = personal && block.remaining !== null
+    ? block.remaining > 0
+      ? `还可预留 ${block.remaining} 个最终设计；新的 Gate-4 预留超限会被拒绝（final_designs_exhausted）。`
+      : '可用额度已耗尽：新的 Gate-4 预留会被拒绝（final_designs_exhausted），需管理员调整额度。'
+    : null;
+  return <section className="account-panel" aria-label={personal ? '最终设计余额（个人累计）' : '最终设计用量（团队口径）'}>
+    <div className="account-row"><h3>{personal ? '最终设计余额（按审批人个人累计）' : '最终设计用量（团队口径）'}</h3>
+      {personal && block.allowance === null && <span>不限制：未启用余额检查</span>}
+    </div>
+    <p>{personal
+      ? '按审批人个人累计，覆盖其个人与团队范围内的战役；不包含其他人的余额或私有项目。'
+      : '仅统计计入本团队账目的预留与交付；不披露成员的个人余额、其他团队或个人项目的数据。'}</p>
+    {stateText && <p className="account-permission-note" role="status">{stateText}</p>}
+    <div className="account-grid">{cards.map(([label, value, warn]) => <article className="account-scope" key={label}>
+      <h3 className={warn}>{value}</h3><span>{label}</span>
+    </article>)}</div>
+    <details><summary>计费规则</summary><p>{block.rule}</p></details>
+    <h4>最终设计记录</h4>
+    <FinalDesignsEntriesTable entries={block.entries}/>
+    {block.entries.length === 0 && <p>还没有最终设计预留。Gate-4 批准生产战役后，这里会显示预留与结算轨迹。</p>}
+  </section>;
+}
+
 type AdminData = {users: AccountUser[]; teams: Team[]; events: Audit[]};
+
+function FinalDesignsOverview({session}: {session: AccountSession}) {
+  const {value, error, busy, load} = useGuardedLoad<FinalDesignsOverview>();
+  const reload = useCallback(() => {
+    load(() => fetchFinalDesignsOverview(session));
+  }, [load, session]);
+  useEffect(() => { reload(); }, [reload]);
+  return <section className="account-panel" aria-label="最终设计余额总览">
+    <div className="account-row"><h2>最终设计余额总览</h2><button disabled={busy} onClick={reload}>{busy ? '加载中…' : '刷新'}</button></div>
+    <p>全站只读聚合（读取会被审计）。额度按审批人个人累计；预留为进行中战役，已交付含科学负结果。</p>
+    {error && <p className="account-error" role="alert">{error}</p>}
+    {busy && !value && <p role="status">正在读取最终设计余额…</p>}
+    {value && <>
+      <div className="account-table-scroll"><table><thead><tr><th>人员</th><th>额度</th><th>已预留</th><th>已交付</th><th>剩余</th></tr></thead>
+        <tbody>{value.subjects.map(subject => <tr key={subject.subject_id}>
+          <td>{subject.display_name || subject.subject_id.slice(0, 12)}{subject.username ? <small>@{subject.username}</small> : null}</td>
+          <td>{subject.allowance === null ? '不限制' : subject.allowance}</td>
+          <td>{subject.reserved}</td>
+          <td>{subject.delivered}</td>
+          <td className={subject.remaining !== null && subject.remaining <= 0 ? 'account-warn' : undefined}>
+            {subject.remaining === null ? '不限制' : subject.remaining}</td>
+        </tr>)}</tbody></table></div>
+      {value.subjects.length === 0 && <p>还没有任何最终设计预留记录。</p>}
+      <details><summary>计费规则</summary><p>{value.rule}</p></details>
+      <h3>最近预留记录（最多 200 条）</h3>
+      <FinalDesignsEntriesTable entries={value.entries}/>
+    </>}
+  </section>;
+}
 
 function Administration({session}: {session: AccountSession}) {
   const {value: data, error, busy, load} = useGuardedLoad<AdminData>();
-  const [selection, setSelection] = useState<{id: string; name: string} | null>(null);
+  const [selection, setSelection] = useState<{id: string; name: string; kind: 'personal' | 'team'} | null>(null);
   const [resetUser, setResetUser] = useState<AccountUser | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const action = useAction();
@@ -528,7 +720,7 @@ function Administration({session}: {session: AccountSession}) {
           {user.status === 'pending' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'rejected'}); refresh(0);})}>拒绝</button>}
           {user.status === 'active' && <button disabled={action.busy} onClick={() => {if (window.confirm(`停用 ${user.display_name} 并撤销其登录会话？`)) void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'suspended'}); refresh(0);});}}>停用</button>}
           {user.status !== 'rejected' && <button onClick={() => {setResetUser(user); setTemporaryPassword('');}}>重置密码</button>}
-          <button onClick={() => setSelection({id:user.id,name:user.display_name})}>资源额度</button>
+          <button onClick={() => setSelection({id: user.id, name: user.display_name, kind: 'personal'})}>资源额度</button>
           <a href={workspaceUrl(user.id)}>只读查看项目</a>
         </td></tr>)}</tbody></table></div>{action.feedback}
     </section>
@@ -539,10 +731,11 @@ function Administration({session}: {session: AccountSession}) {
       </form>
     </section>}
     <section className="account-panel"><h2>全站团队</h2>{teams.map(team => <div className="account-row" key={team.id}><strong>{team.name}</strong><span>{team.status === 'active' ? '已启用' : '已停用'}</span>
-      <a href={workspaceUrl(team.id)}>只读查看项目</a><button onClick={() => setSelection({id:team.id,name:team.name})}>团队额度</button>
+      <a href={workspaceUrl(team.id)}>只读查看项目</a><button onClick={() => setSelection({id: team.id, name: team.name, kind: 'team'})}>团队额度</button>
       <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/teams/${team.id}`, session, {status:team.status === 'active' ? 'suspended' : 'active'});refresh(0);})}>{team.status === 'active' ? '停用团队' : '启用团队'}</button>
     </div>)}</section>
-    {selection && <QuotaEditor key={selection.id} session={session} subject={selection.id} name={selection.name}/>}
+    {selection && <QuotaEditor key={selection.id} session={session} subject={selection.id} name={selection.name} subjectKind={selection.kind}/>}
+    <FinalDesignsOverview session={session}/>
     <section className="account-panel"><h2>最近审计记录</h2><div className="account-table-scroll"><table><thead><tr><th>时间</th><th>操作</th><th>操作人</th><th>对象</th></tr></thead><tbody>{events.map(item => <tr key={item.seq}><td>{when(item.created_at)}</td><td>{item.action}</td><td>{users.find(u => u.id === item.actor_id)?.username || '未认证请求'}</td><td><code>{item.target_id || item.scope_id || '—'}</code></td></tr>)}</tbody></table></div>
       {events.length >= AUDIT_PAGE && events.length % AUDIT_PAGE === 0 && <button disabled={busy} onClick={() => refresh(events.length)}>加载更多</button>}
     </section>

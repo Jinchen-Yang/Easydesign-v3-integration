@@ -67,22 +67,79 @@ export function freshDrafts(): DraftRecord[] {
   }];
 }
 
-export const usage = (scopeId: string) => ({
-  scope: {...(scopeId === 'team-1' ? teamScope('admin') : personalScope(users.bob)), id: scopeId},
-  limits: {
-    max_active_jobs: 2, max_active_chats: 4, max_gpu_devices: 2, max_upload_bytes: 52428800,
-    max_stored_upload_bytes: 104857600, max_candidates_per_job: 24,
-  },
-  stored_upload_bytes: 8388608,
-  admissions: [
-    {id: 'adm-1', scope_id: scopeId, request_id: 'req-synthetic-0001', actor_id: users.alice.id, kind: 'scientific',
-      state: 'running', gpu_slots: 1, max_candidates: 24, devices: [0], created_at: Date.now() / 1000 - 300,
-      updated_at: Date.now() / 1000 - 60, reason: null},
-    {id: 'adm-2', scope_id: scopeId, request_id: 'req-synthetic-0002', actor_id: users.bob.id, kind: 'conversation',
-      state: 'released', gpu_slots: 0, max_candidates: 0, devices: [], created_at: Date.now() / 1000 - 900,
-      updated_at: Date.now() / 1000 - 800, reason: null},
-  ],
+export const FINAL_DESIGN_RULE_FIXTURE = 'Per-person cumulative final-design allowance. The unit is one candidate in '
+  + 'the published, checksum-verified Scale global candidate pool of a Gate-4 approved production campaign; '
+  + 'scientifically negative candidates count as delivered. Pilot pools never count; Gate-5 panel revisions '
+  + 'never add final designs.';
+
+export const finalDesignEntry = (overrides: Partial<{
+  id: string; scope_id: string; subject_id: string; amount: number; delivered: number | null;
+  state: 'reserved' | 'settled' | 'released'; reason: string | null;
+}> = {}) => ({
+  id: overrides.id || 'fdr-synthetic-0001',
+  scope_id: overrides.scope_id || 'team-1',
+  project_id: 'workbench-synthetic',
+  request_id: 'req-synthetic-approve-1',
+  authority_key: 'a'.repeat(64),
+  subject_id: overrides.subject_id || users.alice.id,
+  amount: overrides.amount ?? 12,
+  delivered: overrides.delivered === undefined ? null : overrides.delivered,
+  state: overrides.state || 'reserved',
+  campaign_sha256: null,
+  reason: overrides.reason === undefined ? null : overrides.reason,
+  created_at: Date.now() / 1000 - 300,
+  updated_at: Date.now() / 1000 - 60,
 });
+
+export const usage = (scopeId: string, finalDesigns?: {
+  allowance?: number | null; reserved?: number; delivered?: number;
+}) => {
+  const allowance = finalDesigns?.allowance === undefined ? 30 : finalDesigns.allowance;
+  const reserved = finalDesigns?.reserved ?? 12;
+  const delivered = finalDesigns?.delivered ?? 8;
+  const remaining = allowance === null ? null : allowance - reserved - delivered;
+  return {
+    scope: {...(scopeId === 'team-1' ? teamScope('admin') : personalScope(users.bob)), id: scopeId},
+    limits: {
+      max_active_jobs: 2, max_active_chats: 4, max_gpu_devices: 2, max_upload_bytes: 52428800,
+      max_stored_upload_bytes: 104857600, max_candidates_per_job: 24,
+      final_designs_allowance: 30, pilot_stage_budget: 30, scale_stage_budget: 30,
+    },
+    stored_upload_bytes: 8388608,
+    admissions: [
+      {id: 'adm-1', scope_id: scopeId, request_id: 'req-synthetic-0001', actor_id: users.alice.id, kind: 'scientific',
+        state: 'running', gpu_slots: 1, max_candidates: 24, devices: [0], created_at: Date.now() / 1000 - 300,
+        updated_at: Date.now() / 1000 - 60, reason: null},
+      {id: 'adm-2', scope_id: scopeId, request_id: 'req-synthetic-0002', actor_id: users.bob.id, kind: 'conversation',
+        state: 'released', gpu_slots: 0, max_candidates: 0, devices: [], created_at: Date.now() / 1000 - 900,
+        updated_at: Date.now() / 1000 - 800, reason: null},
+    ],
+    // Personal scope blocks carry the caller's own cumulative balance; team scope
+    // blocks carry only the team-local aggregate (never member balances).
+    final_designs: scopeId === 'team-1'
+      ? {
+        kind: 'team' as const,
+        scope_id: 'team-1',
+        reserved: 12,
+        delivered: 8,
+        rule: FINAL_DESIGN_RULE_FIXTURE,
+        entries: [
+          finalDesignEntry({state: 'settled', delivered: 8}),
+          finalDesignEntry({id: 'fdr-synthetic-0002', amount: 4, state: 'reserved', reason: 'resumable_batches'}),
+        ],
+      }
+      : {
+        kind: 'personal' as const,
+        subject_id: scopeId,
+        allowance,
+        reserved,
+        delivered,
+        remaining,
+        rule: FINAL_DESIGN_RULE_FIXTURE,
+        entries: [finalDesignEntry({scope_id: 'team-1', state: 'settled', delivered: 8})],
+      },
+  };
+};
 
 export const workbenchSnapshot = () => ({
   schema_version: '1', mode: 'live', revision: 'f'.repeat(64),

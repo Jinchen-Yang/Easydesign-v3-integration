@@ -1,6 +1,7 @@
 import type {Page, Route} from '@playwright/test';
 import {
-  freshDrafts, jsonResponse, sessionFor, usage, users, type DraftRecord,
+  finalDesignEntry, FINAL_DESIGN_RULE_FIXTURE, freshDrafts, jsonResponse, sessionFor, usage, users,
+  type DraftRecord,
 } from './fixtures';
 
 /** In-memory synthetic account/draft state; resets per test. */
@@ -9,6 +10,8 @@ export function installAccountRoutes(page: Page) {
   let drafts: DraftRecord[] = freshDrafts();
   let staleOnce = false;
   const approved: Record<string, string> = {};
+  const quotaSaves: Array<Record<string, unknown>> = [];
+  let personalFinalDesigns: {allowance?: number | null; reserved?: number; delivered?: number} | undefined;
 
   const reply = (route: Route, body: unknown, status = 200) => jsonResponse(route, body, status);
   const actor = () => users[(current || 'bob') as keyof typeof users]!;
@@ -84,6 +87,8 @@ export function installAccountRoutes(page: Page) {
     }
     if (path === '/api/v1/scopes/team-1/usage' && request.method() === 'GET')
       return reply(route, usage('team-1'));
+    if (path === `/api/v1/scopes/${users.bob.id}/usage` && request.method() === 'GET')
+      return reply(route, usage(users.bob.id, personalFinalDesigns));
     if (path === '/api/v1/admin/users' && request.method() === 'GET') {
       if (!current || actor().role !== 'admin')
         return reply(route, {error: {code: 'admin_required', message: '需要系统管理员'}}, 403);
@@ -98,12 +103,31 @@ export function installAccountRoutes(page: Page) {
         max_active_jobs: 1, max_active_chats: 2, max_gpu_devices: 1,
         max_upload_bytes: 32 * 1024 ** 2, max_stored_upload_bytes: 10 * 1024 ** 3,
         max_candidates_per_job: 24,
+        final_designs_allowance: 30, pilot_stage_budget: 30, scale_stage_budget: 30,
       }});
     if (/^\/api\/v1\/admin\/quotas\//.test(path) && request.method() === 'POST') {
-      const value = post as Record<string, number> | undefined;
-      if (!value || Object.values(value).some(entry => !Number.isInteger(entry)))
+      if (!current || actor().role !== 'admin')
+        return reply(route, {error: {code: 'admin_required', message: '需要系统管理员'}}, 403);
+      const value = post as Record<string, number | null> | undefined;
+      // Nullable quota fields submit null as an explicit choice; required ones stay integers.
+      if (!value || Object.values(value).some(entry => entry !== null && !Number.isInteger(entry)))
         return reply(route, {error: {code: 'invalid_request', message: '请求字段不正确'}}, 400);
+      quotaSaves.push({...value});
       return reply(route, {limits: value});
+    }
+    if (path === '/api/v1/admin/final-designs' && request.method() === 'GET') {
+      if (!current || actor().role !== 'admin')
+        return reply(route, {error: {code: 'admin_required', message: '需要系统管理员'}}, 403);
+      return reply(route, {
+        rule: FINAL_DESIGN_RULE_FIXTURE,
+        entries: [finalDesignEntry({state: 'settled', delivered: 8})],
+        subjects: [
+          {subject_id: users.alice.id, username: 'alice', display_name: 'Alice Lead',
+            allowance: 30, reserved: 12, delivered: 8, remaining: 10},
+          {subject_id: users.bob.id, username: 'bob', display_name: 'Bob Member',
+            allowance: null, reserved: 0, delivered: 0, remaining: null},
+        ],
+      });
     }
     if (/^\/api\/v1\/admin\/users\/user-c$/.test(path) && request.method() === 'POST') {
       approved['carol'] = String(post?.status);
@@ -115,6 +139,10 @@ export function installAccountRoutes(page: Page) {
   return {
     armStaleOnce: () => { staleOnce = true; },
     drafts: () => drafts,
+    quotaSaves: () => quotaSaves.slice(),
+    setPersonalFinalDesigns: (value: {allowance?: number | null; reserved?: number; delivered?: number}) => {
+      personalFinalDesigns = value;
+    },
   };
 }
 

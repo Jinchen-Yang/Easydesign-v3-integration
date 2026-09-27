@@ -36,7 +36,14 @@ export interface QuotaLimits {
   max_gpu_devices: number;
   max_upload_bytes: number;
   max_stored_upload_bytes: number;
+  /** Per-execution candidate ceiling — not the cumulative final-design balance. */
   max_candidates_per_job: number;
+  /** Personal cumulative final-design allowance; null = unrestricted. */
+  final_designs_allowance: number | null;
+  /** Stage budget frozen into NEW projects of this scope; null = native default. */
+  pilot_stage_budget: number | null;
+  /** Stage budget frozen into NEW projects of this scope; null = native default. */
+  scale_stage_budget: number | null;
 }
 
 export class AccountApiError extends Error {
@@ -220,11 +227,76 @@ export interface ResourceAdmission {
   reason: string | null;
 }
 
+/** One Gate-4 campaign charge against a person's final-design allowance. */
+export interface FinalDesignEntry {
+  id: string;
+  scope_id: string;
+  project_id: string;
+  request_id: string;
+  /** Gate-4 card id — the canonical approval identity. */
+  authority_key: string;
+  /** The billed person (original approver). */
+  subject_id: string;
+  amount: number;
+  delivered: number | null;
+  state: 'reserved' | 'settled' | 'released';
+  campaign_sha256: string | null;
+  reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/** The caller's own cumulative balance (personal scope usage block). */
+export interface FinalDesignsPersonal {
+  kind: 'personal';
+  subject_id: string;
+  allowance: number | null;
+  reserved: number;
+  delivered: number;
+  remaining: number | null;
+  rule: string;
+  entries: FinalDesignEntry[];
+}
+
+/** Team-local aggregate only; never other members' personal balances. */
+export interface FinalDesignsTeam {
+  kind: 'team';
+  scope_id: string;
+  reserved: number;
+  delivered: number;
+  rule: string;
+  entries: FinalDesignEntry[];
+}
+
+export type FinalDesignsBlock = FinalDesignsPersonal | FinalDesignsTeam;
+
 export interface ScopeUsage {
   scope: AccountScope;
   limits: QuotaLimits;
   stored_upload_bytes: number;
   admissions: ResourceAdmission[];
+  final_designs: FinalDesignsBlock;
+}
+
+/** Site-wide final-design aggregates for the platform admin console. */
+export interface FinalDesignsSubjectSummary {
+  subject_id: string;
+  username: string | null;
+  display_name: string | null;
+  allowance: number | null;
+  reserved: number;
+  delivered: number;
+  remaining: number | null;
+}
+
+export interface FinalDesignsOverview {
+  rule: string;
+  entries: FinalDesignEntry[];
+  subjects: FinalDesignsSubjectSummary[];
+}
+
+export function fetchFinalDesignsOverview(session: AccountSession): Promise<FinalDesignsOverview> {
+  return accountApi<FinalDesignsOverview>('/admin/final-designs', session);
 }
 
 async function scopedApi<T>(transport: typeof fetch, path: string, body?: unknown): Promise<T> {

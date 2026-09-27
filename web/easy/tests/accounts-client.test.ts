@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  AccountApiError, accountApi, draftsApi, scopedProductPath, scopeDecisionLinks, scopeProductUrl,
-  scopedTransport, type AccountScope, type AccountSession, type ProjectDraft,
+  AccountApiError, accountApi, draftsApi, fetchFinalDesignsOverview, scopedProductPath,
+  scopeDecisionLinks, scopeProductUrl, scopedTransport, type AccountScope, type AccountSession,
+  type ProjectDraft,
 } from '../../shared/account-client';
 
 const session: AccountSession = {
@@ -136,5 +137,28 @@ describe('draftsApi', () => {
     await expect(draftsApi.save(transport, {title: 'T', goal: 'G'}, 'draft-1', 1)).rejects.toMatchObject({
       code: 'stale_draft', status: 409,
     });
+  });
+});
+
+describe('final-designs admin overview', () => {
+  it('reads the audited admin aggregate with session credentials', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      rule: 'Per-person cumulative final-design allowance.',
+      entries: [],
+      subjects: [{subject_id: 'user-a', username: 'alice', display_name: 'Alice',
+        allowance: 30, reserved: 12, delivered: 8, remaining: 10}],
+    }), {status: 200}));
+    vi.stubGlobal('fetch', fetch);
+    const overview = await fetchFinalDesignsOverview(session);
+    expect(overview.subjects[0]).toMatchObject({username: 'alice', remaining: 10});
+    const [path, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(path).toBe('/api/v1/admin/final-designs');
+    expect(new Headers(init.headers).get('X-CSRF-Token')).toBe('csrf-1');
+    fetch.mockImplementation(async () =>
+      new Response(JSON.stringify({error: {code: 'admin_required', message: '需要系统管理员'}}), {status: 403}));
+    await expect(fetchFinalDesignsOverview(session)).rejects.toMatchObject({
+      code: 'admin_required', status: 403,
+    });
+    vi.unstubAllGlobals();
   });
 });

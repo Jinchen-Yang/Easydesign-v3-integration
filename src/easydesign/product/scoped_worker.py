@@ -11,6 +11,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import Any
 
 from easydesign.agent.session_store import confined
 from easydesign.execution_scope import EXECUTION_SCOPE_ENV
@@ -39,6 +40,18 @@ def _admission_still_active(db_path: Path, grant_id: str) -> bool:
     if row is None:
         return True
     return str(row[0]) in ACTIVE_ADMISSIONS
+
+
+def stage_budgets_from_config(config: dict[str, Any]) -> dict[str, int | None] | None:
+    """Validated transport of controller-captured budgets; never admin re-reads."""
+    raw = config.get("stage_budgets")
+    if not isinstance(raw, dict):
+        return None
+    return {
+        key: value if type(value) is int else None
+        for key, value in raw.items()
+        if key in {"pilot", "scale"}
+    }
 
 
 class SecretFilter(logging.Filter):
@@ -161,9 +174,11 @@ def main() -> int:
         confined(base.root, base.root / config["models"]),
         prediction_backend=config["prediction_backend"],
     )
-    ProductService(gateway, actor="account:" + config["scientific_actor_id"]).run(
-        config["request_id"]
-    )
+    ProductService(
+        gateway,
+        actor="account:" + config["scientific_actor_id"],
+        stage_budgets=stage_budgets_from_config(config),
+    ).run(config["request_id"])
     return 0
 
 

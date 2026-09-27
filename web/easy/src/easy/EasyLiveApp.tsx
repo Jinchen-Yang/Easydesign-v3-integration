@@ -51,6 +51,24 @@ function activeIndex(snapshot: ProductSnapshot | null) {
   return PHASE_INDEX[snapshot.project.phase] ?? 0;
 }
 
+export function canAutoContinue(
+  snapshot: ProductSnapshot | null,
+  pending: boolean,
+  requestState?: string,
+) {
+  if (!snapshot || !snapshot.capabilities.auto_continue || !snapshot.capabilities.resume)
+    return false;
+  // An incomplete execution may have been recovered by a newer durable worker.
+  // Reconciliation only attaches that verified successor receipt; it does not
+  // retry scientific compute.  Allow this bounded action to run automatically
+  // while keeping all other incomplete states stopped for explicit review.
+  const safeStatus =
+    snapshot.project.status === 'available' ||
+    (snapshot.project.status === 'incomplete' &&
+      snapshot.current_action.stage.endsWith('-reconcile'));
+  return !pending && !['running', 'accepted'].includes(requestState || '') && safeStatus;
+}
+
 function stageStatus(snapshot: ProductSnapshot | null, index: number) {
   if (!snapshot) return 'waiting';
   const phase = STEPS[index].toLowerCase();
@@ -449,15 +467,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const snapshot = state?.snapshot || null;
   const completed = snapshot?.current_action.stage === 'handoff-complete';
   useEffect(() => {
-    if (
-      !snapshot ||
-      !snapshot.capabilities.auto_continue ||
-      !snapshot.capabilities.resume ||
-      snapshot.project.status !== 'available' ||
-      state?.pending ||
-      state?.pendingRequest?.state === 'running' ||
-      state?.pendingRequest?.state === 'accepted'
-    )
+    if (!canAutoContinue(snapshot, Boolean(state?.pending), state?.pendingRequest?.state))
       return;
     const key = `${snapshot.project.id}:${snapshot.revision}:${snapshot.current_action.id}`;
     if (autoContinuation.current === key) return;

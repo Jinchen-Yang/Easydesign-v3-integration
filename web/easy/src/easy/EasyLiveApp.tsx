@@ -467,7 +467,10 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const snapshot = state?.snapshot || null;
   const completed = snapshot?.current_action.stage === 'handoff-complete';
   useEffect(() => {
-    if (!canAutoContinue(snapshot, Boolean(state?.pending), state?.pendingRequest?.state))
+    if (
+      !snapshot ||
+      !canAutoContinue(snapshot, Boolean(state?.pending), state?.pendingRequest?.state)
+    )
       return;
     const key = `${snapshot.project.id}:${snapshot.revision}:${snapshot.current_action.id}`;
     if (autoContinuation.current === key) return;

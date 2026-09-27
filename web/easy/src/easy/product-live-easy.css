@@ -561,6 +561,17 @@
 }
 
 @media (max-width: 700px) {
+  .easy-live-app .easy-history {
+    /* Leave scroll space for project actions above the floating companion. */
+    padding-bottom: 180px;
+  }
+
+  /* The live table's last column contains project actions, not demo metrics. */
+  .easy-live-app .easy-history th:last-child,
+  .easy-live-app .easy-history td:last-child {
+    display: table-cell;
+  }
+
   .easy-pipeline-steps {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }

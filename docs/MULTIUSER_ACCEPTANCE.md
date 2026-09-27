@@ -1,5 +1,61 @@
 # Multi-user acceptance evidence
 
+## Integration of the approved 592e1e5 delivery
+
+Current integrated code snapshot: `1f4ca10` on
+`codex/v3-multiuser-integration-20260927`. The merge commit `6d93202` has parents
+`592e1e5646dd6e8d512fe0706230f0d2d4144fb3` and
+`71f924c8930d341837611e06081144c535e18c88`; `18fd019` fixes the inherited typing
+and recovery blockers; `1f4ca10` adds the configurable competition allowance.
+
+The competition preset is personal cumulative final-design allowance 30 and
+Pilot/Scale workflow budgets 30/30. All are administrator-configurable. Pilot is
+excluded from the final-design balance. Verified scientifically negative Scale
+results count; technical/unknown/corrupted evidence remains held. Historical
+campaign receipts, same-request recovery actors and scope-qualified keys are
+covered by the new accounting regressions. Existing frozen plans are preserved.
+
+Checks completed on the integrated code so far:
+
+- Full-tree mypy: **264 source files, no errors**; Ruff: passed.
+- Original Gate-1 restart failure and all Gate-2 recovery parameter cases pass;
+  additional negative regressions reject genuinely stale/missing evidence.
+- Final-design accounting: **41 tests passed**, including real controller reads of
+  native manifests/batch receipts and ArtifactRef verification in indexed fixture runs.
+- Easy: **81 unit tests** and **15 account browser tests** passed.
+- Professional: **54 unit tests** and **3 account browser tests** passed.
+- Both UI staging builds passed; no formal assets/wheel/deployment was published.
+
+Final required verification completed at **2026-09-27T16:18:22Z**:
+
+- `.venv/bin/python -B scripts/dev.py verify --mode integration`: **PASSED**.
+  Both `make check` and `make test` ran and returned zero.
+- Complete Python collection: **1,654 cases = 1,643 passed + 11 skipped**;
+  no failures. The skips are 3 explicitly opt-in live provider/backend cases and
+  8 cases requiring a separately configured PyMOL environment. Three existing
+  provider tool-choice warnings were reported, not hidden.
+- Evidence: `runtime/logs/final-integration-verify-20260927T152844285837/`
+  contains `verify.log`, `pytest.xml` and `result.json`. Runtime was about 49m37s.
+- Built-UI/live-account checks passed with actual persisted allowance/Pilot/Scale
+  settings **12/6/12**, correct authorized balance and zero page errors.
+- Account browser checks: **18 passed** (15 Easy + 3 Professional).
+- Additional unchanged upstream chat/performance checks: **7 passed**; the
+  mobile first-open timing case still exceeds the permitted time budget
+  (observed about 1,564–1,745ms against a strict 1,500ms limit). Its hidden/blocked
+  project-action bug is fixed; the performance assertion was not weakened.
+  See the browser record for the separate evidence and limitation.
+
+The first clean-tree verifier invocation returned `nothing-to-do`; that invocation
+is NOT counted as validation. The real run above followed this substantive
+acceptance update and executed the full integration commands without test filters.
+No real GPU science acceptance, push, deployment or formal release is implied.
+
+The historical results below describe the pre-integration snapshot. Its nine
+typing errors and two recovery failures have been resolved by `18fd019` and are
+no longer current blockers; the retained history explains the original evidence.
+
+## Historical pre-integration acceptance
+
 Date: 2026-09-27 · Branch: `codex/v3-multiuser-teams-20260927` (uncommitted
 feature work) · QA evidence consolidated by the coordinator.
 

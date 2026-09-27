@@ -1215,6 +1215,7 @@ class ProductService:
                         project_id=project,
                         target=source,
                         identity_uniprot=canonical_seed["accession"],
+                        cache_mode="prefer-cache",
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
@@ -1225,6 +1226,7 @@ class ProductService:
                         pdb_id=target_input.pdb_id.upper(),
                         chain=target_input.chain,
                         identity_uniprot=canonical_seed["accession"],
+                        cache_mode="prefer-cache",
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
@@ -1233,6 +1235,7 @@ class ProductService:
                         project_root=root,
                         project_id=project,
                         uniprot=target_input.accession.upper(),
+                        cache_mode="prefer-cache",
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
@@ -1303,6 +1306,7 @@ class ProductService:
                             else intent.uniprot_query
                         ),
                         taxon_id=intent.taxon_id,
+                        cache_mode="prefer-cache",
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )

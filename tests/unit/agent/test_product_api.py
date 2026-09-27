@@ -475,11 +475,13 @@ def test_product_api_binds_typed_database_inputs_without_flattening_into_goal(
         )
         accepted = service.create(request)
         service.run(request.request_id)
-        configured = load_run_config(
+        loaded = load_run_config(
             project_config_path(service.context.projects_root / accepted["project"])
-        ).config.target.source
+        ).config
+        configured = loaded.target.source
         assert isinstance(configured, source_type)
         assert getattr(configured, expected[0]) == expected[1]
+        assert loaded.workflow.cache_mode == "prefer-cache"
         if isinstance(configured, PdbIdSourceConfig):
             assert configured.identity.uniprot_accession == "P21452"
         journal = service.journal()
@@ -523,6 +525,7 @@ def test_product_api_binds_typed_sequence_artifact_by_checksum(bridge, tmp_path,
     root = service.context.projects_root / accepted["project"]
     configured = load_run_config(project_config_path(root))
     assert isinstance(configured.config.target.source, LocalFileSourceConfig)
+    assert configured.config.workflow.cache_mode == "prefer-cache"
     assert configured.config.target.source.format is TargetInputFormat.FASTA
     assert configured.config.target.source.identity.uniprot_accession == "P21452"
     assert configured.source_path is not None

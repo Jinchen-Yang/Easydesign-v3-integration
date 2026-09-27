@@ -159,6 +159,7 @@ def initialize_project(
     scope_feature_type: str | None = None,
     scope_feature_name: str | None = None,
     precomputed_msa: Path | None = None,
+    cache_mode: str = "online",
     msa_cache_mode: str = "online",
     stage01_prediction_backend: PredictionBackend | None = None,
     stage05_prediction_backend: PredictionBackend | None = None,
@@ -192,6 +193,8 @@ def initialize_project(
         raise ConfigurationError("--scope-range 与 --scope-feature-type 不能同时提供")
     if scope_feature_name is not None and scope_feature_type is None:
         raise ConfigurationError("--scope-feature-name 必须配合 --scope-feature-type")
+    if cache_mode not in {"online", "prefer-cache", "offline"}:
+        raise ConfigurationError("--cache-mode 必须是 online、prefer-cache 或 offline")
     if msa_cache_mode not in {"online", "prefer-cache", "offline"}:
         raise ConfigurationError("--msa-cache-mode 必须是 online、prefer-cache 或 offline")
     if precomputed_msa is not None and msa_cache_mode != "online":
@@ -385,7 +388,7 @@ def initialize_project(
         "workflow": {
             "execution_mode": execution_mode,
             "stop_after_stage": stop_after_stage,
-            "cache_mode": "online",
+            "cache_mode": cache_mode,
             "max_strategy_rounds": 1,
         },
         "stage01": {

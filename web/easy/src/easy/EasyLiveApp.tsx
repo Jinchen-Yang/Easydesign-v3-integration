@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
-import { fileTypes, inputLabel, readInputFile, validateInput } from './inputs';
+import { fileTypes, inputLabel, readInputFile } from './inputs';
+import { productGoal, productSource, validateLiveInput } from './live-input';
 import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
 import {
@@ -21,7 +22,7 @@ import {
   summarizeGoal,
 } from './live-presentation';
 import type { EasyProductPort } from './EasyProductAdapter';
-import {scopeProductUrl, surfaceRights} from '../../../shared/account-client';
+import { scopeProductUrl, surfaceRights } from '../../../shared/account-client';
 import type {
   GateInput,
   LabOrderDraftInput,
@@ -39,13 +40,6 @@ const PHASE_INDEX: Record<string, number> = {
   candidates: 5,
   handoff: 5,
 };
-
-function productGoal(input: EasyInput) {
-  if (input.type === 'description') return input.text.trim();
-  const source = input.file?.name || input.text.trim();
-  const organism = input.species.trim() ? ` Organism: ${input.species.trim()}.` : '';
-  return `${input.goal.trim()} Input ${input.type}: ${source}.${organism}`.slice(0, 1500);
-}
 
 function activeIndex(snapshot: ProductSnapshot | null) {
   if (!snapshot) return 0;
@@ -84,7 +78,7 @@ const PIPELINE_STEPS = [
   ['boltzgen-refold', 'Refold'],
   ['boltzgen-analysis', 'Analyze'],
   ['boltzgen-filter', 'Filter'],
-  ['native-filter', 'AFO / native filter'],
+  ['native-filter', 'Independent prediction / native filter'],
 ] as const;
 
 function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
@@ -108,7 +102,9 @@ function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
       <div className="easy-execution-title">
         <div>
           <span>REAL EXECUTION</span>
-          <strong>{native ? 'AFO 预测与原生过滤' : progress.substage_label || 'BoltzGen'}</strong>
+          <strong>
+            {native ? '独立结构预测与原生过滤' : progress.substage_label || 'BoltzGen'}
+          </strong>
         </div>
         <b>{progress.total ? `${progress.completed} / ${progress.total} 条` : '等待资源'}</b>
       </div>
@@ -324,7 +320,11 @@ function GatePanel({
           {approveAction === 'override' ? '确认并覆盖' : '批准并继续'}
           <ArrowRight size={15} />
         </button>
-        <button className="easy-outline" disabled={!canDecide} onClick={() => setShowRevise((value) => !value)}>
+        <button
+          className="easy-outline"
+          disabled={!canDecide}
+          onClick={() => setShowRevise((value) => !value)}
+        >
           修改
         </button>
         {showRevise && (
@@ -502,12 +502,16 @@ function SimulatedOrder({
   );
 }
 
-export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
+export function EasyLiveApp({
+  adapter,
+  access,
+  computeAvailable = true,
+}: {
   adapter: EasyProductPort;
-  access?: {id: string; can_edit: boolean; can_execute: boolean; role: string};
+  access?: { id: string; can_edit: boolean; can_execute: boolean; role: string };
   computeAvailable?: boolean;
 }) {
-  const {canExecute} = surfaceRights(access, computeAvailable);
+  const { canExecute } = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState | null>(null);
   const [input, setInput] = useState<EasyInput>(() => emptyInput());
   const [file, setFile] = useState<File | null>(null);
@@ -549,6 +553,9 @@ export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
     };
   }, [adapter]);
   const snapshot = state?.snapshot || null;
+  const autoContinuationEligible = canExecute && canAutoContinue(snapshot, false);
+  const executionBlocked =
+    snapshot !== null && ['blocked', 'incomplete'].includes(snapshot.project.status);
   const completed = snapshot?.current_action.stage === 'handoff-complete';
   useEffect(() => {
     if (
@@ -570,7 +577,7 @@ export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
   useEffect(() => {
     setViewedIndex(null);
   }, [snapshot?.project.id]);
-  const issue = validateInput(input);
+  const issue = validateLiveInput(input);
   const index = activeIndex(snapshot);
   const shownIndex = viewedIndex ?? index;
   const active = Boolean(
@@ -602,7 +609,13 @@ export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
     setError('');
     try {
       const goal = productGoal(input);
-      await adapter.createProject(input.name.trim() || inputLabel(input).slice(0, 80), goal, file);
+      const source = productSource(input);
+      await adapter.createProject(
+        input.name.trim() || inputLabel(input).slice(0, 80),
+        goal,
+        file,
+        source,
+      );
       const created = await adapter.load();
       if (created.selectedProject) {
         const params = new URLSearchParams(location.search);
@@ -649,7 +662,9 @@ export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
         <Brand />
         <h1>会话需要重新登录</h1>
         <p>当前账号会话已过期或被撤销，正在返回账号页。</p>
-        <a className="easy-primary" href="/account/">返回账号与团队</a>
+        <a className="easy-primary" href="/account/">
+          返回账号与团队
+        </a>
         {error && <p className="easy-error">{error}</p>}
       </main>
     ) : (
@@ -699,18 +714,25 @@ export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
           <button className="easy-help" onClick={() => void adapter.refresh()}>
             <RefreshCw size={14} /> 刷新
           </button>
-          <a className="easy-pro-link" href={access ? `/?scope=${encodeURIComponent(access.id)}` : '/'}>
+          <a
+            className="easy-pro-link"
+            href={access ? `/?scope=${encodeURIComponent(access.id)}` : '/'}
+          >
             打开专业版
           </a>
         </div>
       </header>
 
       <main className="easy-main">
-        {!canExecute && <p className="account-permission-note">{access?.role === 'observer'
-          ? '管理员只读查看：不能修改他人项目、批准 Gate 或启动计算。'
-          : !computeAvailable
-            ? '当前服务未连接科学执行器（账号管理模式）：可以浏览与协作编辑，计算启动与审批暂不可用。'
-            : '团队协作成员：可以查看和讨论，科学审批及计算启动由团队管理员负责。'}</p>}
+        {!canExecute && (
+          <p className="account-permission-note">
+            {access?.role === 'observer'
+              ? '管理员只读查看：不能修改他人项目、批准 Gate 或启动计算。'
+              : !computeAvailable
+                ? '当前服务未连接科学执行器（账号管理模式）：可以浏览与协作编辑，计算启动与审批暂不可用。'
+                : '团队协作成员：可以查看和讨论，科学审批及计算启动由团队管理员负责。'}
+          </p>
+        )}
         <section className="easy-intro">
           <h1>
             从一句话开始<span>真实设计</span>
@@ -736,8 +758,9 @@ export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
                 >
                   {INPUT_TYPES.filter((item) => !['pse', 'bundle'].includes(item.id)).map(
                     (item) => (
-                      <option key={item.id} value={item.id}>
+                      <option key={item.id} value={item.id} disabled={item.id === 'sequence'}>
                         {item.label}
+                        {item.id === 'sequence' ? ' · LIVE 暂未接入' : ''}
                       </option>
                     ),
                   )}
@@ -898,26 +921,44 @@ export function EasyLiveApp({ adapter, access, computeAvailable = true }: {
                       刷新审批卡 <RefreshCw size={14} />
                     </button>
                   </section>
-                ) : snapshot.capabilities.resume ? (
-                  <section className="easy-live-progress-card">
-                    <LoaderCircle className="easy-spin" size={22} />
+                ) : snapshot.capabilities.resume || executionBlocked ? (
+                  <section
+                    className="easy-live-progress-card"
+                    role={executionBlocked ? 'alert' : undefined}
+                  >
+                    {executionBlocked ? (
+                      <ShieldCheck size={22} />
+                    ) : (
+                      <LoaderCircle className="easy-spin" size={22} />
+                    )}
                     <div>
                       <h3>
-                        {snapshot.capabilities.auto_continue && canExecute
+                        {autoContinuationEligible
                           ? '正在自动继续'
-                          : '当前步骤可以继续'}
+                          : executionBlocked
+                            ? '当前执行已阻塞'
+                            : '当前步骤可以继续'}
                       </h3>
-                      <p>{snapshot.current_action.message || snapshot.current_action.stage}</p>
+                      <p>
+                        {executionBlocked && !autoContinuationEligible
+                          ? '当前执行未完成，证据与恢复状态已保留。请查看技术详情后决定是否继续。'
+                          : snapshot.current_action.message || snapshot.current_action.stage}
+                      </p>
                     </div>
                     {/* Unauthorized roles never auto-continue; keep the explicit
                         disabled control visible instead of hiding it behind
                         capabilities.auto_continue. */}
-                    {(!snapshot.capabilities.auto_continue || !canExecute) && (
+                    {snapshot.capabilities.resume && !autoContinuationEligible && (
                       <button
                         className="easy-primary"
                         disabled={state.pending || !canExecute}
                         onClick={() => {
-                          if (canExecute) void adapter.resume();
+                          if (canExecute) {
+                            setError('');
+                            void adapter
+                              .resume()
+                              .catch((reason) => setError((reason as Error).message));
+                          }
                         }}
                       >
                         继续研究 <ArrowRight size={14} />

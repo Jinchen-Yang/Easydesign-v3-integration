@@ -76,6 +76,17 @@ function labOrder(): LabOrderView {
 }
 
 const adapters: EasyProductAdapter[] = [];
+it('shows a recoverable service error instead of a JSON parse crash for proxy HTML', async () => {
+  const adapter = new EasyProductAdapter(
+    async () => new Response('<html>unavailable</html>', { status: 503 }),
+    1_000_000,
+  );
+  adapters.push(adapter);
+  const state = await adapter.load();
+  expect(state.connection).toBe('reconnecting');
+  expect(state.error).toContain('服务暂时无法返回有效数据');
+  expect(state.error).not.toContain('Unexpected token');
+});
 afterEach(() => {
   adapters.forEach((adapter) => adapter.dispose());
   adapters.length = 0;
@@ -96,6 +107,22 @@ function fixture(post: (path: string, body: Record<string, unknown>) => Promise<
 }
 
 describe('Easy live adapter preserves Product API authority', () => {
+  it('dispatches database identifiers as native sources, not just natural-language hints', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const { adapter } = fixture(async (_path, body) => {
+      bodies.push(body);
+      return Response.json({ id: 'source-request', project: project.id, state: 'succeeded' });
+    });
+    await adapter.load();
+    await adapter.createProject('PDB source', 'Review the exact structure.', null, {
+      pdb_id: '1UBQ',
+    });
+    expect(bodies.at(-1)).toMatchObject({ pdb_id: '1UBQ', surface: 'easy' });
+    await adapter.createProject('UniProt source', 'Review the exact accession.', null, {
+      uniprot: 'P00698',
+    });
+    expect(bodies.at(-1)).toMatchObject({ uniprot: 'P00698', surface: 'easy' });
+  });
   it('lists only Easy projects and marks every new Easy project explicitly', async () => {
     const calls: { path: string; body?: Record<string, unknown> }[] = [];
     const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {

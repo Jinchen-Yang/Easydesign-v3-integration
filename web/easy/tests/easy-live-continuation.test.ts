@@ -37,6 +37,9 @@ function snapshot(status: string, stage: string): ProductSnapshot {
 }
 
 describe('Easy live automatic continuation', () => {
+  it('never retries a blocked execution automatically', () => {
+    expect(canAutoContinue(snapshot('blocked', 'target'), false)).toBe(false);
+  });
   it('reconciles a verified successor worker after the original job was incomplete', () => {
     expect(canAutoContinue(snapshot('incomplete', 'pilot-reconcile'), false)).toBe(true);
   });

@@ -8,7 +8,7 @@ test('Chinese default, readable text and persistent language switching preserve 
 }, info) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(page.getByRole('heading', { name: '开始设计' })).toBeVisible();
   await expect(page.getByRole('button', { name: '中文', exact: true })).toHaveAttribute(

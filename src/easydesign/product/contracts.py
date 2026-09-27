@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ProductError(Exception):
@@ -37,7 +37,19 @@ class CreateProject(Value):
     title: str = Field(min_length=1, max_length=120)
     goal: str = Field(min_length=1, max_length=1500)
     input_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    pdb_id: str | None = Field(default=None, pattern=r"^[1-9][A-Za-z0-9]{3}$")
+    uniprot: str | None = Field(
+        default=None,
+        pattern=r"^(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})$",
+    )
     surface: Literal["professional", "easy"] | None = None
+
+    @model_validator(mode="after")
+    def one_explicit_source(self) -> CreateProject:
+        sources = (self.input_id, self.pdb_id, self.uniprot)
+        if sum(value is not None for value in sources) > 1:
+            raise ValueError("Provide only one explicit target source")
+        return self
 
 
 class RenameProject(Value):

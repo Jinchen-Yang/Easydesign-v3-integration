@@ -70,6 +70,18 @@ function snapshot(): ProductSnapshot {
 }
 
 describe('Easy live presentation', () => {
+  it.each(['blocked', 'incomplete'])(
+    'does not claim active processing for %s executions',
+    (status) => {
+      const value = snapshot();
+      value.decision = null;
+      value.project.status = status;
+      expect(summarizeEasyActivity(value)[0]).toMatchObject({
+        title: '当前执行未完成',
+        status: 'waiting',
+      });
+    },
+  );
   it('shows one compact goal sentence rather than the complete prompt', () => {
     expect(
       summarizeGoal(

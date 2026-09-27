@@ -306,6 +306,53 @@ def test_product_api_keeps_uploaded_structure_as_optional_seed(bridge, tmp_path)
     assert service.request(request.request_id)["result"]["code"] == "AssertionError"
 
 
+@pytest.mark.parametrize(
+    ("identifier", "source_type", "expected"),
+    [("pdb_id", "pdb-id", "1UBQ"), ("uniprot", "uniprot", "P00698")],
+)
+def test_explicit_database_source_bypasses_goal_reinterpretation(
+    bridge, tmp_path, identifier, source_type, expected
+):
+    from easydesign.orchestration.config import load_run_config
+    from easydesign.orchestration.local_project import project_config_path
+
+    service = service_for(bridge, tmp_path)
+    request = CreateProject.model_validate(
+        {
+            "request_id": str(uuid4()),
+            "title": "Explicit target identifier",
+            "goal": "Retain this exact supplied target source and scientific review gates.",
+            identifier: expected,
+        }
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+    root = service.context.projects_root / accepted["project"]
+    configured = load_run_config(project_config_path(root))
+    source = configured.config.target.source
+    assert source.type == source_type
+    assert getattr(source, identifier if identifier == "pdb_id" else "accession") == expected
+    # NoInference cannot interpret a goal or approve science. Native source
+    # setup succeeds before its intentional refusal, without a network fixture.
+    assert service.request(request.request_id)["result"]["code"] == "AssertionError"
+
+
+def test_explicit_database_source_rejects_conflicting_or_invalid_inputs():
+    from pydantic import ValidationError
+
+    base = {"request_id": str(uuid4()), "title": "Fixture", "goal": "Review fixture"}
+    for source in (
+        {"pdb_id": "1UBQ", "uniprot": "P00698"},
+        {"pdb_id": "1UBQ", "input_id": "a" * 64},
+        {"pdb_id": "1UBQ;command"},
+        {"uniprot": "not-an-accession"},
+        {"uniprot": "P00698-2"},
+        {"pdb_id": "pdb_00001ubq"},
+    ):
+        with pytest.raises(ValidationError):
+            CreateProject.model_validate({**base, **source})
+
+
 def test_goal_bootstrap_intent_is_structured_non_authority_and_replayed(tmp_path):
     from langchain_core.messages import AIMessage
 
@@ -1156,14 +1203,10 @@ def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):
 
     monkeypatch.setattr(service, "candidates", candidates)
     with http_api(service) as client:
-        response = client.get(
-            "/api/v1/projects/example/candidates?offset=0&limit=20&view=summary"
-        )
+        response = client.get("/api/v1/projects/example/candidates?offset=0&limit=20&view=summary")
         assert response.status_code == 200
         assert observed == [("example", 0, 20, None, True)]
-        assert (
-            client.get("/api/v1/projects/example/candidates?view=unknown").status_code == 400
-        )
+        assert client.get("/api/v1/projects/example/candidates?view=unknown").status_code == 400
 
 
 def test_compact_candidate_cache_is_project_scoped_and_invalidated(bridge, tmp_path, monkeypatch):

@@ -89,7 +89,13 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
       credentials: 'same-origin',
       signal: AbortSignal.timeout(120000),
     });
-    const value = await response.json();
+    const value = await response.json().catch(() => {
+      throw new ApiError(
+        'invalid_response',
+        '服务暂时无法返回有效数据，请稍后刷新重试。',
+        response.status,
+      );
+    });
     if (!response.ok)
       throw new ApiError(
         value.error?.code || 'request_failed',

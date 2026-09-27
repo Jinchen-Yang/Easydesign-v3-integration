@@ -85,6 +85,17 @@ function labOrder(): ProductLabOrder {
   };
 }
 const adapters: LiveWorkbenchAdapter[] = [];
+it('shows a recoverable service error instead of a JSON parse crash for proxy HTML', async () => {
+  const adapter = new LiveWorkbenchAdapter(
+    async () => new Response('<html>unavailable</html>', { status: 503 }),
+    1_000_000,
+  );
+  adapters.push(adapter);
+  const state = await adapter.load();
+  expect(state.connection).toBe('reconnecting');
+  expect(state.error).toContain('服务暂时无法返回有效数据');
+  expect(state.error).not.toContain('Unexpected token');
+});
 afterEach(() => {
   adapters.forEach((a) => a.dispose());
   adapters.length = 0;

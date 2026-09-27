@@ -5,13 +5,13 @@ test('bunny controls, original album and saved preferences preserve research dat
 }, info) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   const companion = page.getByRole('complementary', { name: 'EasyDesign 豆豆' });
   await expect(companion).toHaveAttribute('data-motion', 'playing');
   // Check real transparency, not a white or checkerboard rectangle.
   const alpha = await page.evaluate(async () => {
     const img = new Image();
-    img.src = '/mascot/rabbit/rabbit-mascot.png';
+    img.src = '/easy/mascot/rabbit/rabbit-mascot.png';
     await img.decode();
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
@@ -70,7 +70,7 @@ test('system reduced motion pauses by default and responds to preference changes
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-motion', 'paused');
   expect(
     await page.locator('.bunny-body').evaluate((el) => getComputedStyle(el).animationPlayState),
@@ -84,7 +84,7 @@ test('system reduced motion pauses by default and responds to preference changes
 
 test('missing mascot image leaves a usable companion and design form', async ({ page }) => {
   await page.route('**/mascot/rabbit/rabbit-mascot.png', (route) => route.abort());
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await expect(page.locator('.rabbit-fallback')).toBeVisible();
   await page.getByRole('button', { name: '豆豆设置', exact: true }).click();
   await page.getByRole('button', { name: '关闭豆豆设置' }).click();
@@ -95,7 +95,7 @@ test('missing mascot image leaves a usable companion and design form', async ({ 
 test('drag, keyboard positioning, reload, viewport boundaries and click separation', async ({
   page,
 }, info) => {
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   const pet = page.getByRole('button', { name: '和豆豆聊天', exact: true });
   const root = page.locator('.rabbit-companion');
   const initial = (await pet.boundingBox())!;
@@ -166,7 +166,7 @@ test('live six-stage gestures, continuous rendering and completed-stage review p
 }, info) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await expect(page.locator('.rabbit-mesh')).toHaveAttribute('data-frame', /\d+/);
   const first = Number(await page.locator('.rabbit-mesh').getAttribute('data-frame'));
   await expect
@@ -232,7 +232,7 @@ test('reduced-motion playback is explicit and the artwork has a WebGL fallback',
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-motion', 'paused');
   await page.getByRole('button', { name: '豆豆设置', exact: true }).click();
   await page.getByRole('button', { name: '播放豆豆动画' }).click();

@@ -30,7 +30,12 @@ export interface EasyProductPort {
   renameProject(id: string, title: string): Promise<void>;
   candidatePage(offset: number): Promise<void>;
   selectCandidate(id: string): Promise<void>;
-  createProject(title: string, goal: string, file?: File | null): Promise<void>;
+  createProject(
+    title: string,
+    goal: string,
+    file?: File | null,
+    source?: { pdb_id?: string; uniprot?: string },
+  ): Promise<void>;
   decide(input: GateInput): Promise<void>;
   resume(): Promise<void>;
   sendMessage(text: string, phase?: string): Promise<void>;
@@ -110,7 +115,13 @@ export class EasyProductAdapter implements EasyProductPort {
       credentials: 'same-origin',
       signal: AbortSignal.timeout(120000),
     });
-    const value = await response.json();
+    const value = await response.json().catch(() => {
+      throw new ApiError(
+        'invalid_response',
+        '服务暂时无法返回有效数据，请稍后刷新重试。',
+        response.status,
+      );
+    });
     if (!response.ok)
       throw new ApiError(
         value.error?.code || 'request_failed',
@@ -299,7 +310,12 @@ export class EasyProductAdapter implements EasyProductPort {
       await this.refresh();
     }
   }
-  async createProject(title: string, goal: string, file?: File | null) {
+  async createProject(
+    title: string,
+    goal: string,
+    file?: File | null,
+    source?: { pdb_id?: string; uniprot?: string },
+  ) {
     if (this.state.pending) return;
     let input_id: string | undefined;
     if (file) {
@@ -313,6 +329,7 @@ export class EasyProductAdapter implements EasyProductPort {
       title,
       goal,
       surface: 'easy',
+      ...source,
       ...(input_id ? { input_id } : {}),
     });
   }

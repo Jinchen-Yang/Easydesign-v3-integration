@@ -35,11 +35,11 @@ function installWorkspaceRoutes(page: Page, username: string, scopeId: string, c
 }
 
 /** A step the backend marked resumable and auto-continuable (no open Gate). */
-function resumableSnapshot() {
+function resumableSnapshot(status = 'available') {
   const base = workbenchSnapshot();
   return {
     ...base,
-    project: {...base.project, phase: 'pilot', status: 'available'},
+    project: {...base.project, phase: 'pilot', status},
     workflow: [{id: 'pilot', label: 'Pilot', status: 'available', gate: 4}],
     current_action: {id: 'action-resume-1', stage: 'pilot-card', message: 'Pilot 结果已就绪', resumable: true},
     capabilities: {resume: true, auto_continue: true},
@@ -52,7 +52,7 @@ interface RecordedAction {
   csrf: string | undefined;
 }
 
-function installResumableRoutes(page: Page, username: string, compute = true): RecordedAction[] {
+function installResumableRoutes(page: Page, username: string, compute = true, status = 'available'): RecordedAction[] {
   const actions: RecordedAction[] = [];
   void page.route(url => url.pathname === '/easy/', async route => injectAccountMode(route));
   void page.route('**/api/v1/**', async route => {
@@ -63,9 +63,13 @@ function installResumableRoutes(page: Page, username: string, compute = true): R
       return reply({mode: 'multi-user', registration: 'admin-review', setup_required: false, compute_available: compute});
     if (path === '/api/v1/accounts/me') return reply(sessionFor(username));
     if (path.endsWith('/projects') && request.method() === 'GET')
-      return reply({items: [resumableSnapshot().project], total: 1, offset: 0, limit: 5});
-    if (path.endsWith('/workbench') && request.method() === 'GET') return reply(resumableSnapshot());
+      return reply({items: [resumableSnapshot(status).project], total: 1, offset: 0, limit: 5});
+    if (path.endsWith('/workbench') && request.method() === 'GET') return reply(resumableSnapshot(status));
     if (path.endsWith('/candidates') && request.method() === 'GET') return reply(emptyPage);
+    if (path.endsWith('/projects') && request.method() === 'POST') {
+      actions.push({body: request.postDataJSON() as Record<string, unknown>, csrf: request.headers()['x-csrf-token']});
+      return reply({kind:'action', id:'req-create-1', project:'proj-1', state:'succeeded', result:null, created:1, updated:1});
+    }
     if (path === '/api/v1/scopes/team-1/projects/proj-1/actions' && request.method() === 'POST') {
       actions.push({body: request.postDataJSON() as Record<string, unknown>, csrf: request.headers()['x-csrf-token']});
       return reply({
@@ -161,6 +165,47 @@ test.describe('account-mode Easy workspace', () => {
 });
 
 test.describe('account-mode automatic continuation', () => {
+  test('typed target identifiers reach the scoped API without a prose-only source', async ({page}) => {
+    const actions = installResumableRoutes(page, 'alice', true, 'blocked');
+    await page.goto('/easy/?scope=team-1&project=proj-1');
+    await page.getByRole('combobox', {name:'输入类型'}).selectOption('pdb-id');
+    await page.getByPlaceholder('目标名称或数据库 ID').fill('1UBQ');
+    await page.getByRole('button', {name:/开始设计/}).click();
+    await expect.poll(()=>actions.length).toBe(1);
+    expect(actions[0]!.body).toMatchObject({pdb_id:'1UBQ',surface:'easy'});
+    expect(actions[0]!.csrf).toBe('csrf-alice-synthetic');
+    await page.getByRole('button', {name:/开始设计/}).waitFor();
+    await page.getByRole('combobox', {name:'输入类型'}).selectOption('uniprot');
+    await page.getByPlaceholder('目标名称或数据库 ID').fill('p00698');
+    await page.getByRole('button', {name:/开始设计/}).click();
+    await expect.poll(()=>actions.length).toBe(2);
+    expect(actions[1]!.body).toMatchObject({uniprot:'P00698',surface:'easy'});
+  });
+
+  test('unsupported live sequences are explicit and cannot be submitted', async ({page}) => {
+    const actions = installResumableRoutes(page, 'alice', true, 'blocked');
+    await page.goto('/easy/?scope=team-1&project=proj-1');
+    const choice = page.getByRole('combobox', {name:'输入类型'}).locator('option[value="sequence"]');
+    await expect(choice).toHaveAttribute('disabled','');
+    await expect(choice).toHaveText('Sequence / FASTA · LIVE 暂未接入');
+    expect(actions).toHaveLength(0);
+  });
+  test('a blocked execution reports its state and requires an explicit recovery action', async ({page}) => {
+    const actions = installResumableRoutes(page, 'alice', true, 'blocked');
+    await page.goto('/easy/?scope=team-1&project=proj-1');
+    await expect(page.getByText('当前执行已阻塞', {exact: true})).toBeVisible();
+    await expect(page.getByText('正在自动继续')).toHaveCount(0);
+    await expect(page.getByText('科学 Agent 正在处理当前阶段。')).toHaveCount(0);
+    const resume = page.getByRole('button', {name: /继续研究/});
+    await expect(resume).toBeEnabled();
+    await page.waitForTimeout(600);
+    expect(actions).toHaveLength(0);
+    await resume.click();
+    await expect.poll(() => actions.length).toBe(1);
+    expect(actions[0]!.csrf).toBe('csrf-alice-synthetic');
+    await page.waitForTimeout(600);
+    expect(actions).toHaveLength(1);
+  });
   test('an ordinary team member never auto-continues and keeps the explicit disabled control', async ({page}) => {
     const actions = installResumableRoutes(page, 'bob');
     await page.goto('/easy/?scope=team-1&project=proj-1');

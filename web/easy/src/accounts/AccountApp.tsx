@@ -567,6 +567,7 @@ function QuotaEditor({session, subject, name, subjectKind}: {
           min={LIMIT_CONSTRAINTS[key].min}
           max={LIMIT_CONSTRAINTS[key].max}
           aria-invalid={problems[key] ? true : undefined}
+          aria-label={LIMIT_CONSTRAINTS[key].label}
           value={draft[key]}
           onChange={event => setDraft({...draft, [key]: event.target.value})}
         />
@@ -584,6 +585,7 @@ function QuotaEditor({session, subject, name, subjectKind}: {
             required={!field.unlimited}
             disabled={field.unlimited}
             aria-invalid={problems[key] ? true : undefined}
+            aria-label={constraint.label}
             value={field.text}
             onChange={event => setDraft({...draft, [key]: {...field, text: event.target.value}})}
           />

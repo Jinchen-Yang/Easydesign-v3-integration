@@ -1056,6 +1056,28 @@ class ProductService:
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
+                elif request.pdb_id is not None or request.uniprot is not None:
+                    self._activity(
+                        store,
+                        thread,
+                        "evidence.recorded",
+                        task_id="target-input-identifier",
+                        title="Explicit target source",
+                        status="completed",
+                        summary=(
+                            "The supplied database identifier was retained as the native "
+                            "target source; identity and scientific approval remain unresolved."
+                        ),
+                        specialist="target",
+                    )
+                    initialize_research_project(
+                        project_root=root,
+                        project_id=project,
+                        pdb_id=request.pdb_id,
+                        uniprot=request.uniprot,
+                        allow_existing_metadata=True,
+                        quarantine_on_error=False,
+                    )
                 else:
                     self._activity(
                         store,

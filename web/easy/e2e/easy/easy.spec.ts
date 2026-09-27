@@ -15,7 +15,7 @@ test('single-click journey, pause/reload, reference viewer, candidates, download
   const requests: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('request', (request) => requests.push(request.url()));
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await expect(page.getByRole('heading', { name: 'Start a design' })).toBeVisible();
   await page.screenshot({ path: `docs/easy/landing-${info.project.name}.png`, fullPage: true });
   await expect(page.getByRole('button', { name: 'Start design', exact: true })).toBeDisabled();
@@ -112,7 +112,7 @@ test('single-click journey, pause/reload, reference viewer, candidates, download
 });
 
 test('all input controls, file checks and type-switch isolation', async ({ page }, info) => {
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   const type = page.getByLabel('Input type');
   const start = page.getByRole('button', { name: 'Start design', exact: true });
   await type.selectOption('protein-name');
@@ -174,7 +174,7 @@ test('all input controls, file checks and type-switch isolation', async ({ page 
 test('viewer failure does not block completion; guide has keyboard dismissal', async ({ page }) => {
   await page.route('**/structures/1MEL.pdb', (route) => route.abort());
   await page.route('**/files.rcsb.org/**', (route) => route.abort());
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await page.getByRole('button', { name: 'Quick guide' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');

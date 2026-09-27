@@ -18,8 +18,12 @@ from easydesign.agent.harness import fingerprint
 from easydesign.product.artifacts import ArtifactCatalog, confined_bytes, immutable_json
 from easydesign.product.contracts import (
     ActionRequest,
+    ArtifactTargetInput,
     CreateProject,
+    PDBTargetInput,
     ProductError,
+    ProteinNameTargetInput,
+    UniProtTargetInput,
     WorkbenchProjection,
 )
 from easydesign.product.domain import DomainSession, NativeGateway, decision_view
@@ -304,6 +308,133 @@ def test_product_api_keeps_uploaded_structure_as_optional_seed(bridge, tmp_path)
     assert configured.source_path.read_bytes() == structure("A").encode()
     # The scripted model intentionally refuses inference; the input boundary itself succeeded.
     assert service.request(request.request_id)["result"]["code"] == "AssertionError"
+
+
+def test_product_api_binds_typed_database_inputs_without_flattening_into_goal(
+    bridge, tmp_path, monkeypatch
+):
+    from easydesign.agent.bootstrap import GoalTargetIntent
+    from easydesign.orchestration.config import (
+        PdbIdSourceConfig,
+        UniProtSearchSourceConfig,
+        UniProtSourceConfig,
+        load_run_config,
+    )
+    from easydesign.orchestration.local_project import project_config_path
+
+    async def stop_after_native_bootstrap(*args, **kwargs):
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    async def resolve_explicit_name(**kwargs):
+        assert "Explicit target name: TACR2" in kwargs["goal"]
+        assert "Explicit organism: Homo sapiens" in kwargs["goal"]
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="this model value must not replace TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Explicit product input mapped only to a bounded search.",
+            limitations=["Stage 1 still verifies identity and structure authority."],
+        )
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_native_bootstrap)
+    monkeypatch.setattr("easydesign.agent.bootstrap.resolve_goal_target", resolve_explicit_name)
+    service = service_for(bridge, tmp_path)
+    cases = [
+        (
+            ProteinNameTargetInput(kind="protein-name", name="TACR2", organism="Homo sapiens"),
+            UniProtSearchSourceConfig,
+            ("query", "TACR2"),
+        ),
+        (
+            UniProtTargetInput(kind="uniprot", accession="P21452"),
+            UniProtSourceConfig,
+            ("accession", "P21452"),
+        ),
+        (
+            PDBTargetInput(kind="pdb-id", pdb_id="9w1j", chain="R"),
+            PdbIdSourceConfig,
+            ("pdb_id", "9W1J"),
+        ),
+    ]
+    for index, (target_input, source_type, expected) in enumerate(cases):
+        request = CreateProject(
+            request_id=f"typed-target-input-{index:02d}-fixed",
+            title=f"Typed target {index}",
+            goal="Design an inhibitory extracellular VHH binder.",
+            target_input=target_input,
+            surface="easy",
+        )
+        accepted = service.create(request)
+        service.run(request.request_id)
+        configured = load_run_config(
+            project_config_path(service.context.projects_root / accepted["project"])
+        ).config.target.source
+        assert isinstance(configured, source_type)
+        assert getattr(configured, expected[0]) == expected[1]
+        journal = service.journal()
+        try:
+            registered = journal.project(accepted["project"])
+        finally:
+            journal.close()
+        assert registered is not None
+        assert registered["target_input"] == target_input.model_dump(mode="json")
+
+
+def test_product_api_binds_typed_sequence_artifact_by_checksum(bridge, tmp_path, monkeypatch):
+    from easydesign.orchestration.config import (
+        LocalFileSourceConfig,
+        TargetInputFormat,
+        load_run_config,
+    )
+    from easydesign.orchestration.local_project import project_config_path
+
+    async def stop_after_native_bootstrap(*args, **kwargs):
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_native_bootstrap)
+    service = service_for(bridge, tmp_path)
+    sequence = b">NK2R construct\n" + (
+        b"MNGTEGPNFYVPFSNKTGVVRSPFEYPQYYLAEPWQFSMLAAYMFLLIVLGFPINFLTLYVTVQH\n"
+    )
+    uploaded = service.upload("nk2r.fasta", sequence)
+    assert uploaded["kind"] == "sequence"
+    request = CreateProject(
+        request_id="typed-sequence-input-fixed",
+        title="Typed sequence target",
+        goal="Design an inhibitory extracellular VHH binder.",
+        target_input=ArtifactTargetInput(kind="sequence", artifact_id=uploaded["id"]),
+        surface="easy",
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+    assert service.request(request.request_id)["state"] == "succeeded"
+    root = service.context.projects_root / accepted["project"]
+    configured = load_run_config(project_config_path(root))
+    assert isinstance(configured.config.target.source, LocalFileSourceConfig)
+    assert configured.config.target.source.format is TargetInputFormat.FASTA
+    assert configured.source_path is not None
+    assert configured.source_path.read_bytes() == sequence
+
+
+def test_product_api_rejects_invalid_or_mistyped_sequence_artifacts(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    with pytest.raises(ProductError, match="exactly one FASTA"):
+        service.upload("two.fasta", b">a\nACDE\n>b\nACDE\n")
+    with pytest.raises(ProductError, match="standard amino acids"):
+        service.upload("ambiguous.fasta", b">a\nACDEX\n")
+    from tests.agent_support import structure
+
+    uploaded = service.upload("target.pdb", structure("A").encode())
+    with pytest.raises(ProductError, match="does not match"):
+        service.create(
+            CreateProject(
+                request_id="mistyped-sequence-input-fixed",
+                title="Mistyped sequence target",
+                goal="Design a VHH binder.",
+                target_input=ArtifactTargetInput(kind="sequence", artifact_id=uploaded["id"]),
+            )
+        )
 
 
 def test_goal_bootstrap_intent_is_structured_non_authority_and_replayed(tmp_path):

@@ -33,6 +33,7 @@ from easydesign.orchestration.config import (
     EasyDesignRunConfig,
     LoadedRemoteRunConfig,
     LoadedRunConfig,
+    LoadedSequenceRunConfig,
     LoadedStructureRunConfig,
     LocalFileSourceConfig,
     load_run_config,
@@ -117,9 +118,12 @@ class TargetBridge:
         path = project_config_path(self.project)
         confined(self.project, path)
         loaded = load_run_config(path, source_base_dir=self.project)
-        if not isinstance(loaded, (LoadedStructureRunConfig, LoadedRemoteRunConfig)):
+        if not isinstance(
+            loaded,
+            (LoadedStructureRunConfig, LoadedSequenceRunConfig, LoadedRemoteRunConfig),
+        ):
             raise AgentBoundaryError(
-                "Phase 1 supports local structures or the canonical remote target sources"
+                "Phase 1 supports local structures, local sequences or canonical remote sources"
             )
         config = loaded.config
         source = config.target.source
@@ -135,7 +139,9 @@ class TargetBridge:
             raise AgentBoundaryError(
                 "Existing project must already be review-gated and stop after target preparation"
             )
-        if isinstance(source, LocalFileSourceConfig) and (
+        if isinstance(loaded, LoadedStructureRunConfig) and isinstance(
+            source, LocalFileSourceConfig
+        ) and (
             config.structure_prediction is not None
             or (
                 source.identity.uniprot_accession is not None
@@ -233,7 +239,9 @@ class TargetBridge:
         with self.store.writer():
             loaded = self.validate_project()
             source = loaded.config.target.source
-            if isinstance(source, LocalFileSourceConfig):
+            if isinstance(loaded, LoadedStructureRunConfig) and isinstance(
+                source, LocalFileSourceConfig
+            ):
                 source_identity = source.identity
                 if getattr(self, "is_phase2", False) and source_identity.uniprot_accession is None:
                     from .target_identity import (

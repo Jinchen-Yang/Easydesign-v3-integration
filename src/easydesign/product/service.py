@@ -32,7 +32,7 @@ from easydesign.orchestration.research import initialize_research_project
 from .artifacts import ArtifactCatalog, confined_bytes, digest, immutable_bytes, immutable_json
 from .contracts import ActionRequest, CreateProject, ProductError, ProjectView, WorkbenchProjection
 from .conversation import answer, messages
-from .domain import NativeGateway, decision_view
+from .domain import GATES, NativeGateway, decision_view
 from .journal import RequestJournal
 from .lab_order import LabOrderCommand, LabOrderStore, MockLabProvider
 from .projection import (
@@ -203,6 +203,7 @@ class ProductService:
         summary: str,
         specialist: str | None = None,
         progress: dict[str, Any] | None = None,
+        phase: str = "target",
     ) -> None:
         for event in reversed(store.events(thread)):
             if event["kind"] != "product-activity":
@@ -224,7 +225,7 @@ class ProductService:
                 "title": title,
                 "status": status,
                 "summary": summary,
-                "phase": "target",
+                "phase": phase,
                 "specialist": specialist,
                 **({"progress": progress} if progress else {}),
             },
@@ -551,6 +552,8 @@ class ProductService:
                 )
             if registered is not None:
                 value["lifecycle"] = registered["state"]
+                if registered["state"] != "failed" and value.get("decision"):
+                    value["lifecycle"] = f"gate{value['decision']['gate']}_awaiting_scientist"
                 if registered["state"] == "failed":
                     value["project"]["status"] = "blocked"
                     value["project"]["notice"] = registered["detail"].get("message")
@@ -861,8 +864,11 @@ class ProductService:
                     result = self._create_and_start(
                         row["project"], CreateProject.model_validate(payload)
                     )
+                    gate_number = GATES.get(result.get("card", {}).get("gate_type"), (1, "target"))[
+                        0
+                    ]
                     state = (
-                        "gate1_awaiting_scientist"
+                        f"gate{gate_number}_awaiting_scientist"
                         if result.get("status") == "awaiting-human-approval"
                         else "scientific_project"
                         if result.get("status") == "finished"
@@ -1225,18 +1231,21 @@ class ProductService:
                     if current == prior:
                         break
                 if result.get("status") == "awaiting-human-approval":
+                    gate_type = result.get("card", {}).get("gate_type")
+                    gate_number, gate_phase = GATES.get(gate_type, (1, "target"))
                     self._activity(
                         store,
                         thread,
                         "gate.opened",
-                        task_id="gate-1",
-                        title="Scientist target decision",
+                        task_id=f"gate-{gate_number}",
+                        title=f"Scientist {gate_phase} decision",
                         status="blocked",
                         summary=(
-                            "Target identity or structure evidence is ready for an explicit "
+                            f"{gate_phase.title()} evidence is ready for an explicit "
                             "Scientist decision."
                         ),
-                        specialist="target",
+                        specialist=gate_phase,
+                        phase=gate_phase,
                     )
                     self._activity(
                         store,
@@ -1246,8 +1255,8 @@ class ProductService:
                         title="Target Intelligence",
                         status="completed",
                         summary=(
-                            "Target identity and structure evidence reached an explicit "
-                            "Scientist Gate."
+                            "Initial research reached the explicit "
+                            f"{gate_phase.title()} Scientist Gate; no approval was granted."
                         ),
                         specialist="target",
                     )

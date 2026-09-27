@@ -220,8 +220,9 @@ def test_failed_goal_bootstrap_is_retryable_without_recreating_project(bridge, t
     assert launched == [request.request_id]
 
 
+@pytest.mark.parametrize("gate_type", ["target-structure", "site-hotspot"])
 def test_goal_bootstrap_and_runtime_reentry_share_one_worker_event_loop(
-    bridge, tmp_path, monkeypatch
+    bridge, tmp_path, monkeypatch, gate_type
 ):
     from easydesign.agent.bootstrap import GoalTargetIntent
 
@@ -258,7 +259,10 @@ def test_goal_bootstrap_and_runtime_reentry_share_one_worker_event_loop(
         runtime_calls += 1
         if runtime_calls == 1:
             return {"status": "incomplete-turn", "scientific_state": "target-preparing"}
-        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+        return {
+            "status": "awaiting-human-approval",
+            "card": {"gate_type": gate_type},
+        }
 
     monkeypatch.setattr("easydesign.agent.bootstrap.resolve_goal_target", resolve_goal_target)
     monkeypatch.setattr("easydesign.agent.cli.run_session", drive)
@@ -278,6 +282,21 @@ def test_goal_bootstrap_and_runtime_reentry_share_one_worker_event_loop(
     assert runtime_calls == 2
     assert model.calls == 3
     assert service.snapshot(accepted["project"])["decision"] is None
+    from easydesign.agent.session_store import SessionStore
+
+    store = SessionStore(service.context.projects_root / accepted["project"])
+    try:
+        gate = next(
+            event["payload"]
+            for event in reversed(store.events(accepted["project"]))
+            if event["kind"] == "product-activity" and event["payload"]["type"] == "gate.opened"
+        )
+        expected_phase = "target" if gate_type == "target-structure" else "site"
+        assert gate["phase"] == expected_phase
+        assert gate["specialist"] == expected_phase
+        assert gate["title"] == f"Scientist {expected_phase} decision"
+    finally:
+        store.close()
 
 
 def test_product_api_keeps_uploaded_structure_as_optional_seed(bridge, tmp_path):
@@ -547,6 +566,33 @@ def test_corrupt_project_cannot_hide_other_projects(site_bridge, tmp_path):
     assert items["corrupt-project"]["status"] == "unavailable"
     assert items["target-test"]["status"] == "awaiting_scientist"
     assert database.read_bytes() == b"Deliberately invalid fixture database"
+
+
+def test_native_gate_lifecycle_wins_over_legacy_bootstrap_index(site_bridge, tmp_path):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Native Site approval")
+    service = service_for(b, tmp_path)
+    journal = service.journal()
+    try:
+        journal.register_project(
+            "target-test",
+            request_id=str(uuid4()),
+            title="Native Site approval",
+            goal="Synthetic goal",
+            thread=b.thread,
+            input_id=None,
+            surface="easy",
+        )
+        journal.update_project("target-test", "gate1_awaiting_scientist", {})
+    finally:
+        journal.close()
+    before = len(b.store.events(b.thread))
+    view = service.snapshot("target-test")
+    assert view["decision"]["gate"] == 2
+    assert view["lifecycle"] == "gate2_awaiting_scientist"
+    assert len(b.store.events(b.thread)) == before
 
 
 @contextmanager

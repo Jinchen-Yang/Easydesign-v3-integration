@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowRight,
   Check,
@@ -28,6 +28,7 @@ import type {
   LabOrderDraftInput,
   LabOrderView,
   LiveState,
+  LocalizationPassage,
   ProductSnapshot,
 } from './product-contracts';
 
@@ -90,13 +91,13 @@ function stageStatus(snapshot: ProductSnapshot | null, index: number) {
 }
 
 const PIPELINE_STEPS = [
-  ['boltzgen-initialize', 'Initialize'],
-  ['boltzgen-generate', 'Generate'],
-  ['boltzgen-inverse-fold', 'Inverse fold'],
-  ['boltzgen-refold', 'Refold'],
-  ['boltzgen-analysis', 'Analyze'],
-  ['boltzgen-filter', 'Filter'],
-  ['native-filter', 'AFO / native filter'],
+  ['boltzgen-initialize', '初始化'],
+  ['boltzgen-generate', '生成'],
+  ['boltzgen-inverse-fold', '逆折叠'],
+  ['boltzgen-refold', '重折叠'],
+  ['boltzgen-analysis', '分析'],
+  ['boltzgen-filter', '筛选'],
+  ['native-filter', 'AFO / 原生筛选'],
 ] as const;
 
 function ExecutionProgress({
@@ -145,9 +146,9 @@ function ExecutionProgress({
     <section className="easy-execution-progress" aria-label="真实执行进度">
       <div className="easy-execution-title">
         <div>
-          <span>REAL EXECUTION</span>
+          <span>真实计算</span>
           <strong>
-            {phase === 'pilot' ? 'Pilot' : 'Scale'} ·{' '}
+            {phase === 'pilot' ? '小规模试运行' : '扩大测试'} ·{' '}
             {native ? 'AFO 预测与原生过滤' : progress?.substage_label || 'BoltzGen'}
           </strong>
         </div>
@@ -211,7 +212,7 @@ function CandidatePanel({
       <span>
         <strong>{passedCandidate ? `Top ${rank}` : `未通过 ${rank}`}</strong>
         <small>
-          Scaffold {candidateScaffold(candidate).toUpperCase()} ·{' '}
+          骨架 {candidateScaffold(candidate).toUpperCase()} ·{' '}
           {passedCandidate
             ? '已通过'
             : candidate.native_status === 'incomplete'
@@ -232,7 +233,9 @@ function CandidatePanel({
     <section className="easy-live-candidate-panel" aria-label={`${phase} 候选分子`}>
       <div className="easy-live-candidate-heading">
         <div>
-          <span>{phase === 'pilot' ? 'PILOT' : phase === 'scale' ? 'SCALE' : 'FINAL PANEL'}</span>
+          <span>
+            {phase === 'pilot' ? '小规模试运行' : phase === 'scale' ? '扩大测试' : '最终候选组'}
+          </span>
           <h3>候选分子</h3>
         </div>
         <b>{passed.length} 条通过</b>
@@ -260,6 +263,73 @@ function asReadableText(value: unknown): string {
   if (typeof value === 'string') return value.trim();
   if (Array.isArray(value)) return value.map(asReadableText).filter(Boolean).join('；');
   return '';
+}
+
+function AcademicChineseDetails({
+  summary,
+  passages,
+  stage,
+  goal,
+  adapter,
+  children,
+}: {
+  summary: string;
+  passages: LocalizationPassage[];
+  stage: string;
+  goal: string;
+  adapter: EasyProductPort;
+  children: (localized: Record<string, string>) => ReactNode;
+}) {
+  const [localized, setLocalized] = useState<Record<string, string> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const sourceKey = JSON.stringify(passages);
+  const activeSource = useRef(sourceKey);
+  useEffect(() => {
+    activeSource.current = sourceKey;
+    setLocalized(null);
+    setLoading(false);
+    setError('');
+  }, [sourceKey]);
+  async function load() {
+    if (localized || loading) return;
+    const requestedSource = sourceKey;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await adapter.localizeScientific(passages, { stage, goal });
+      if (activeSource.current === requestedSource) setLocalized(result.items);
+    } catch (reason) {
+      if (activeSource.current === requestedSource) setError((reason as Error).message);
+    } finally {
+      if (activeSource.current === requestedSource) setLoading(false);
+    }
+  }
+  return (
+    <details
+      className="easy-live-explanation"
+      onToggle={(event) => {
+        if (event.currentTarget.open) void load();
+      }}
+    >
+      <summary>{summary}</summary>
+      {loading && <p>正在生成忠实保留残基编号与结论强度的学术中文…</p>}
+      {error && (
+        <p className="easy-error">
+          学术中文暂未生成。<button onClick={() => void load()}>重试</button>
+        </p>
+      )}
+      {localized && children(localized)}
+      {localized && (
+        <details className="easy-live-source-audit">
+          <summary>查看英文原文（审计）</summary>
+          {passages.map((passage) => (
+            <p key={passage.id}>{passage.text}</p>
+          ))}
+        </details>
+      )}
+    </details>
+  );
 }
 
 function DesignYamlDisclosure({
@@ -294,7 +364,8 @@ function DesignYamlDisclosure({
         if (event.currentTarget.open && artifact) void load(artifact);
       }}
     >
-      <summary>查看详细 YAML（{artifacts.length} 个 scaffold）</summary>
+      <summary>查看详细 YAML（{artifacts.length} 个骨架）</summary>
+      <p>以下为可执行的冻结配置；字段名与标识符保留原始语法，不作翻译。</p>
       {artifacts.length > 1 && (
         <div className="easy-live-yaml-tabs" role="tablist" aria-label="Scaffold YAML">
           {artifacts.map((item) => {
@@ -336,37 +407,34 @@ function HistoricalStagePanel({
   const rows: [string, string | number][] = [];
   if (stageIndex === 0) {
     rows.push(
-      ['Target', context.target_id || 'Verified target'],
-      ['Sequence length', context.sequence_length || '—'],
-      ['Chains', context.chains?.join(', ') || '—'],
-      ['Structure', context.structure?.label || '—'],
+      ['靶标', context.target_id || '已验证靶标'],
+      ['序列长度', context.sequence_length || '—'],
+      ['目标链', context.chains?.join(', ') || '—'],
+      ['结构', context.structure?.label || '—'],
     );
   } else if (stageIndex === 1) {
     rows.push(
-      ['Candidate sites', context.sites.length],
-      ['Approved site', context.approved_site?.selected_rank || 'Not recorded'],
+      ['候选位点', context.sites.length],
+      ['已批准位点', context.approved_site?.selected_rank || '尚未记录'],
     );
     const approved = context.sites.find(
       (site) => site.id === context.approved_site?.selected_candidate_id,
     );
-    if (approved) rows.push(['Hotspots', approved.design_labels.join(', ')]);
+    if (approved) rows.push(['热点残基', approved.design_labels.join(', ')]);
   } else if (stageIndex === 2) {
     rows.push(
-      ['Design arms', context.arms.length],
-      ['Design approval', context.design_approved ? 'Recorded' : 'Not recorded'],
+      ['设计分支', context.arms.length],
+      ['设计审批', context.design_approved ? '已记录' : '尚未记录'],
     );
   } else if (stageIndex === 3 || stageIndex === 4) {
     const phase = stageIndex === 3 ? 'pilot' : 'scale';
     const jobs = snapshot.jobs.filter((item) => item.phase === phase);
-    rows.push([
-      'Execution status',
-      jobs.some((item) => item.status === 'running') ? 'Running' : 'Complete',
-    ]);
+    rows.push(['运行状态', jobs.some((item) => item.status === 'running') ? '运行中' : '已完成']);
   } else {
     rows.push(
-      ['Candidate total', snapshot.candidates.total],
-      ['Native pass', snapshot.candidates.counts.pass || 0],
-      ['Workflow state', snapshot.current_action.stage],
+      ['候选总数', snapshot.candidates.total],
+      ['通过原生筛选', snapshot.candidates.counts.pass || 0],
+      ['工作流状态', snapshot.current_action.stage],
     );
   }
   const approvedSite = context.sites.find(
@@ -388,46 +456,88 @@ function HistoricalStagePanel({
           </div>
         ))}
       </dl>
-      {stageIndex === 1 && approvedSite && (
-        <details className="easy-live-explanation">
-          <summary>为什么选择 Site {approvedSite.rank}</summary>
-          <h4>{approvedSite.name}</h4>
-          <p>{approvedSite.why_ranked}</p>
-          {approvedSite.risks.length > 0 && (
-            <p>
-              <strong>主要风险：</strong>
-              {approvedSite.risks.join('；')}
-            </p>
-          )}
-          {approvedSite.uncertainty.length > 0 && (
-            <p>
-              <strong>仍需确认：</strong>
-              {approvedSite.uncertainty.join('；')}
-            </p>
-          )}
-        </details>
-      )}
-      {stageIndex === 2 && context.arms.length > 0 && (
-        <details className="easy-live-explanation">
-          <summary>为什么采用这个设计方案</summary>
-          <div className="easy-live-arm-reasons">
-            {context.arms.map((arm, index) => {
-              const title =
-                asReadableText(arm.name) || asReadableText(arm.arm_id) || `设计 ${index + 1}`;
-              const rationale =
-                asReadableText(arm.rationale) ||
-                asReadableText(arm.hypothesis) ||
-                asReadableText(arm.expected_result);
-              return (
-                <article key={asReadableText(arm.arm_id) || title}>
-                  <h4>{title}</h4>
-                  <p>{rationale || '该设计遵循已批准位点与冻结的设计约束。'}</p>
-                </article>
-              );
-            })}
-          </div>
-        </details>
-      )}
+      {stageIndex === 1 &&
+        approvedSite &&
+        (() => {
+          const passages: LocalizationPassage[] = [
+            { id: 'site.name', text: approvedSite.name },
+            { id: 'site.why', text: approvedSite.why_ranked },
+            ...approvedSite.risks.map((text, index) => ({ id: `site.risk.${index}`, text })),
+            ...approvedSite.uncertainty.map((text, index) => ({
+              id: `site.uncertainty.${index}`,
+              text,
+            })),
+          ].filter((item) => item.text.trim());
+          return (
+            <AcademicChineseDetails
+              summary={`为什么选择 Site ${approvedSite.rank}`}
+              passages={passages}
+              stage="Site"
+              goal={snapshot.project.goal}
+              adapter={adapter}
+            >
+              {(zh) => (
+                <>
+                  <h4>{zh['site.name']}</h4>
+                  <p>{zh['site.why']}</p>
+                  {approvedSite.risks.length > 0 && (
+                    <p>
+                      <strong>主要风险：</strong>
+                      {approvedSite.risks.map((_, index) => zh[`site.risk.${index}`]).join('；')}
+                    </p>
+                  )}
+                  {approvedSite.uncertainty.length > 0 && (
+                    <p>
+                      <strong>仍需确认：</strong>
+                      {approvedSite.uncertainty
+                        .map((_, index) => zh[`site.uncertainty.${index}`])
+                        .join('；')}
+                    </p>
+                  )}
+                </>
+              )}
+            </AcademicChineseDetails>
+          );
+        })()}
+      {stageIndex === 2 &&
+        context.arms.length > 0 &&
+        (() => {
+          const passages = context.arms.flatMap((arm, index) => {
+            const title =
+              asReadableText(arm.name) || asReadableText(arm.arm_id) || `设计 ${index + 1}`;
+            const rationale =
+              asReadableText(arm.rationale) ||
+              asReadableText(arm.hypothesis) ||
+              asReadableText(arm.expected_result) ||
+              '该设计遵循已批准位点与冻结的设计约束。';
+            return [
+              { id: `design.${index}.title`, text: title },
+              { id: `design.${index}.rationale`, text: rationale },
+            ];
+          });
+          return (
+            <AcademicChineseDetails
+              summary="为什么采用这个设计方案"
+              passages={passages}
+              stage="Design"
+              goal={snapshot.project.goal}
+              adapter={adapter}
+            >
+              {(zh) => (
+                <div className="easy-live-arm-reasons">
+                  {context.arms.map((arm, index) => {
+                    return (
+                      <article key={asReadableText(arm.arm_id) || `design-${index}`}>
+                        <h4>{zh[`design.${index}.title`]}</h4>
+                        <p>{zh[`design.${index}.rationale`]}</p>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </AcademicChineseDetails>
+          );
+        })()}
       {stageIndex === 2 && designYamls.length > 0 && (
         <DesignYamlDisclosure artifacts={designYamls} adapter={adapter} />
       )}
@@ -439,10 +549,12 @@ function GatePanel({
   snapshot,
   busy,
   onDecide,
+  adapter,
 }: {
   snapshot: ProductSnapshot;
   busy: boolean;
   onDecide: (input: GateInput) => Promise<void>;
+  adapter: EasyProductPort;
 }) {
   const decision = snapshot.decision!;
   const [selected, setSelected] = useState(decision.default_option_id);
@@ -460,6 +572,40 @@ function GatePanel({
     decision.gate === 1
       ? decision.options.filter((item) => item.option_id === decision.default_option_id)
       : decision.options;
+  const gatePassages: LocalizationPassage[] = [
+    { id: 'gate.question', text: decision.question },
+    { id: 'gate.summary', text: decision.action_summary },
+    ...visibleOptions.flatMap((item, index) => [
+      ...(item.label ? [{ id: `gate.option.${index}.label`, text: item.label }] : []),
+      ...(item.description
+        ? [{ id: `gate.option.${index}.description`, text: item.description }]
+        : []),
+    ]),
+    ...decision.warnings.map((text, index) => ({ id: `gate.warning.${index}`, text })),
+    ...decision.limitations.map((text, index) => ({ id: `gate.limitation.${index}`, text })),
+  ].filter((item) => item.text.trim());
+  const [gateChinese, setGateChinese] = useState<Record<string, string>>({});
+  const [gateLanguageError, setGateLanguageError] = useState(false);
+  const gateSourceKey = JSON.stringify(gatePassages);
+  useEffect(() => {
+    let current = true;
+    setGateChinese({});
+    setGateLanguageError(false);
+    void adapter
+      .localizeScientific(gatePassages, {
+        stage: STEPS[activeIndex(snapshot)],
+        goal: snapshot.project.goal,
+      })
+      .then((result) => {
+        if (current) setGateChinese(result.items);
+      })
+      .catch(() => {
+        if (current) setGateLanguageError(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [adapter, decision.id, gateSourceKey, snapshot.project.goal]);
   const approveAction = option?.actions.includes('approve')
     ? 'approve'
     : option?.actions.includes('override')
@@ -476,10 +622,14 @@ function GatePanel({
   return (
     <section className="easy-live-gate" aria-label={`Gate ${decision.gate}`}>
       <div className="easy-live-kicker">
-        <ShieldCheck size={14} /> SCIENTIST GATE {decision.gate}
+        <ShieldCheck size={14} /> 科学家审批 · GATE {decision.gate}
       </div>
-      <h3>{decision.gate === 1 ? '确认自动推荐的目标结构' : decision.question}</h3>
-      <p>{decision.action_summary}</p>
+      <h3>
+        {decision.gate === 1
+          ? '确认自动推荐的目标结构'
+          : gateChinese['gate.question'] || '正在整理科学审批问题…'}
+      </h3>
+      <p>{gateChinese['gate.summary'] || '正在生成保持原始结论强度的学术中文…'}</p>
       <div className="easy-live-options" role="radiogroup" aria-label="Scientific options">
         {visibleOptions.map((item) => (
           <label key={item.option_id} className={selected === item.option_id ? 'selected' : ''}>
@@ -493,10 +643,16 @@ function GatePanel({
             <span>
               <strong>
                 {item.rank ? `Site ${item.rank} · ` : ''}
-                {item.label || item.option_id}
+                {gateChinese[`gate.option.${visibleOptions.indexOf(item)}.label`] ||
+                  item.label ||
+                  item.option_id}
               </strong>
-              <small>{item.description || (item.eligible ? '可选择' : '已阻断')}</small>
-              {item.design_labels && <em>Hotspot: {item.design_labels.join(', ')}</em>}
+              <small>
+                {gateChinese[`gate.option.${visibleOptions.indexOf(item)}.description`] ||
+                  item.description ||
+                  (item.eligible ? '可选择' : '已阻断')}
+              </small>
+              {item.design_labels && <em>热点残基：{item.design_labels.join(', ')}</em>}
             </span>
           </label>
         ))}
@@ -505,11 +661,19 @@ function GatePanel({
         <details>
           <summary>风险与局限（{decision.warnings.length + decision.limitations.length}）</summary>
           <ul>
-            {[...decision.warnings, ...decision.limitations].map((item, index) => (
-              <li key={index}>{item}</li>
+            {decision.warnings.map((_, index) => (
+              <li key={`warning-${index}`}>{gateChinese[`gate.warning.${index}`] || '…'}</li>
+            ))}
+            {decision.limitations.map((_, index) => (
+              <li key={`limitation-${index}`}>{gateChinese[`gate.limitation.${index}`] || '…'}</li>
             ))}
           </ul>
         </details>
+      )}
+      {gateLanguageError && (
+        <p className="easy-error">
+          学术中文暂不可用；审批前请刷新重试，英文原文仍保留在审计记录中。
+        </p>
       )}
       {showRevise && (
         <textarea
@@ -613,7 +777,7 @@ function SimulatedOrder({
   return (
     <section className="easy-live-order">
       <div className="easy-live-kicker">
-        <FlaskConical size={14} /> GATE 5 · SIMULATED LAB ORDER
+        <FlaskConical size={14} /> GATE 5 · 模拟实验下单
       </div>
       <h3>{order.receipt ? '模拟下单回执已生成' : '模拟实验下单'}</h3>
       <p>{order.disclaimer}</p>
@@ -1100,6 +1264,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     key={snapshot.decision.id}
                     snapshot={snapshot}
                     busy={state.pending}
+                    adapter={adapter}
                     onDecide={async (value) => {
                       if (value.selected_option_id) setSelectedSite(value.selected_option_id);
                       await adapter.decide(value);
@@ -1169,25 +1334,47 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       </article>
                     ))}
                     {technicalActivity.length > 0 && (
-                      <details className="easy-live-technical-details">
-                        <summary>查看技术详情</summary>
-                        {snapshot.decision?.details_url && (
-                          <a href={snapshot.decision.details_url} target="_blank" rel="noreferrer">
-                            查看当前 Gate 的审查与 provenance
-                          </a>
+                      <AcademicChineseDetails
+                        summary="查看技术详情"
+                        passages={technicalActivity.flatMap((item, itemIndex) => {
+                          const title = item.title || item.role || item.type;
+                          const body = item.summary || item.text || '';
+                          return [
+                            { id: `activity.${itemIndex}.title`, text: title },
+                            ...(body ? [{ id: `activity.${itemIndex}.body`, text: body }] : []),
+                          ];
+                        })}
+                        stage={STEPS[shownIndex]}
+                        goal={snapshot.project.goal}
+                        adapter={adapter}
+                      >
+                        {(zh) => (
+                          <>
+                            {snapshot.decision?.details_url && (
+                              <a
+                                href={snapshot.decision.details_url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                查看当前科学审批的来源与审计记录
+                              </a>
+                            )}
+                            <div>
+                              {technicalActivity.map((item, itemIndex) => (
+                                <article key={`technical-${item.id}`}>
+                                  <span className={item.status || ''} />
+                                  <div>
+                                    <strong>{zh[`activity.${itemIndex}.title`]}</strong>
+                                    {(item.summary || item.text) && (
+                                      <p>{zh[`activity.${itemIndex}.body`]}</p>
+                                    )}
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          </>
                         )}
-                        <div>
-                          {technicalActivity.map((item) => (
-                            <article key={`technical-${item.id}`}>
-                              <span className={item.status || ''} />
-                              <div>
-                                <strong>{item.title || item.role || item.type}</strong>
-                                <p>{item.summary || item.text}</p>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      </details>
+                      </AcademicChineseDetails>
                     )}
                   </section>
                 )}
@@ -1202,7 +1389,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
               </div>
               <aside className="easy-live-science">
                 <div className="easy-live-kicker">
-                  SCIENTIFIC CONTEXT · {STEPS[shownIndex].toUpperCase()}
+                  科学信息 · {STAGE_SUMMARY_TITLES[shownIndex]}
                 </div>
                 <EasyStructureViewer
                   artifact={artifact}

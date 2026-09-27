@@ -302,6 +302,16 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                 self.close_connection = True
                 return
+            if path == "/api/rabbit/localize":
+                if url.query or self.command != "POST":
+                    raise ProductError(
+                        "method_not_allowed", "Localization accepts POST without query", 405
+                    )
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                    raise ProductError("invalid_content_type", "Expected application/json", 415)
+                payload = json.loads(self.body(140 * 1024))
+                self.send(200, self.server.rabbit_chat.localize(payload))
+                return
             if path == "/api/compute/resources":
                 if self.command != "GET":
                     raise ProductError("method_not_allowed", "Resource telemetry is read-only", 405)
@@ -529,11 +539,10 @@ def main(argv: list[str] | None = None) -> int:
             "inside web/easy",
         )
     source_root = Path(__file__).resolve().parents[3]
-    rabbit_script = confined(
-        context.root, source_root / "web/easy/server/rabbit_chat.py"
-    )
+    rabbit_script = confined(context.root, source_root / "web/easy/server/rabbit_chat.py")
+    product_service = ProductService(gateway, actor=f"local-workbench:uid:{os.getuid()}")
     server = ProductServer(
-        ProductService(gateway, actor=f"local-workbench:uid:{os.getuid()}"),
+        product_service,
         port=args.port,
         web_root=web_root,
         easy_web_root=easy_web_root,
@@ -542,9 +551,9 @@ def main(argv: list[str] | None = None) -> int:
                 rabbit_script,
                 confined(context.root, context.root / (args.env_file or Path(".env.local"))),
             )
-            if os.environ.get("DEEPSEEK_API_KEY")
-            and rabbit_script.is_file()
-            else None
+            if os.environ.get("DEEPSEEK_API_KEY") and rabbit_script.is_file()
+            else None,
+            cache_root=product_service.root / "localizations",
         ),
     )
     # The token is written to the owner-only state file.  Never duplicate it in

@@ -158,6 +158,26 @@ test('live project open and Site switching stay within the interactive budget', 
   await page.route(`**/api/v1/artifacts/${yamlSha256}`, (route) =>
     route.fulfill({ body: yaml, contentType: 'text/plain' }),
   );
+  await page.route('**/api/rabbit/localize', async (route) => {
+    const request = route.request().postDataJSON() as {
+      passages: { id: string; text: string }[];
+    };
+    const translations: Record<string, string> = {
+      'site.name': '位点 A',
+      'site.why': '经验证的胞外候选位点。',
+      'design.0.title': '正构入口设计',
+      'design.0.rationale': '阻断经验证的胞外前庭区域。',
+    };
+    await route.fulfill({
+      json: {
+        locale: 'zh-CN',
+        source_sha256: 'f'.repeat(64),
+        items: Object.fromEntries(
+          request.passages.map((item) => [item.id, translations[item.id] || item.text]),
+        ),
+      },
+    });
+  });
 
   await page.goto('/easy/');
   await expect(page.getByText('同一套冻结后端')).toHaveCount(0);
@@ -186,13 +206,13 @@ test('live project open and Site switching stay within the interactive budget', 
   await page.getByRole('button', { name: 'Pilot', exact: true }).click();
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Pilot');
   await expect(page.getByRole('region', { name: '真实执行进度' })).toContainText('2 / 2 条');
-  await expect(page.getByText('Scaffold 7XL0')).toBeVisible();
+  await expect(page.getByText('骨架 7XL0')).toBeVisible();
   await expect(page.getByText('查看未通过或未完成的候选（1）')).toBeVisible();
 
   await page.getByRole('button', { name: 'Scale', exact: true }).click();
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Scale');
   await expect(page.getByRole('region', { name: '真实执行进度' })).toContainText('2 / 2 条');
-  await expect(page.getByText('Scaffold 8COH')).toBeVisible();
+  await expect(page.getByText('骨架 8COH')).toBeVisible();
 
   await page.getByRole('button', { name: 'Candidates', exact: true }).click();
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Candidates');
@@ -206,11 +226,13 @@ test('live project open and Site switching stay within the interactive budget', 
 
   await page.getByRole('button', { name: 'Site', exact: true }).click();
   await page.getByText('为什么选择 Site A', { exact: true }).click();
-  await expect(page.getByText('Verified fixture', { exact: true })).toBeVisible();
+  await expect(page.getByText('经验证的胞外候选位点。', { exact: true })).toBeVisible();
+  await expect(page.getByText('Verified fixture', { exact: true })).not.toBeVisible();
 
   await page.getByRole('button', { name: 'Design', exact: true }).click();
   await page.getByText('为什么采用这个设计方案', { exact: true }).click();
-  await expect(page.getByText('Blocks the verified extracellular vestibule.')).toBeVisible();
+  await expect(page.getByText('阻断经验证的胞外前庭区域。')).toBeVisible();
+  await expect(page.getByText('Blocks the verified extracellular vestibule.')).not.toBeVisible();
   await page.getByText(/查看详细 YAML/).click();
   await expect(page.getByText('schema_version: 1', { exact: false })).toBeVisible();
 });

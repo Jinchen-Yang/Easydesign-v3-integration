@@ -548,10 +548,7 @@ def test_same_origin_server_keeps_pro_and_easy_static_roots_isolated(bridge, tmp
         assert client.get("/easy/").text == "easy-index"
         assert client.get("/easy/assets/app.js").text == "easy-asset"
         assert client.get("/easy/mascot/rabbit/rabbit-mascot.png").content == b"rabbit-png"
-        assert (
-            client.get("/easy/mascot/rabbit/originals/01-welcome.jpg").content
-            == b"rabbit-album"
-        )
+        assert client.get("/easy/mascot/rabbit/originals/01-welcome.jpg").content == b"rabbit-album"
         assert client.get("/easy/%2e%2e/assets/app.js").status_code == 403
         assert client.get("/easy/mascot/%2e%2e/assets/app.js").status_code == 403
         assert client.get("/easy/unknown.js").status_code == 404
@@ -637,6 +634,74 @@ def test_rabbit_chat_rejects_injection_and_sanitizes_provider_failure(bridge, tm
         response = client.post("/api/rabbit/chat", json=valid)
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "not_configured"
+
+
+def test_scientific_localization_is_bounded_validated_and_cached(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    received = []
+
+    def provider(request):
+        received.append(request)
+        yield {
+            "type": "delta",
+            "text": json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": "site.why",
+                            "text": "ECL2 与 TM6 邻近，并保留残基 273 和 7.39 的编号。",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+        }
+        yield {"type": "done"}
+
+    chat = RabbitChatService(provider)
+    payload = {
+        "locale": "zh",
+        "passages": [
+            {
+                "id": "site.why",
+                "text": "ECL2 is adjacent to TM6; residue 273 and 7.39 remain uncertain.",
+            }
+        ],
+        "context": {"stage": "Site", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=chat) as client:
+        first = client.post("/api/rabbit/localize", json=payload)
+        assert first.status_code == 200, first.text
+        assert first.json()["locale"] == "zh-CN"
+        assert "ECL2" in first.json()["items"]["site.why"]
+        assert client.post("/api/rabbit/localize", json=payload).json() == first.json()
+        assert len(received) == 1
+        assert received[0]["purpose"] == "scientific-localization"
+        assert "messages" not in received[0]
+
+        invalid = {**payload, "passages": [{"id": "bad id", "text": "source"}]}
+        assert client.post("/api/rabbit/localize", json=invalid).status_code == 400
+
+
+def test_scientific_localization_rejects_mutated_scientific_identifiers(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+
+    def provider(_request):
+        yield {
+            "type": "delta",
+            "text": json.dumps({"items": [{"id": "site.why", "text": "中文但编号被删除"}]}),
+        }
+        yield {"type": "done"}
+
+    payload = {
+        "locale": "zh",
+        "passages": [{"id": "site.why", "text": "VHH reaches ECL2 residue 273."}],
+        "context": {"stage": "Site", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=RabbitChatService(provider)) as client:
+        response = client.post("/api/rabbit/localize", json=payload)
+        assert response.status_code == 502
+        assert response.json()["error"]["code"] == "localization_unavailable"
 
 
 def test_local_gpu_monitor_is_fixed_read_only_cached_and_fails_stale():
@@ -1159,17 +1224,11 @@ def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):
 
     monkeypatch.setattr(service, "candidates", candidates)
     with http_api(service) as client:
-        response = client.get(
-            "/api/v1/projects/example/candidates?offset=0&limit=20&view=summary"
-        )
+        response = client.get("/api/v1/projects/example/candidates?offset=0&limit=20&view=summary")
         assert response.status_code == 200
         assert observed == [("example", 0, 20, None, True, None)]
-        assert (
-            client.get("/api/v1/projects/example/candidates?view=unknown").status_code == 400
-        )
-        assert (
-            client.get("/api/v1/projects/example/candidates?phase=design").status_code == 400
-        )
+        assert client.get("/api/v1/projects/example/candidates?view=unknown").status_code == 400
+        assert client.get("/api/v1/projects/example/candidates?phase=design").status_code == 400
         response = client.get(
             "/api/v1/projects/example/candidates?offset=0&limit=20&view=summary&phase=pilot"
         )
@@ -1385,8 +1444,7 @@ def test_product_journal_adds_surface_column_to_existing_database(tmp_path):
     journal = RequestJournal(path)
     try:
         columns = {
-            str(row["name"])
-            for row in journal.db.execute("PRAGMA table_info(product_projects)")
+            str(row["name"]) for row in journal.db.execute("PRAGMA table_info(product_projects)")
         }
         assert "surface" in columns
     finally:

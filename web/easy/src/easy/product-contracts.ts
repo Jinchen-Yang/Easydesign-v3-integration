@@ -227,6 +227,15 @@ export interface LiveState {
   error: string | null;
   pendingRequest: RequestState | null;
 }
+export interface LocalizationPassage {
+  id: string;
+  text: string;
+}
+export interface LocalizationResult {
+  locale: 'zh-CN';
+  items: Record<string, string>;
+  source_sha256: string;
+}
 export interface GateInput {
   action: GateAction;
   selected_option_id: string;

@@ -4,6 +4,8 @@ import type {
   LabOrderDraftInput,
   LabOrderView,
   LiveState,
+  LocalizationPassage,
+  LocalizationResult,
   Page,
   ProductSnapshot,
   Project,
@@ -31,6 +33,10 @@ export interface EasyProductPort {
   candidatePage(offset: number, phase?: 'pilot' | 'scale' | 'candidates'): Promise<void>;
   selectCandidate(id: string): Promise<void>;
   artifactText(url: string): Promise<string>;
+  localizeScientific(
+    passages: LocalizationPassage[],
+    context: { stage: string; goal: string },
+  ): Promise<LocalizationResult>;
   createProject(title: string, goal: string, file?: File | null): Promise<void>;
   decide(input: GateInput): Promise<void>;
   resume(): Promise<void>;
@@ -304,6 +310,26 @@ export class EasyProductAdapter implements EasyProductPort {
     if (!response.ok)
       throw new ApiError('artifact_unavailable', 'Design YAML is unavailable', response.status);
     return response.text();
+  }
+  async localizeScientific(
+    passages: LocalizationPassage[],
+    context: { stage: string; goal: string },
+  ) {
+    const response = await this.transport('/api/rabbit/localize', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locale: 'zh', passages, context }),
+      signal: AbortSignal.timeout(120000),
+    });
+    const value = await response.json();
+    if (!response.ok)
+      throw new ApiError(
+        value.error?.code || 'localization_unavailable',
+        value.error?.message || '学术中文转换暂不可用',
+        response.status,
+      );
+    return value as LocalizationResult;
   }
   private async command(path: string, body: Record<string, unknown>) {
     if (this.state.pending) return;

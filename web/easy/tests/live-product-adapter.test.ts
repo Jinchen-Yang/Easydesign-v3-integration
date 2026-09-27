@@ -251,6 +251,34 @@ describe('Easy live adapter preserves Product API authority', () => {
     });
   });
 
+  it('requests bounded academic Chinese without changing scientific source text', async () => {
+    const calls: { path: string; body: Record<string, unknown> }[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ path: String(url), body: JSON.parse(String(init?.body)) });
+      return Response.json({
+        locale: 'zh-CN',
+        source_sha256: 'e'.repeat(64),
+        items: { 'site.why': 'ECL2 邻近残基 273。' },
+      });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    const passages = [{ id: 'site.why', text: 'ECL2 is near residue 273.' }];
+    const result = await adapter.localizeScientific(passages, {
+      stage: 'Site',
+      goal: 'NK2R VHH',
+    });
+    expect(result.items['site.why']).toContain('273');
+    expect(calls[0]).toEqual({
+      path: '/api/rabbit/localize',
+      body: {
+        locale: 'zh',
+        passages,
+        context: { stage: 'Site', goal: 'NK2R VHH' },
+      },
+    });
+  });
+
   it('does not keep two-second polling after a project becomes complete', async () => {
     const timers = vi.spyOn(globalThis, 'setTimeout');
     try {

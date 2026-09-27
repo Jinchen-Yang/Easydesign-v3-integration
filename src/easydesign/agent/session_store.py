@@ -994,6 +994,30 @@ class SessionStore:
             )
         return {**current, "state": state, "payload": payload}
 
+    def site_approval_application(
+        self, thread: str, card_id: str, request_identity: str, outcome: dict[str, Any]
+    ) -> bool:
+        """Witness a durable site-approve application of one exact human response.
+
+        True only when a ``site-approve`` command binds this exact card id and
+        request identity, records the identical persisted outcome, and has begun
+        durable execution. This is a crash-window routing witness, never a
+        statement of scientific validity: ``apply_decision`` independently
+        re-verifies the published native approval before completing its journal.
+        """
+        row = self.db.execute(
+            "SELECT state,payload FROM commands WHERE thread=? AND operation='site-approve' "
+            "AND json_extract(binding,'$.card_id')=? "
+            "AND json_extract(binding,'$.request')=? ORDER BY rowid DESC LIMIT 1",
+            (thread, card_id, request_identity),
+        ).fetchone()
+        if row is None:
+            return False
+        return (
+            row["state"] in {"prepared", "dispatching", "completed"}
+            and json.loads(row["payload"]).get("outcome") == outcome
+        )
+
     def save_assessment(self, thread: str, assessment: EvidenceAssessment) -> None:
         with self.db:
             self.db.execute(

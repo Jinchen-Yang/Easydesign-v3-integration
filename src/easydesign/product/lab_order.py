@@ -234,14 +234,10 @@ class LabOrderStore:
         }
 
     @staticmethod
-    def _validate_draft(
-        draft: LabOrderDraft, handoff: WetLabHandoffPackage
-    ) -> None:
+    def _validate_draft(draft: LabOrderDraft, handoff: WetLabHandoffPackage) -> None:
         available = {item.candidate_id: item for item in handoff.candidates}
         unknown = [
-            candidate_id
-            for candidate_id in draft.candidate_ids
-            if candidate_id not in available
+            candidate_id for candidate_id in draft.candidate_ids if candidate_id not in available
         ]
         if unknown:
             raise ProductError(
@@ -284,7 +280,8 @@ class LabOrderStore:
                         "This simulated order request identity has a different payload",
                         409,
                     )
-                return json.loads(previous["response"])
+                return_idempotent: dict[str, Any] = json.loads(previous["response"])
+                return return_idempotent
             state = self._state(project, handoff_sha)
             if command.revision != self._revision(project, handoff_sha, state):
                 raise ProductError(

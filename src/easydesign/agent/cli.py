@@ -127,6 +127,7 @@ async def run_session(
     from langgraph.types import Command
 
     from .harness import create_harness, fingerprint
+
     store, thread = bridge.store, bridge.thread
     goal = store.thread(thread, fingerprint(config, harness_variant), goal)
     if decision is None and any(
@@ -199,42 +200,69 @@ async def run_session(
         )
         interrupts = [i for task in state.tasks for i in task.interrupts]
         superseded_card = None
+        redrive_site_approval = False
         if len(interrupts) == 1:
             pending_card = DecisionCard.model_validate(interrupts[0].value)
             if not bridge.decision_card_is_current(pending_card):
                 store.card(thread, pending_card.card_id)
                 saved = store.response(thread, pending_card.card_id)
-                if decision is not None or (saved is not None and not saved["delivered"]):
+                # The old-service site approval rewrites the Stage 02 manifest this
+                # card binds, so the card stops being "current" the moment its own
+                # approval is applied. A durable site-approve command binding this
+                # exact card, request identity and human outcome witnesses that
+                # crash window; keep the interrupt so the persisted response
+                # re-drives apply_decision, which re-verifies the published
+                # approval against current native state before journal completion.
+                redrive_site_approval = (
+                    decision is None
+                    and saved is not None
+                    and not saved["delivered"]
+                    and saved["response"] in {"approve", "override"}
+                    and pending_card.gate_type == "site-hotspot"
+                    and store.site_approval_application(
+                        thread,
+                        pending_card.card_id,
+                        pending_card.request_identity,
+                        saved["outcome"],
+                    )
+                )
+                if decision is not None or (
+                    saved is not None and not saved["delivered"] and not redrive_site_approval
+                ):
                     raise AgentBoundaryError(
                         "Scientific state changed; stale card cannot be approved"
                     )
-                superseded_card = pending_card
-                interrupts = []
-                if pending_card.gate_type not in {"pilot-promotion", "wet-lab-handoff"}:
-                    markers = [
-                        e
-                        for e in history
-                        if e["kind"]
-                        in {"checkpoint-card-superseded", "checkpoint-card-retired"}
-                        and e["payload"].get("card_id") == pending_card.card_id
-                    ]
-                    # If the tool returned but the process died before LangGraph
-                    # checkpointed that return, the last durable marker is "retired"
-                    # while the interrupt still exists. Re-arm the exact same card;
-                    # the tool result is idempotent and creates no Scientist outcome.
-                    if not markers or markers[-1]["kind"] != "checkpoint-card-superseded":
-                        store.event(
-                            thread,
-                            "checkpoint-card-superseded",
-                            {
-                                "card_id": pending_card.card_id,
-                                "gate_type": pending_card.gate_type,
-                                "execution_id": execution["execution_id"] if execution else None,
-                                "reason": (
-                                    "native scientific state advanced before checkpoint delivery"
-                                ),
-                            },
-                        )
+                if not redrive_site_approval:
+                    superseded_card = pending_card
+                    interrupts = []
+                    if pending_card.gate_type not in {"pilot-promotion", "wet-lab-handoff"}:
+                        markers = [
+                            e
+                            for e in history
+                            if e["kind"]
+                            in {"checkpoint-card-superseded", "checkpoint-card-retired"}
+                            and e["payload"].get("card_id") == pending_card.card_id
+                        ]
+                        # If the tool returned but the process died before LangGraph
+                        # checkpointed that return, the last durable marker is "retired"
+                        # while the interrupt still exists. Re-arm the exact same card;
+                        # the tool result is idempotent and creates no Scientist outcome.
+                        if not markers or markers[-1]["kind"] != "checkpoint-card-superseded":
+                            store.event(
+                                thread,
+                                "checkpoint-card-superseded",
+                                {
+                                    "card_id": pending_card.card_id,
+                                    "gate_type": pending_card.gate_type,
+                                    "execution_id": (
+                                        execution["execution_id"] if execution else None
+                                    ),
+                                    "reason": (
+                                        "native scientific state advanced before "
+                                        "checkpoint delivery"
+                                    ),
+                                },
+                            )
         if interrupts:
             if new_message is not None:
                 raise AgentBoundaryError(

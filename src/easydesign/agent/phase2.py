@@ -574,9 +574,7 @@ class Phase2Bridge(TargetBridge):
                 conflict = checked.get("cause") if checked["status"] == "BLOCKED" else None
                 runtime_eligibility = dossier_eligibility.get(entry.candidate_id, {})
                 if runtime_eligibility.get("status") == "BLOCKED":
-                    conflict = (
-                        runtime_eligibility.get("cause") or "verified-compartment-conflict"
-                    )
+                    conflict = runtime_eligibility.get("cause") or "verified-compartment-conflict"
                 if set(entry.site.hotspot_label_seq_ids) & set(intent.avoid_label_seq_ids):
                     conflict = "explicit-avoid-residue-constraint"
                 if entry.hard_block != conflict or entry.selectable != (conflict is None):
@@ -1069,7 +1067,7 @@ class Phase2Bridge(TargetBridge):
             or current["request_identity"] != card.request_identity
         ):
             return False
-        return self.site_snapshot(current)["evidence_id"] == card.evidence_id
+        return bool(self.site_snapshot(current)["evidence_id"] == card.evidence_id)
 
     def decision_card(self, args: ApplyDecision) -> DecisionCard:
         # An interrupted Gate tool may replay after its response was already applied.
@@ -1078,9 +1076,7 @@ class Phase2Bridge(TargetBridge):
             prior_id = (
                 identity({"assessment": args.assessment_id, "option": args.option_id})
                 if args.assessment_id
-                else identity(
-                    {"review_failure": args.review_failure_id, "option": args.option_id}
-                )
+                else identity({"review_failure": args.review_failure_id, "option": args.option_id})
             )
             if self.store.response(self.thread, prior_id) is not None:
                 return self.store.card(self.thread, prior_id)

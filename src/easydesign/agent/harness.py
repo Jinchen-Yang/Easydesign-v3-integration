@@ -202,9 +202,7 @@ def fingerprint(config: ModelConfig, harness_variant: SiteHarnessVariant = "full
             },
             "site_dossier": Path(__file__).with_name("site_dossier.py").read_text(),
             "judge_packet": Path(__file__).with_name("judge_packet.py").read_text(),
-            "review_availability": Path(__file__)
-            .with_name("review_availability.py")
-            .read_text(),
+            "review_availability": Path(__file__).with_name("review_availability.py").read_text(),
             "context_policy": Path(__file__).with_name("context_policy.py").read_text(),
             "phase2_bridge": Path(__file__).with_name("phase2.py").read_text(),
             "phase2_tools": Path(__file__).with_name("phase2_tools.py").read_text(),
@@ -824,13 +822,25 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 (self.bridge.thread, self.execution_id),
             ).fetchone()[0]
             synthesize = self.site_stage == "synthesis"
+            site_calls_used = (
+                self.bridge.store.db.execute(
+                    "SELECT COUNT(*) FROM events WHERE thread=? AND kind='model-call' "
+                    "AND json_extract(payload,'$.execution_id')=? "
+                    "AND json_extract(payload,'$.role')='site'",
+                    (self.bridge.thread, self.execution_id),
+                ).fetchone()[0]
+                if self.role == "site" and self.site_stage == "research"
+                else 0
+            )
             site_call_budget_complete = (
                 self.role == "site"
                 and self.site_stage == "research"
                 # Reserve the final counted provider call for the typed handoff.
                 # Auxiliary summaries have a separate category and total safeguard;
-                # only scientific Site calls consume this semantic allowance.
-                and used >= SITE_RESEARCH_MODEL_CALL_LIMIT - 1
+                # only scientific Site calls consume this semantic allowance. A
+                # continued execution may already contain earlier Gate calls; the
+                # shared provider safeguard above still counts every role.
+                and site_calls_used >= SITE_RESEARCH_MODEL_CALL_LIMIT - 1
             )
             finalize_research = (
                 self.role == "site"
@@ -1208,8 +1218,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if self.role == "judge":
                     raise ReviewUnavailable(
                         "INVALID_REVIEW_SUBMISSION",
-                        "Judge requested tools outside its permissions: "
-                        + compact(rejected_names),
+                        "Judge requested tools outside its permissions: " + compact(rejected_names),
                     )
                 raise AgentBoundaryError(
                     "Rejected: tool is outside this role's permissions: " + compact(rejected_names)
@@ -1330,6 +1339,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         if (
                             self.role == "site"
                             and self.site_stage == "research"
+                            and isinstance(self.bridge, Phase2Bridge)
                             and finalize_research
                             and attempt == max_submission_attempts - 1
                             and error.citation_findings

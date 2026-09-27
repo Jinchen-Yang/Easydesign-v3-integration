@@ -101,7 +101,7 @@ def _waiting_gpu_progress(root: Path) -> dict[str, Any] | None:
                         if isinstance(item, dict)
                     ]
                     if counts and all(isinstance(value, int) and value >= 0 for value in counts):
-                        planned = sum(counts)
+                        planned = sum(v for v in counts if isinstance(v, int))
                         total_tasks = len(counts)
             except (OSError, ValueError):
                 pass
@@ -213,6 +213,7 @@ def job_progress(job: LocalStepJob, runs_root: Path) -> dict[str, Any] | None:
             current.steps if current else (log_progress[5] if log_progress else None)
         ),
     }
+
 
 ROLE_ACTIVITY = {
     "target": (
@@ -883,7 +884,8 @@ def structure_candidate_previews(
     )
     for raw in evidence.get("options", []):
         option = dict(raw)
-        payload = option.get("payload") if isinstance(option.get("payload"), dict) else {}
+        raw_payload = option.get("payload")
+        payload = raw_payload if isinstance(raw_payload, dict) else {}
         pdb_id = payload.get("pdb_id")
         option_id = option.get("option_id")
         if (

@@ -64,13 +64,11 @@ def _matching_design_failure(bridge: Any, packet: dict[str, Any]) -> dict[str, A
     )
 
 
-def _checked_design_failure(
-    bridge: Any, packet: dict[str, Any], record_id: str
-) -> dict[str, Any]:
+def _checked_design_failure(bridge: Any, packet: dict[str, Any], record_id: str) -> dict[str, Any]:
     if packet.get("gate_type") != "design-specification":
         raise AgentBoundaryError("Design review failure belongs only to Gate 3")
     bound = evidence_binding(packet)
-    failure = next(
+    failure: dict[str, Any] | None = next(
         (
             event["payload"]
             for event in bridge.store.events(bridge.thread)

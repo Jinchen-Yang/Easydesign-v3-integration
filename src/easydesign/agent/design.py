@@ -445,9 +445,11 @@ class DesignBridge(Phase2Bridge):
             raise AgentBoundaryError("Judge opinion belongs to a different scientific question")
         evaluation = proposal["evaluation"]
         blocked = evaluation["status"] == "BLOCKED"
-        discouraged = evaluation["status"] == "DISCOURAGED" or (
-            opinion and opinion.status == "DISCOURAGED"
-        ) or bool(assessment and assessment.verdict in {"reject", "insufficient"})
+        discouraged = (
+            evaluation["status"] == "DISCOURAGED"
+            or (opinion and opinion.status == "DISCOURAGED")
+            or bool(assessment and assessment.verdict in {"reject", "insufficient"})
+        )
         status: ScientificStatus | None = (
             "BLOCKED"
             if blocked
@@ -479,6 +481,20 @@ class DesignBridge(Phase2Bridge):
         if status == "DISCOURAGED" and not warnings:
             warnings = ["The current design is scientifically discouraged; review its limitations."]
         intent = BinderIntent.model_validate(proposal["intent"])
+        independent_review: dict[str, Any]
+        if assessment is not None:
+            independent_review = {
+                "availability": "completed",
+                "assessment_id": assessment.assessment_id,
+                "verdict": assessment.verdict,
+            }
+        else:
+            assert failure is not None
+            independent_review = {
+                "availability": "unavailable",
+                "failure_code": failure["failure_code"],
+                "failure_record_id": failure["record_id"],
+            }
         card = DecisionCard(
             gate_type="design-specification",
             owner_specialist="binder-strategy",
@@ -527,19 +543,7 @@ class DesignBridge(Phase2Bridge):
                     "scaffolds_per_arm": 7,
                     "generation_started": False,
                 },
-                "independent_review": (
-                    {
-                        "availability": "completed",
-                        "assessment_id": assessment.assessment_id,
-                        "verdict": assessment.verdict,
-                    }
-                    if assessment is not None
-                    else {
-                        "availability": "unavailable",
-                        "failure_code": failure["failure_code"],
-                        "failure_record_id": failure["record_id"],
-                    }
-                ),
+                "independent_review": independent_review,
                 "validation": "blocked"
                 if blocked
                 else "existing compiler and BoltzGen validation passed",
@@ -768,7 +772,7 @@ class DesignBridge(Phase2Bridge):
             or proposal["request_identity"] != card.request_identity
         ):
             return False
-        return self.design_snapshot(proposal)["evidence_id"] == card.evidence_id
+        return bool(self.design_snapshot(proposal)["evidence_id"] == card.evidence_id)
 
     def terminal_result(self, message: str) -> dict[str, Any]:
         if self.approved_site() is None or self.pending_site() is not None:

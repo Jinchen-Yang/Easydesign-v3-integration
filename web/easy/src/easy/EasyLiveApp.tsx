@@ -263,38 +263,62 @@ function asReadableText(value: unknown): string {
 }
 
 function DesignYamlDisclosure({
-  artifact,
+  artifacts,
   adapter,
 }: {
-  artifact: Artifact;
+  artifacts: Artifact[];
   adapter: EasyProductPort;
 }) {
-  const [content, setContent] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(artifacts[0]?.id || '');
+  const [content, setContent] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState('');
   const [error, setError] = useState('');
-  async function load() {
-    if (content || loading) return;
-    setLoading(true);
+  const artifact = artifacts.find((item) => item.id === selected) || artifacts[0];
+  async function load(item: Artifact) {
+    if (content[item.id] || loading === item.id) return;
+    setLoading(item.id);
     setError('');
     try {
-      setContent(await adapter.artifactText(artifact.url));
+      const text = await adapter.artifactText(item.url);
+      setContent((current) => ({ ...current, [item.id]: text }));
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
-      setLoading(false);
+      setLoading('');
     }
   }
   return (
     <details
       className="easy-live-explanation"
       onToggle={(event) => {
-        if (event.currentTarget.open) void load();
+        if (event.currentTarget.open && artifact) void load(artifact);
       }}
     >
-      <summary>查看详细 YAML</summary>
-      {loading && <p>正在读取已冻结的设计文件…</p>}
+      <summary>查看详细 YAML（{artifacts.length} 个 scaffold）</summary>
+      {artifacts.length > 1 && (
+        <div className="easy-live-yaml-tabs" role="tablist" aria-label="Scaffold YAML">
+          {artifacts.map((item) => {
+            const scaffold = item.label.split('-scaffold-').at(-1) || item.label;
+            return (
+              <button
+                key={item.id}
+                className={item.id === artifact?.id ? 'selected' : ''}
+                role="tab"
+                aria-selected={item.id === artifact?.id}
+                onClick={() => {
+                  setSelected(item.id);
+                  void load(item);
+                }}
+              >
+                {scaffold.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {loading === artifact?.id && <p>正在读取已冻结的设计文件…</p>}
       {error && <p className="easy-error">{error}</p>}
-      {content && <pre>{content}</pre>}
+      {artifact && content[artifact.id] && <pre>{content[artifact.id]}</pre>}
     </details>
   );
 }
@@ -348,8 +372,10 @@ function HistoricalStagePanel({
   const approvedSite = context.sites.find(
     (site) => site.id === context.approved_site?.selected_candidate_id,
   );
-  const designYaml = snapshot.artifacts.find((artifact) =>
-    ['yaml', 'yml'].includes(artifact.format.toLowerCase()),
+  const designYamls = snapshot.artifacts.filter(
+    (artifact) =>
+      ['yaml', 'yml'].includes(artifact.format.toLowerCase()) &&
+      !artifact.label.startsWith('compiled-asset-'),
   );
   return (
     <section className="easy-live-history-card" aria-label={STAGE_SUMMARY_TITLES[stageIndex]}>
@@ -402,8 +428,8 @@ function HistoricalStagePanel({
           </div>
         </details>
       )}
-      {stageIndex === 2 && designYaml && (
-        <DesignYamlDisclosure artifact={designYaml} adapter={adapter} />
+      {stageIndex === 2 && designYamls.length > 0 && (
+        <DesignYamlDisclosure artifacts={designYamls} adapter={adapter} />
       )}
     </section>
   );

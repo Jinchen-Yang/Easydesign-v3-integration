@@ -211,6 +211,6 @@ test('live project open and Site switching stay within the interactive budget', 
   await page.getByRole('button', { name: 'Design', exact: true }).click();
   await page.getByText('为什么采用这个设计方案', { exact: true }).click();
   await expect(page.getByText('Blocks the verified extracellular vestibule.')).toBeVisible();
-  await page.getByText('查看详细 YAML', { exact: true }).click();
+  await page.getByText(/查看详细 YAML/).click();
   await expect(page.getByText('schema_version: 1', { exact: false })).toBeVisible();
 });

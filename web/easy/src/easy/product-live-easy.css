@@ -244,6 +244,29 @@
   white-space: pre;
 }
 
+.easy-live-yaml-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.easy-live-yaml-tabs button {
+  padding: 7px 10px;
+  border: 1px solid #ded9e9;
+  border-radius: 9px;
+  background: white;
+  color: #6f6879;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.easy-live-yaml-tabs button.selected {
+  border-color: #8674ee;
+  background: #f0edff;
+  color: #5d4ed1;
+}
+
 .easy-live-arm-reasons {
   display: grid;
   gap: 10px;

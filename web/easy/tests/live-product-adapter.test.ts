@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EasyProductAdapter } from '../src/easy/EasyProductAdapter';
+import { emptyInput, type EasyInput } from '../src/easy/contracts';
 import type { LabOrderView, ProductSnapshot } from '../src/easy/product-contracts';
 
 const project = {
@@ -111,13 +112,101 @@ describe('Easy live adapter preserves Product API authority', () => {
     adapters.push(adapter);
     await adapter.load();
     expect(calls[0].path).toContain('/projects?surface=easy&offset=0&limit=5');
-    await adapter.createProject('Easy design', 'Design an extracellular VHH.');
+    await adapter.createProject('Easy design', 'Design an extracellular VHH.', {
+      ...emptyInput(),
+      text: 'Design an extracellular VHH.',
+    });
     expect(calls.find((call) => call.body?.title === 'Easy design')?.body).toMatchObject({
       title: 'Easy design',
       goal: 'Design an extracellular VHH.',
       surface: 'easy',
+      target_input: {
+        kind: 'description',
+        description: 'Design an extracellular VHH.',
+      },
     });
   });
+
+  it.each([
+    [
+      'description',
+      { text: 'Design an extracellular VHH binder.' },
+      { kind: 'description', description: 'Design an extracellular VHH binder.' },
+    ],
+    [
+      'protein-name',
+      { text: 'TACR2', species: 'Homo sapiens' },
+      { kind: 'protein-name', name: 'TACR2', organism: 'Homo sapiens' },
+    ],
+    ['uniprot', { text: 'p21452' }, { kind: 'uniprot', accession: 'P21452' }],
+    ['pdb-id', { text: '9w1j' }, { kind: 'pdb-id', pdb_id: '9W1J' }],
+  ] as const)(
+    'binds the %s intake to the canonical typed target input',
+    async (type, changes, expected) => {
+      const bodies: Record<string, unknown>[] = [];
+      const { adapter } = fixture(async (_path, body) => {
+        bodies.push(body);
+        return Response.json({ id: 'request', project: project.id, state: 'succeeded' });
+      });
+      await adapter.load();
+      await adapter.createProject(`${type} design`, 'Design an extracellular VHH.', {
+        ...emptyInput(),
+        type,
+        ...changes,
+      } as EasyInput);
+      expect(bodies.find((body) => body.title === `${type} design`)?.target_input).toEqual(
+        expected,
+      );
+    },
+  );
+
+  it.each([
+    [
+      'structure',
+      new File(['ATOM      1  N   ALA A   1'], 'target.pdb'),
+      { kind: 'structure', artifact_id: 'f'.repeat(64) },
+    ],
+    ['sequence', null, { kind: 'sequence', artifact_id: 'f'.repeat(64) }],
+  ] as const)(
+    'uploads and binds the %s intake by immutable artifact id',
+    async (type, file, expected) => {
+      const calls: { path: string; body: unknown }[] = [];
+      const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        const path = String(url);
+        calls.push({ path, body: init?.body });
+        if (path.includes('/inputs?')) return Response.json({ id: 'f'.repeat(64) });
+        if (init?.method === 'POST')
+          return Response.json({ id: 'request', project: project.id, state: 'succeeded' });
+        if (path.endsWith('/workbench')) return Response.json(snapshot());
+        if (path.includes('/projects?'))
+          return Response.json({ total: 1, offset: 0, limit: 5, items: [project] });
+        return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+      });
+      const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+      adapters.push(adapter);
+      await adapter.load();
+      await adapter.createProject(
+        `${type} design`,
+        'Design an extracellular VHH.',
+        {
+          ...emptyInput(),
+          type,
+          text: type === 'sequence' ? 'ACDEFGHIKLMNPQRSTVWY' : '',
+          file: file ? { name: file.name, size: file.size } : null,
+        },
+        file,
+      );
+      const create = calls.find((call) => call.path.endsWith('/projects'));
+      expect(create?.body && JSON.parse(String(create.body))).toMatchObject({
+        target_input: expected,
+      });
+      const upload = calls.find((call) => call.path.includes('/inputs?'));
+      expect(upload?.path).toContain(
+        type === 'structure' ? 'filename=target.pdb' : 'filename=easy-ui-target.fasta',
+      );
+      expect(upload?.body).toBeInstanceOf(Blob);
+    },
+  );
 
   it('submits the exact Gate card and deduplicates simultaneous approval', async () => {
     let resolve!: (response: Response) => void;

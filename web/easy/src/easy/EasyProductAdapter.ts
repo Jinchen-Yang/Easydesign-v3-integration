@@ -11,6 +11,8 @@ import type {
   Project,
   RequestState,
 } from './product-contracts';
+import type { EasyInput } from './contracts';
+import { sequence } from './inputs';
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -37,7 +39,7 @@ export interface EasyProductPort {
     passages: LocalizationPassage[],
     context: { stage: string; goal: string },
   ): Promise<LocalizationResult>;
-  createProject(title: string, goal: string, file?: File | null): Promise<void>;
+  createProject(title: string, goal: string, input: EasyInput, file?: File | null): Promise<void>;
   decide(input: GateInput): Promise<void>;
   resume(): Promise<void>;
   sendMessage(text: string, phase?: string): Promise<void>;
@@ -361,21 +363,45 @@ export class EasyProductAdapter implements EasyProductPort {
       await this.refresh();
     }
   }
-  async createProject(title: string, goal: string, file?: File | null) {
+  async createProject(title: string, goal: string, input: EasyInput, file?: File | null) {
     if (this.state.pending) return;
-    let input_id: string | undefined;
-    if (file) {
-      const input = await this.api<{ id: string }>(
-        '/inputs?filename=' + encodeURIComponent(file.name),
-        { method: 'POST', body: file },
+    let target_input: Record<string, unknown>;
+    if (input.type === 'description') {
+      target_input = { kind: 'description', description: input.text.trim() };
+    } else if (input.type === 'protein-name') {
+      target_input = {
+        kind: 'protein-name',
+        name: input.text.trim(),
+        organism: input.species.trim(),
+      };
+    } else if (input.type === 'uniprot') {
+      target_input = { kind: 'uniprot', accession: input.text.trim().toUpperCase() };
+    } else if (input.type === 'pdb-id') {
+      target_input = { kind: 'pdb-id', pdb_id: input.text.trim().toUpperCase() };
+    } else if (input.type === 'structure' || input.type === 'sequence') {
+      const upload =
+        input.type === 'structure'
+          ? file
+          : file ||
+            new Blob([`>easy-ui-target\n${sequence(input.text)}\n`], {
+              type: 'text/plain;charset=utf-8',
+            });
+      if (!upload) throw new Error('Choose a target structure before starting the design.');
+      const filename =
+        input.type === 'structure' ? file!.name : file?.name || 'easy-ui-target.fasta';
+      const artifact = await this.api<{ id: string }>(
+        '/inputs?filename=' + encodeURIComponent(filename),
+        { method: 'POST', body: upload },
       );
-      input_id = input.id;
+      target_input = { kind: input.type, artifact_id: artifact.id };
+    } else {
+      throw new Error('This input type is not supported by the live backend.');
     }
     await this.command('/projects', {
       title,
       goal,
       surface: 'easy',
-      ...(input_id ? { input_id } : {}),
+      target_input,
     });
   }
   async decide(input: GateInput) {

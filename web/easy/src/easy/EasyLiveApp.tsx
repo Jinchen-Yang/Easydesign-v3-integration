@@ -995,7 +995,12 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     setError('');
     try {
       const goal = productGoal(input);
-      await adapter.createProject(input.name.trim() || inputLabel(input).slice(0, 80), goal, file);
+      await adapter.createProject(
+        input.name.trim() || inputLabel(input).slice(0, 80),
+        goal,
+        input,
+        file,
+      );
       const created = await adapter.load();
       if (created.selectedProject) {
         const params = new URLSearchParams(location.search);

@@ -141,6 +141,7 @@ test.describe('account-mode Easy workspace', () => {
     await expect(page.getByText('团队协作成员：可以查看和讨论，科学审批及计算启动由团队管理员负责。')).toBeVisible();
     await expect(page.getByRole('button', {name: /开始设计/})).toBeDisabled();
     await expect(page.getByRole('region', {name: 'Gate 2'})).toBeVisible();
+    await expect(page.getByRole('link', {name:'打开专业版'})).toHaveAttribute('href','/?scope=team-1&project=proj-1');
     await expect(page.getByRole('button', {name: /批准并继续/})).toBeDisabled();
     await expect(page.getByRole('button', {name: '修改', exact: true})).toBeDisabled();
     // The Gate provenance link is scope-projected, never the unscoped API.

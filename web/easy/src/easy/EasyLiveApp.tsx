@@ -553,6 +553,11 @@ export function EasyLiveApp({
     };
   }, [adapter]);
   const snapshot = state?.snapshot || null;
+  const professionalQuery = new URLSearchParams({
+    ...(access ? { scope: access.id } : {}),
+    ...(snapshot ? { project: snapshot.project.id } : {}),
+  });
+  const professionalUrl = `/${professionalQuery.size ? `?${professionalQuery}` : ''}`;
   const autoContinuationEligible = canExecute && canAutoContinue(snapshot, false);
   const executionBlocked =
     snapshot !== null && ['blocked', 'incomplete'].includes(snapshot.project.status);
@@ -719,10 +724,7 @@ export function EasyLiveApp({
           <button className="easy-help" onClick={() => void adapter.refresh()}>
             <RefreshCw size={14} /> 刷新
           </button>
-          <a
-            className="easy-pro-link"
-            href={access ? `/?scope=${encodeURIComponent(access.id)}` : '/'}
-          >
+          <a className="easy-pro-link" href={professionalUrl}>
             打开专业版
           </a>
         </div>

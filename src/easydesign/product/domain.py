@@ -267,6 +267,7 @@ class DomainSession:
                 and decision_view(card)["selectable_options"]
                 and request.action in {"approve", "override"}
                 else None,
+                continuation_id=request.request_id if request.action == "resume" else None,
             )
         )
 

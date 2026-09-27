@@ -158,6 +158,7 @@ class ProductService:
         summary: str,
         specialist: str | None = None,
         progress: dict[str, Any] | None = None,
+        phase: str = "target",
     ) -> None:
         for event in reversed(store.events(thread)):
             if event["kind"] != "product-activity":
@@ -179,11 +180,51 @@ class ProductService:
                 "title": title,
                 "status": status,
                 "summary": summary,
-                "phase": "target",
+                "phase": phase,
                 "specialist": specialist,
                 **({"progress": progress} if progress else {}),
             },
         )
+
+    @staticmethod
+    def _failure_context(store: SessionStore, thread: str) -> dict[str, str]:
+        specialist = "target-intelligence"
+        for event in reversed(store.events(thread)):
+            if event["kind"] not in {"runtime-action-timing", "runtime-dispatch"}:
+                continue
+            candidate = event["payload"].get("specialist")
+            if candidate:
+                specialist = str(candidate)
+                break
+        if specialist == "site-mechanism":
+            return {
+                "phase": "site",
+                "task_id": "site-research",
+                "title": "Site Intelligence",
+                "specialist": "site",
+                "project_message": (
+                    "Site research paused; retained evidence and recovery state can be retried."
+                ),
+            }
+        if specialist == "binder-strategy":
+            return {
+                "phase": "design",
+                "task_id": "design-research",
+                "title": "Design Intelligence",
+                "specialist": "binder",
+                "project_message": (
+                    "Design research paused; retained evidence and recovery state can be retried."
+                ),
+            }
+        return {
+            "phase": "target",
+            "task_id": "target-bootstrap",
+            "title": "Target Intelligence",
+            "specialist": "target",
+            "project_message": (
+                "Target research paused; retained evidence and recovery state can be retried."
+            ),
+        }
 
     def rename(self, project: str, title: str) -> dict[str, str]:
         title = title.strip()
@@ -937,6 +978,28 @@ class ProductService:
                     "Native product request failed: %s", request_id
                 )
                 if row is not None and row["payload"].get("operation") == "create":
+                    failure = {
+                        "phase": "target",
+                        "task_id": "target-bootstrap",
+                        "title": "Target Intelligence",
+                        "specialist": "target",
+                        "project_message": (
+                            "Scientific research paused; retained evidence and recovery state "
+                            "can be retried."
+                        ),
+                    }
+                    failed_store: SessionStore | None = None
+                    try:
+                        failed_store = SessionStore(
+                            self.context.projects_root / row["project"]
+                        )
+                        failure = self._failure_context(
+                            failed_store, self._thread(request_id)
+                        )
+                    except (OSError, sqlite3.DatabaseError):
+                        logging.getLogger(__name__).exception(
+                            "Could not inspect product failure context: %s", request_id
+                        )
                     try:
                         journal.update_project(
                             row["project"],
@@ -946,30 +1009,28 @@ class ProductService:
                                 "message": (
                                     str(error)
                                     if isinstance(error, ProductError)
-                                    else (
-                                        "Target discovery stopped; retained evidence can be "
-                                        "retried."
-                                    )
+                                    else failure["project_message"]
                                 ),
                             },
                         )
                     except ProductError:
                         pass
                     try:
-                        failed_store = SessionStore(self.context.projects_root / row["project"])
+                        if failed_store is None:
+                            failed_store = SessionStore(
+                                self.context.projects_root / row["project"]
+                            )
                         try:
                             self._activity(
                                 failed_store,
                                 self._thread(request_id),
                                 "task.failed",
-                                task_id="target-bootstrap",
-                                title="Target Intelligence",
+                                task_id=failure["task_id"],
+                                title=failure["title"],
                                 status="failed",
-                                summary=(
-                                    "Target research stopped temporarily; retained evidence "
-                                    "and recovery state can be retried."
-                                ),
-                                specialist="target",
+                                summary=failure["project_message"],
+                                specialist=failure["specialist"],
+                                phase=failure["phase"],
                             )
                         finally:
                             failed_store.close()
@@ -1197,6 +1258,11 @@ class ProductService:
                     "finished",
                     "rejected",
                 }:
+                    if (
+                        not bridge.product_auto_continue
+                        and result.get("scientific_state") == "site-not-proposed"
+                    ):
+                        break
                     jobs = bridge.controller.list(project_id=bridge.project_id)
                     active = [
                         job
@@ -1349,4 +1415,15 @@ class ProductService:
                     raise ProductError(
                         "recovery_conflict", "Another native execution superseded this message", 409
                     )
-            return asyncio.run(run_session(b, config, models, session.goal, user=self.actor))
+            return asyncio.run(
+                run_session(
+                    b,
+                    config,
+                    models,
+                    session.goal,
+                    user=self.actor,
+                    continuation_id=(
+                        request.request_id if request.action == "resume" else None
+                    ),
+                )
+            )

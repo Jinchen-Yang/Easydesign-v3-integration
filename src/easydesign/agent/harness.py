@@ -2220,6 +2220,42 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
 class RuntimeCoordinator(RoleBoundary):
     """Dispatch trusted actions through the existing graph, without model selection."""
 
+    def _product_phase_boundary(self, action: Any) -> bool:
+        """Keep Target and Site in separate bounded product executions when requested."""
+        from .phase34_runtime import Phase34Runtime
+
+        if (
+            not isinstance(self.bridge, Phase34Runtime)
+            or self.bridge.product_auto_continue
+            or self.execution_id is None
+            or action.tool != "task"
+            or action.arguments.get("subagent_type") != "site-mechanism"
+        ):
+            return False
+        events = self.bridge.store.events(self.bridge.thread)
+        # The setting is product-specific.  Do not alter legacy/CLI Phase34 sessions
+        # which happen to use the default False value.
+        if not any(event["kind"] == "product-title" for event in events):
+            return False
+        timings = [
+            event["payload"]
+            for event in events
+            if event["kind"] == "runtime-action-timing"
+            and event["payload"].get("execution_id") == self.execution_id
+        ]
+        target_completed = any(
+            timing.get("specialist") == "target-intelligence"
+            and timing.get("status") == "completed"
+            for timing in timings
+        )
+        site_started = any(
+            event["kind"] == "runtime-dispatch"
+            and event["payload"].get("execution_id") == self.execution_id
+            and event["payload"].get("specialist") == "site-mechanism"
+            for event in events
+        )
+        return target_completed and not site_started
+
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         from langchain.agents.middleware.types import ModelResponse
 
@@ -2244,6 +2280,17 @@ class RuntimeCoordinator(RoleBoundary):
         if action.tool in {"get_job_status", "observe_downstream"}:
             completed = getattr(self, "observed_worker", False)
             self.observed_worker = True
+        if self._product_phase_boundary(action):
+            return ModelResponse(
+                result=[
+                    AIMessage(
+                        content=(
+                            "Target preparation completed. Site research is available as a "
+                            "separate bounded continuation."
+                        )
+                    )
+                ]
+            )
         if action.tool is None or completed:
             message = action.message or (
                 "Scientific work remains incomplete. The previous action has not produced "

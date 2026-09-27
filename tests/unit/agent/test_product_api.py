@@ -96,6 +96,57 @@ def test_goal_only_create_is_immediately_persistent_and_reloadable(bridge, tmp_p
     assert restarted.snapshot(project)["project"]["title"] == "NK2R program"
 
 
+def test_product_resume_passes_request_identity_as_bounded_continuation(
+    site_bridge, monkeypatch
+):
+    captured = {}
+
+    async def bounded_resume(*args, **kwargs):
+        captured.update(kwargs)
+        return {"status": "incomplete-turn", "scientific_state": "site-not-proposed"}
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", bounded_resume)
+    session = DomainSession(
+        "target-test",
+        site_bridge,
+        "Continue an already verified synthetic target.",
+    )
+    revision = session.current()[2]
+    request = ActionRequest(
+        request_id="resume-site-0123456789",
+        revision=revision,
+        action="resume",
+    )
+    assert session.execute(
+        request,
+        scripted_config(),
+        {role: NoInference(role=role) for role in ROLES},
+        "synthetic-scientist",
+    )["scientific_state"] == "site-not-proposed"
+    assert captured["continuation_id"] == request.request_id
+
+
+def test_product_failure_context_reports_site_instead_of_target(site_bridge, tmp_path):
+    site_bridge.store.event(
+        site_bridge.thread,
+        "runtime-dispatch",
+        {
+            "execution_id": "turn-site",
+            "action_id": "site-action",
+            "stage": "site-not-proposed",
+            "tool": "task",
+            "specialist": "site-mechanism",
+        },
+    )
+    context = service_for(site_bridge, tmp_path)._failure_context(
+        site_bridge.store, site_bridge.thread
+    )
+    assert context["phase"] == "site"
+    assert context["title"] == "Site Intelligence"
+    assert context["task_id"] == "site-research"
+    assert "Site research paused" in context["project_message"]
+
+
 def test_easy_project_listing_is_explicit_recent_and_excludes_other_surfaces(bridge, tmp_path):
     service = service_for(bridge, tmp_path)
     professional = CreateProject(

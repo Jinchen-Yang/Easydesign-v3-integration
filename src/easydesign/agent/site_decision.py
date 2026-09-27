@@ -736,7 +736,14 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
             "配体" in interpretation
             and any(term in interpretation for term in ("占位", "入口", "结合", "竞争"))
         )
-        if not direct_orthosteric and not ligand_mechanism:
+        pocket_occupancy_mechanism = any(
+            term in interpretation
+            for term in ("pocket occlusion", "pore occlusion", "口袋阻断", "孔道阻断")
+        ) and any(
+            term in interpretation
+            for term in ("occupancy", "closure", "占位", "闭合")
+        )
+        if not direct_orthosteric and not ligand_mechanism and not pocket_occupancy_mechanism:
             return False
         geometry = candidate.get("location", {}).get("membrane_geometry", [])
         outer_pore = [

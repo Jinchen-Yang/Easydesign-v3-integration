@@ -332,6 +332,68 @@ def test_deep_gpcr_ligand_occupancy_mechanism_cannot_evade_rank_a_by_omitting_ke
         compile_site_decision(dossier, case["decision"])
 
 
+def test_explicit_pdb_gpcr_pocket_occupancy_wording_still_requires_rank_a(site_bridge):
+    """Protect the exact mechanism wording observed in a fresh PDB-ID product run."""
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {
+                "status": "resolved",
+                "accession": "P21452",
+                "family_slug": "Tachykinin receptors",
+                "receptor_class": "Unknown",
+            },
+            "membrane": {
+                "status": "resolved",
+                "reliable": True,
+                "topology_reliable": True,
+                "helix_count": 7,
+            },
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = "inhibit.outer-vestibule"
+    shallow["research_hypothesis"]["rationale"] = (
+        "ECL2/ECL3 residues at the extracellular mouth provide steric blockade of ligand entry."
+    )
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "inhibit.transmembrane-pore"
+    deep["research_hypothesis"]["rationale"] = (
+        "Deeper pocket occlusion could block productive occupancy/closure. "
+        "Access/framework-membrane collision is unresolved."
+    )
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
+        compile_site_decision(dossier, case["decision"])
+
+
 def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):
     case = setup_portfolio(site_bridge)
     dossier = deepcopy(case["dossier"])

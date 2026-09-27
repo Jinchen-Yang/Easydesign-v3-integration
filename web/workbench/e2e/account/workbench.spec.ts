@@ -79,6 +79,19 @@ function install(page: import('@playwright/test').Page, username: 'bob' | 'root'
 }
 
 test.describe('professional mode under accounts', () => {
+  test('surface handoff retains a deep-linked project while its snapshot is loading', async ({page}) => {
+    install(page, 'bob', true);
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => {release = resolve;});
+    await page.route('**/workbench', async route => {await ready; await route.fallback();});
+    try {
+      await page.goto('/?scope=team-1&project=proj-1');
+      await expect(page.getByRole('link', {name: 'Easy 版', exact: true})).toHaveAttribute(
+        'href', '/easy/?scope=team-1&project=proj-1',
+      );
+    } finally {release();}
+  });
+
   test('team member discusses but cannot approve or launch', async ({page}) => {
     install(page, 'bob', true);
     await page.goto('/?scope=team-1');

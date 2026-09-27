@@ -553,9 +553,10 @@ export function EasyLiveApp({
     };
   }, [adapter]);
   const snapshot = state?.snapshot || null;
+  const currentProject = snapshot?.project.id || new URLSearchParams(location.search).get('project');
   const professionalQuery = new URLSearchParams({
     ...(access ? { scope: access.id } : {}),
-    ...(snapshot ? { project: snapshot.project.id } : {}),
+    ...(currentProject ? { project: currentProject } : {}),
   });
   const professionalUrl = `/${professionalQuery.size ? `?${professionalQuery}` : ''}`;
   const autoContinuationEligible = canExecute && canAutoContinue(snapshot, false);

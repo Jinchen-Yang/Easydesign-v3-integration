@@ -34,6 +34,19 @@ function installWorkspaceRoutes(page: Page, username: string, scopeId: string, c
   });
 }
 
+test('surface handoff retains a deep-linked project while its snapshot is loading', async ({page}) => {
+  installWorkspaceRoutes(page, 'bob', 'team-1');
+  let release!: () => void;
+  const ready = new Promise<void>(resolve => {release = resolve;});
+  await page.route('**/workbench', async route => {await ready; await route.fallback();});
+  try {
+    await page.goto('/easy/?scope=team-1&project=proj-1');
+    await expect(page.getByRole('link', {name: '打开专业版', exact: true})).toHaveAttribute(
+      'href', '/?scope=team-1&project=proj-1',
+    );
+  } finally {release();}
+});
+
 /** A step the backend marked resumable and auto-continuable (no open Gate). */
 function resumableSnapshot(status = 'available') {
   const base = workbenchSnapshot();

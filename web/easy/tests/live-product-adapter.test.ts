@@ -392,6 +392,36 @@ describe('Easy live adapter preserves Product API authority', () => {
     }
   });
 
+  it('clears a stale transport error after an unchanged snapshot refresh succeeds', async () => {
+    let failWorkbench = false;
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      if (path.endsWith('/workbench')) {
+        if (failWorkbench) throw new TypeError('Temporary connection failure');
+        return Response.json(snapshot());
+      }
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [project] });
+      return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    let current = await adapter.load();
+    adapter.subscribe((event) => {
+      current = event.snapshot;
+    });
+    await adapter.selectProject(project.id);
+    failWorkbench = true;
+    await adapter.refresh();
+    expect(current.connection).toBe('reconnecting');
+    expect(current.error).toContain('Temporary connection failure');
+
+    failWorkbench = false;
+    await adapter.refresh();
+    expect(current.connection).toBe('connected');
+    expect(current.error).toBeNull();
+  });
+
   it('binds simulated-order commands to the current server revision', async () => {
     const bodies: Record<string, unknown>[] = [];
     const order = {

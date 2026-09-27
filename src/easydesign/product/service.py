@@ -531,7 +531,17 @@ class ProductService:
     def snapshot(self, project: str) -> dict[str, Any]:
         with self._cache_lock:
             cached = self._stable_snapshots.get(project)
-        if cached is not None:
+        # A native turn can publish its awaiting-scientist action immediately
+        # before the immutable decision card becomes visible to a concurrent
+        # projection read.  That transitional shell is useful for a live poll,
+        # but it is not a stable product state: caching it would hide the card
+        # after it is committed and leave the UI permanently asking to refresh.
+        cached_awaiting_without_card = (
+            cached is not None
+            and cached.get("project", {}).get("status") == "awaiting_scientist"
+            and cached.get("decision") is None
+        )
+        if cached is not None and not cached_awaiting_without_card:
             return deepcopy(cached)
         journal = self.journal()
         try:
@@ -590,7 +600,11 @@ class ProductService:
         active_request = any(
             request["state"] in {"accepted", "running"} for request in value["requests"]
         )
-        if not active_request and value["project"]["status"] in {
+        stable_scientist_state = not (
+            value["project"]["status"] == "awaiting_scientist"
+            and value.get("decision") is None
+        )
+        if not active_request and stable_scientist_state and value["project"]["status"] in {
             "awaiting_scientist",
             "available",
             "complete",

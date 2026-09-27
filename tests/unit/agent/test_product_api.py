@@ -1022,6 +1022,30 @@ def prime(bridge, goal):
     return asyncio.run(run_session(bridge, config, {r: NoInference(role=r) for r in ROLES}, goal))
 
 
+def test_awaiting_scientist_shell_without_card_is_never_a_stable_snapshot(
+    site_bridge, tmp_path
+):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    result = prime(b, "Synthetic ranked Site decision")
+    assert result["status"] == "awaiting-human-approval"
+    service = service_for(b, tmp_path)
+    complete = service.snapshot("target-test")
+    assert complete["project"]["status"] == "awaiting_scientist"
+    assert complete["decision"]["gate"] == 2
+
+    # Reproduce the race observed by the browser: an early projection saw the
+    # awaiting-scientist action just before its immutable card and was retained
+    # in the stable cache.  A later read must recover from native authority.
+    transitional = json.loads(json.dumps(complete))
+    transitional["decision"] = None
+    service._stable_snapshots["target-test"] = transitional
+    recovered = service.snapshot("target-test")
+    assert recovered["decision"]["id"] == complete["decision"]["id"]
+    assert service._stable_snapshots["target-test"]["decision"] is not None
+
+
 @pytest.mark.parametrize("rank", ["B", "C"])
 def test_http_ranked_choice_idempotency_reload_and_native_downstream(site_bridge, tmp_path, rank):
     b = site_bridge

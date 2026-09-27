@@ -195,6 +195,12 @@ export class EasyProductAdapter implements EasyProductPort {
           this.state.snapshot?.event_cursor !== snapshot.event_cursor;
         if (changed || this.state.snapshot?.project.status !== snapshot.project.status)
           this.emit({ snapshot, connection: 'connected', error: null });
+        else if (this.state.connection !== 'connected' || this.state.error !== null)
+          // A successful manual/automatic refresh is itself authoritative
+          // connection evidence, even when the scientific snapshot is
+          // byte-for-byte unchanged.  Do not leave a stale transport error in
+          // front of an otherwise healthy project.
+          this.emit({ connection: 'connected', error: null });
         if (changed) await this.candidatePage(this.state.candidates.offset);
       }
     } catch (error) {

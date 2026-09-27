@@ -710,7 +710,17 @@ class TargetBridge:
                 )
             request_hash = canonical_model_sha256(request)
             refs.append(f"{path.relative_to(root).as_posix()}#sha256={sha256_file(path)}")
-            inventory = inventory_structure(source) if current.source_path is not None else None
+            # A local source path is not necessarily a coordinate file.  Sequence
+            # projects also snapshot their FASTA under ``input-snapshot`` and may
+            # legitimately pause at a native Stage 1 decision before coordinates
+            # exist.  Only coordinate-backed projects have a chain inventory at
+            # this boundary; parsing FASTA as PDB/mmCIF turns a valid scientific
+            # gate into an operational TargetInputError.
+            inventory = (
+                inventory_structure(source)
+                if isinstance(current, LoadedStructureRunConfig)
+                else None
+            )
             if inventory is not None and len(inventory.chains) > 32:
                 raise AgentBoundaryError(
                     "Too many chains for this slice; provide a narrower explicit input"

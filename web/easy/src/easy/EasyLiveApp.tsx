@@ -460,7 +460,6 @@ function HistoricalStagePanel({
         approvedSite &&
         (() => {
           const passages: LocalizationPassage[] = [
-            { id: 'site.name', text: approvedSite.name },
             { id: 'site.why', text: approvedSite.why_ranked },
             ...approvedSite.risks.map((text, index) => ({ id: `site.risk.${index}`, text })),
             ...approvedSite.uncertainty.map((text, index) => ({
@@ -478,7 +477,7 @@ function HistoricalStagePanel({
             >
               {(zh) => (
                 <>
-                  <h4>{zh['site.name']}</h4>
+                  <h4>Site {approvedSite.rank}（已批准）</h4>
                   <p>{zh['site.why']}</p>
                   {approvedSite.risks.length > 0 && (
                     <p>

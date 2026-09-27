@@ -79,6 +79,8 @@ def _protected_tokens(value: str) -> set[str]:
 
 
 def _requires_chinese(value: str) -> bool:
+    if value.startswith(("site-", "candidate-", "arm-", "phase")):
+        return False
     return any(not word.isupper() for word in re.findall(r"[A-Za-z]{3,}", value))
 
 

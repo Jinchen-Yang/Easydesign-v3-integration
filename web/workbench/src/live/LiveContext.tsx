@@ -113,6 +113,10 @@ export function LiveContext({
           : 'Structure evidence is not available yet.';
   const site = c.sites.find((s) => s.id === siteId) || c.sites[0];
   const entries = state.candidates.items;
+  const nativeProgress = ['pilot', 'scale'].includes(phase)
+    ? v.jobs.find((job) => job.phase === phase && ['queued', 'running'].includes(job.status))
+        ?.progress
+    : undefined;
   const select = (candidate: Candidate) => void adapter.selectCandidate(candidate.id);
   const structure = (candidate?: Candidate | null) => (
     <StructureViewer
@@ -482,6 +486,38 @@ export function LiveContext({
             </details>
           </>
         )}
+        {nativeProgress && (
+          <section aria-label="Native execution progress">
+            <div className="context-title">
+              <h2>{phase === 'pilot' ? 'Pilot' : 'Scale'} computation in progress</h2>
+              <p>
+                {nativeProgress.completed} / {nativeProgress.total} candidates collected
+              </p>
+            </div>
+            <div
+              className="scale-progress"
+              role="progressbar"
+              aria-label="Native candidates collected"
+              aria-valuemin={0}
+              aria-valuenow={nativeProgress.completed}
+              aria-valuemax={nativeProgress.total || 1}
+            >
+              <span
+                style={{
+                  width: `${nativeProgress.total ? Math.min(100, (nativeProgress.completed / nativeProgress.total) * 100) : 0}%`,
+                }}
+              />
+            </div>
+            <p>
+              {nativeProgress.completed_tasks} / {nativeProgress.total_tasks} strategy tasks
+              complete · {nativeProgress.substage_label || nativeProgress.status}
+            </p>
+            <p>
+              Collected candidates are not native PASS results. Final evidence is still being
+              prepared.
+            </p>
+          </section>
+        )}
         {phase === 'scale' && (
           <>
             <div className="context-title">
@@ -546,29 +582,31 @@ export function LiveContext({
               </div>
               <p>Compare the evidence and explore each candidate.</p>
             </div>
-            <div className="pass-summary">
-              <strong>
-                {v.candidates.counts.pass || 0} of {v.candidates.total} pass
-                <span>
-                  {v.candidates.counts.fail || 0} filtered · {v.candidates.counts.incomplete || 0}{' '}
-                  incomplete
-                </span>
-              </strong>
-              <div className="pass-segments">
-                {entries.map((ca) => (
-                  <span
-                    key={ca.id}
-                    className={
-                      ca.native_status === 'pass'
-                        ? 'pass'
-                        : ca.native_status === 'fail'
-                          ? 'filtered'
-                          : 'pending'
-                    }
-                  />
-                ))}
+            {!(nativeProgress && v.candidates.total === 0) && (
+              <div className="pass-summary">
+                <strong>
+                  {v.candidates.counts.pass || 0} of {v.candidates.total} pass
+                  <span>
+                    {v.candidates.counts.fail || 0} filtered · {v.candidates.counts.incomplete || 0}{' '}
+                    incomplete
+                  </span>
+                </strong>
+                <div className="pass-segments">
+                  {entries.map((ca) => (
+                    <span
+                      key={ca.id}
+                      className={
+                        ca.native_status === 'pass'
+                          ? 'pass'
+                          : ca.native_status === 'fail'
+                            ? 'filtered'
+                            : 'pending'
+                      }
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             {selected && (
               <>
                 <div className="candidate-view-header">

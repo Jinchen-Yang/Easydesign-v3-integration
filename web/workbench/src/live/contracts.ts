@@ -222,6 +222,16 @@ export interface ProductSnapshot {
     status: string;
     resumable: boolean;
     validation_only: boolean;
+    progress?: {
+      stage_id: string;
+      status: string;
+      completed: number;
+      total: number;
+      completed_tasks: number;
+      total_tasks: number;
+      running_tasks: number;
+      substage_label: string | null;
+    };
   }[];
   artifacts: Artifact[];
   conversation?: {

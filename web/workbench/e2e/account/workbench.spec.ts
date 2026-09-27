@@ -79,6 +79,25 @@ function install(page: import('@playwright/test').Page, username: 'bob' | 'root'
 }
 
 test.describe('professional mode under accounts', () => {
+  test('running Pilot exposes native progress instead of a completed empty result', async ({page}) => {
+    install(page,'bob',true);
+    let completed = 0;
+    await page.route('**/workbench', route => {
+      const value = snapshot();
+      return route.fulfill({json:{...value,project:{...value.project,phase:'pilot',status:'running'},decision:null,capabilities:{},
+        jobs:[{id:'job-pilot',phase:'pilot',status:'running',resumable:false,validation_only:true,
+          progress:{stage_id:'04-pilot-generation',status:'running',completed,total:28,completed_tasks:completed/2,total_tasks:14,running_tasks:1,substage_label:'Generate'}}]}});
+    });
+    await page.goto('/?scope=team-1&project=proj-1');
+    const progress = page.getByRole('region',{name:'Native execution progress'});
+    await expect(progress.getByRole('progressbar')).toHaveAttribute('aria-valuenow','0');
+    await expect(page.getByText('0 of 0 pass',{exact:true})).toHaveCount(0);
+    completed = 2;
+    await expect(progress.getByRole('progressbar')).toHaveAttribute('aria-valuenow','2');
+    await expect(progress).toContainText('2 / 28 candidates collected');
+    await page.setViewportSize({width:980,height:800});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  });
   test('surface handoff retains a deep-linked project while its snapshot is loading', async ({page}) => {
     install(page, 'bob', true);
     let release!: () => void;

@@ -577,7 +577,14 @@ class Phase2Bridge(TargetBridge):
                     conflict = (
                         runtime_eligibility.get("cause") or "verified-compartment-conflict"
                     )
-                if set(entry.site.hotspot_label_seq_ids) & set(intent.avoid_label_seq_ids):
+                # A model may repeat Runtime's already-blocked candidate residues in
+                # its advisory avoid list. That reinforces the exclusion; it must not
+                # replace the verified hard-block cause and invalidate the hydrated
+                # portfolio. Advisory avoidance only creates a new conflict for a
+                # candidate that was otherwise hard-valid.
+                if conflict is None and set(entry.site.hotspot_label_seq_ids) & set(
+                    intent.avoid_label_seq_ids
+                ):
                     conflict = "explicit-avoid-residue-constraint"
                 if entry.hard_block != conflict or entry.selectable != (conflict is None):
                     raise AgentBoundaryError(

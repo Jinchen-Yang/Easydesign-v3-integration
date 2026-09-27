@@ -412,6 +412,17 @@ def test_phase2_registration_preserves_runtime_compartment_block(site_bridge):
         decision = ranked_decision(
             [candidate["candidate_id"] for candidate in dossier["candidate_comparison"]]
         )
+        blocked_label = dossier["candidate_comparison"][0]["research_hypothesis"][
+            "hotspot_label_seq_ids"
+        ][0]
+        blocked_residue_id = next(
+            item["residue_id"]
+            for item in dossier["residue_constraints"]
+            if item["design_label"] == blocked_label
+        )
+        decision = decision.model_copy(
+            update={"avoid_residue_ids": [blocked_residue_id]}
+        )
         intent = compile_site_decision(dossier, decision)
         bridge.store.event(
             bridge.thread,
@@ -432,6 +443,7 @@ def test_phase2_registration_preserves_runtime_compartment_block(site_bridge):
         assert blocked["rank"] is None
         assert not blocked["selectable"]
         assert blocked["hard_block"] == "verified-compartment-conflict"
+        assert intent.avoid_label_seq_ids == [blocked_label]
         assert proposal["portfolio_evaluations"][blocked_id]["status"] == "BLOCKED"
     finally:
         SITE_EVIDENCE.reset(token)

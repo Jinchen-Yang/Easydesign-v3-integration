@@ -527,7 +527,10 @@ class ProductService:
         value["capabilities"]["lab_order"] = value["lab_order"] is not None
         value["connection"] = "connected"
         self._remember_project_view(project, value["project"])
-        if value["project"]["status"] in {
+        active_request = any(
+            request["state"] in {"accepted", "running"} for request in value["requests"]
+        )
+        if not active_request and value["project"]["status"] in {
             "awaiting_scientist",
             "available",
             "complete",

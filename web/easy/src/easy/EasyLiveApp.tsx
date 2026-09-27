@@ -22,6 +22,7 @@ import {
 } from './live-presentation';
 import type { EasyProductPort } from './EasyProductAdapter';
 import type {
+  Artifact,
   Candidate,
   GateInput,
   LabOrderDraftInput,
@@ -31,6 +32,15 @@ import type {
 } from './product-contracts';
 
 type CandidatePhase = 'pilot' | 'scale' | 'candidates';
+
+const STAGE_SUMMARY_TITLES = [
+  '目标信息',
+  '位点选择结果',
+  '设计方案',
+  '小规模试运行',
+  '扩大测试',
+  '最终候选',
+];
 
 const PHASE_INDEX: Record<string, number> = {
   target: 0,
@@ -246,17 +256,59 @@ function CandidatePanel({
   );
 }
 
+function asReadableText(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) return value.map(asReadableText).filter(Boolean).join('；');
+  return '';
+}
+
+function DesignYamlDisclosure({
+  artifact,
+  adapter,
+}: {
+  artifact: Artifact;
+  adapter: EasyProductPort;
+}) {
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  async function load() {
+    if (content || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      setContent(await adapter.artifactText(artifact.url));
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return (
+    <details
+      className="easy-live-explanation"
+      onToggle={(event) => {
+        if (event.currentTarget.open) void load();
+      }}
+    >
+      <summary>查看详细 YAML</summary>
+      {loading && <p>正在读取已冻结的设计文件…</p>}
+      {error && <p className="easy-error">{error}</p>}
+      {content && <pre>{content}</pre>}
+    </details>
+  );
+}
+
 function HistoricalStagePanel({
   snapshot,
   stageIndex,
-  onReturn,
+  adapter,
 }: {
   snapshot: ProductSnapshot;
   stageIndex: number;
-  onReturn: () => void;
+  adapter: EasyProductPort;
 }) {
   const context = snapshot.scientific_context;
-  const workflow = snapshot.workflow.find((item) => item.id === STEPS[stageIndex].toLowerCase());
   const rows: [string, string | number][] = [];
   if (stageIndex === 0) {
     rows.push(
@@ -293,14 +345,15 @@ function HistoricalStagePanel({
       ['Workflow state', snapshot.current_action.stage],
     );
   }
+  const approvedSite = context.sites.find(
+    (site) => site.id === context.approved_site?.selected_candidate_id,
+  );
+  const designYaml = snapshot.artifacts.find((artifact) =>
+    ['yaml', 'yml'].includes(artifact.format.toLowerCase()),
+  );
   return (
-    <section className="easy-live-history-card" aria-label={`${STEPS[stageIndex]} history`}>
-      <div className="easy-live-kicker">HISTORICAL STAGE · READ ONLY</div>
-      <h3>{STEPS[stageIndex]} 阶段记录</h3>
-      <p>
-        {workflow?.subtasks?.filter((item) => item.status === 'complete').length || 0}{' '}
-        个步骤已记录。
-      </p>
+    <section className="easy-live-history-card" aria-label={STAGE_SUMMARY_TITLES[stageIndex]}>
+      <h3>{STAGE_SUMMARY_TITLES[stageIndex]}</h3>
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>
@@ -309,9 +362,49 @@ function HistoricalStagePanel({
           </div>
         ))}
       </dl>
-      <button className="easy-outline" onClick={onReturn}>
-        返回当前阶段
-      </button>
+      {stageIndex === 1 && approvedSite && (
+        <details className="easy-live-explanation">
+          <summary>为什么选择 Site {approvedSite.rank}</summary>
+          <h4>{approvedSite.name}</h4>
+          <p>{approvedSite.why_ranked}</p>
+          {approvedSite.risks.length > 0 && (
+            <p>
+              <strong>主要风险：</strong>
+              {approvedSite.risks.join('；')}
+            </p>
+          )}
+          {approvedSite.uncertainty.length > 0 && (
+            <p>
+              <strong>仍需确认：</strong>
+              {approvedSite.uncertainty.join('；')}
+            </p>
+          )}
+        </details>
+      )}
+      {stageIndex === 2 && context.arms.length > 0 && (
+        <details className="easy-live-explanation">
+          <summary>为什么采用这个设计方案</summary>
+          <div className="easy-live-arm-reasons">
+            {context.arms.map((arm, index) => {
+              const title =
+                asReadableText(arm.name) || asReadableText(arm.arm_id) || `设计 ${index + 1}`;
+              const rationale =
+                asReadableText(arm.rationale) ||
+                asReadableText(arm.hypothesis) ||
+                asReadableText(arm.expected_result);
+              return (
+                <article key={asReadableText(arm.arm_id) || title}>
+                  <h4>{title}</h4>
+                  <p>{rationale || '该设计遵循已批准位点与冻结的设计约束。'}</p>
+                </article>
+              );
+            })}
+          </div>
+        </details>
+      )}
+      {stageIndex === 2 && designYaml && (
+        <DesignYamlDisclosure artifact={designYaml} adapter={adapter} />
+      )}
     </section>
   );
 }
@@ -802,9 +895,6 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
           <button className="easy-help" onClick={() => void adapter.refresh()}>
             <RefreshCw size={14} /> 刷新
           </button>
-          <a className="easy-pro-link" href="/">
-            打开专业版
-          </a>
         </div>
       </header>
 
@@ -813,7 +903,6 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
           <h1>
             从一句话开始<span>真实设计</span>
           </h1>
-          <p>同一套冻结后端、同一套 Scientist Gates；这里仅简化操作，不简化科学边界。</p>
         </section>
         <section className="easy-input-card" id="design">
           <div className="easy-section-top">
@@ -961,7 +1050,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     <HistoricalStagePanel
                       snapshot={snapshot}
                       stageIndex={shownIndex}
-                      onReturn={() => setViewedIndex(null)}
+                      adapter={adapter}
                     />
                     {(shownIndex === 3 || shownIndex === 4) && (
                       <ExecutionProgress

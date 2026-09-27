@@ -180,10 +180,6 @@
   box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
 }
 
-.easy-live-history-card > p {
-  color: #777381;
-}
-
 .easy-live-history-card dl {
   margin: 18px 0;
 }
@@ -203,6 +199,59 @@
 .easy-live-history-card dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.easy-live-explanation {
+  margin-top: 12px;
+  border-top: 1px solid #eeecf3;
+  color: #554d63;
+}
+
+.easy-live-explanation summary {
+  width: fit-content;
+  padding: 14px 0 4px;
+  cursor: pointer;
+  color: #6756d8;
+  font-weight: 750;
+}
+
+.easy-live-explanation h4 {
+  margin: 12px 0 4px;
+  color: #292532;
+  font-size: 14px;
+}
+
+.easy-live-explanation p {
+  margin: 5px 0;
+  line-height: 1.65;
+}
+
+.easy-live-explanation pre {
+  max-height: 480px;
+  margin: 12px 0 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid #e4e0ee;
+  border-radius: 12px;
+  background: #f8f7fb;
+  color: #302a3b;
+  font:
+    12px/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  white-space: pre;
+}
+
+.easy-live-arm-reasons {
+  display: grid;
+  gap: 10px;
+}
+
+.easy-live-arm-reasons article + article {
+  padding-top: 8px;
+  border-top: 1px dashed #e4e0eb;
 }
 
 .easy-execution-progress {

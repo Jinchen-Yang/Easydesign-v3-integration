@@ -232,6 +232,25 @@ describe('Easy live adapter preserves Product API authority', () => {
     );
   });
 
+  it('reads only declared immutable artifact URLs for the detailed Design YAML', async () => {
+    const token = 'd'.repeat(64);
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      if (String(url) === `/api/v1/artifacts/${token}`)
+        return new Response('schema_version: 1\narms: []\n', {
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      return Response.json({ total: 0, offset: 0, limit: 5, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await expect(adapter.artifactText(`/api/v1/artifacts/${token}`)).resolves.toContain(
+      'schema_version: 1',
+    );
+    await expect(adapter.artifactText('https://example.com/design.yaml')).rejects.toMatchObject({
+      code: 'invalid_artifact',
+    });
+  });
+
   it('does not keep two-second polling after a project becomes complete', async () => {
     const timers = vi.spyOn(globalThis, 'setTimeout');
     try {

@@ -7,6 +7,8 @@ test('live project open and Site switching stay within the interactive budget', 
 }) => {
   const pdb = await readFile('public/structures/1MEL.pdb');
   const sha256 = createHash('sha256').update(pdb).digest('hex');
+  const yaml = 'schema_version: 1\narms:\n  - arm_id: arm-1\n';
+  const yamlSha256 = createHash('sha256').update(yaml).digest('hex');
   let artifactRequests = 0;
   const artifact = {
     id: sha256,
@@ -27,6 +29,16 @@ test('live project open and Site switching stay within the interactive budget', 
     status: 'complete',
     last_activity: 42,
     validation_only: true,
+  };
+  const yamlArtifact = {
+    id: yamlSha256,
+    label: 'strategy.yaml',
+    url: `/api/v1/artifacts/${yamlSha256}`,
+    format: 'yaml',
+    sha256: yamlSha256,
+    size_bytes: Buffer.byteLength(yaml),
+    role: 'design-yaml',
+    candidate_id: null,
   };
   const sites = ['A', 'B', 'C'].map((rank, index) => ({
     id: `site-${rank}`,
@@ -68,12 +80,18 @@ test('live project open and Site switching stay within the interactive budget', 
       structure: artifact,
       sites,
       approved_site: { selected_candidate_id: 'site-A', selected_rank: 'A', hotspots: {} },
-      arms: [{ arm_id: 'arm-1' }],
+      arms: [
+        {
+          arm_id: 'arm-1',
+          name: 'Orthosteric entry design',
+          rationale: 'Blocks the verified extracellular vestibule.',
+        },
+      ],
       design_approved: true,
     },
     decision: null,
     jobs: [],
-    artifacts: [],
+    artifacts: [yamlArtifact],
     recent_activity: [],
     tasks: [],
     lifecycle: 'scientific_project',
@@ -137,8 +155,13 @@ test('live project open and Site switching stay within the interactive budget', 
     artifactRequests++;
     await route.fulfill({ body: pdb, contentType: 'chemical/x-pdb' });
   });
+  await page.route(`**/api/v1/artifacts/${yamlSha256}`, (route) =>
+    route.fulfill({ body: yaml, contentType: 'text/plain' }),
+  );
 
   await page.goto('/easy/');
+  await expect(page.getByText('同一套冻结后端')).toHaveCount(0);
+  await expect(page.getByText('打开专业版', { exact: true })).toHaveCount(0);
   const started = Date.now();
   await page.getByRole('button', { name: '打开', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Candidates', exact: true })).toBeVisible();
@@ -177,6 +200,17 @@ test('live project open and Site switching stay within the interactive budget', 
   await expect(page.getByRole('button', { name: /Top 1/ })).toContainText('主候选');
 
   await page.getByRole('button', { name: 'Target', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Target history' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Target 阶段记录' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '目标信息' })).toBeVisible();
+  await expect(page.getByText('HISTORICAL STAGE · READ ONLY')).toHaveCount(0);
+  await expect(page.getByText('返回当前阶段', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Site', exact: true }).click();
+  await page.getByText('为什么选择 Site A', { exact: true }).click();
+  await expect(page.getByText('Verified fixture', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Design', exact: true }).click();
+  await page.getByText('为什么采用这个设计方案', { exact: true }).click();
+  await expect(page.getByText('Blocks the verified extracellular vestibule.')).toBeVisible();
+  await page.getByText('查看详细 YAML', { exact: true }).click();
+  await expect(page.getByText('schema_version: 1', { exact: false })).toBeVisible();
 });

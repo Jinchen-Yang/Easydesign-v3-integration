@@ -30,6 +30,7 @@ export interface EasyProductPort {
   renameProject(id: string, title: string): Promise<void>;
   candidatePage(offset: number, phase?: 'pilot' | 'scale' | 'candidates'): Promise<void>;
   selectCandidate(id: string): Promise<void>;
+  artifactText(url: string): Promise<string>;
   createProject(title: string, goal: string, file?: File | null): Promise<void>;
   decide(input: GateInput): Promise<void>;
   resume(): Promise<void>;
@@ -292,6 +293,17 @@ export class EasyProductAdapter implements EasyProductPort {
   async selectCandidate(id: string) {
     const candidate = this.state.candidates.items.find((c) => c.id === id);
     if (candidate) this.emit({ selectedCandidate: candidate });
+  }
+  async artifactText(url: string) {
+    if (!/^\/api\/v1\/artifacts\/[0-9a-f]{64}$/.test(url))
+      throw new ApiError('invalid_artifact', 'Invalid artifact identity', 400);
+    const response = await this.transport(url, {
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!response.ok)
+      throw new ApiError('artifact_unavailable', 'Design YAML is unavailable', response.status);
+    return response.text();
   }
   private async command(path: string, body: Record<string, unknown>) {
     if (this.state.pending) return;

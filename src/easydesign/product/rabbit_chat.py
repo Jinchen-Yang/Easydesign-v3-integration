@@ -81,6 +81,12 @@ def _protected_tokens(value: str) -> set[str]:
 def _requires_chinese(value: str) -> bool:
     if value.startswith(("site-", "candidate-", "arm-", "phase")):
         return False
+    # Runtime warnings can be opaque, semicolon-delimited machine markers such
+    # as ``region-A-has-2-spatial-components;user-members-preserved``.  They
+    # must remain byte-for-byte auditable and should not make an otherwise
+    # valid localization batch fail merely because they contain no Han text.
+    if not re.search(r"\s", value) and re.fullmatch(r"[A-Za-z0-9_.:+/;-]+", value):
+        return False
     return any(not word.isupper() for word in re.findall(r"[A-Za-z]{3,}", value))
 
 

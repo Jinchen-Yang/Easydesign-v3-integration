@@ -960,6 +960,28 @@ def test_scientific_localization_rejects_mutated_scientific_identifiers(bridge, 
         assert response.json()["error"]["code"] == "localization_unavailable"
 
 
+def test_scientific_localization_preserves_opaque_runtime_markers(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    marker = "region-A-has-2-spatial-components;user-members-preserved"
+
+    def provider(_request):
+        yield {
+            "type": "delta",
+            "text": json.dumps({"items": [{"id": "warning.0", "text": marker}]}),
+        }
+        yield {"type": "done"}
+
+    payload = {
+        "locale": "zh",
+        "passages": [{"id": "warning.0", "text": marker}],
+        "context": {"stage": "Design", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=RabbitChatService(provider)) as client:
+        response = client.post("/api/rabbit/localize", json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["items"]["warning.0"] == marker
+
+
 def test_local_gpu_monitor_is_fixed_read_only_cached_and_fails_stale():
     now = [0.0]
     fail = [False]

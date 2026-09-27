@@ -243,6 +243,10 @@ export class EasyProductAdapter implements EasyProductPort {
         : snapshot.project.phase === 'scale'
           ? 'scale'
           : 'candidates';
+    // Reserve the phase before the deferred compact read. EasyLiveApp uses this
+    // marker to avoid launching a duplicate request while the shell is already
+    // visible and the candidate page is still loading.
+    this.emit({ candidatePhase: phase });
     // The scientific shell is useful before the candidate page and 3D viewer
     // finish loading. Do not batch the user's Open click behind that heavier read.
     setTimeout(() => {

@@ -69,7 +69,9 @@ const PIPELINE_STEPS = [
 ] as const;
 
 function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
-  const job = snapshot.jobs.find((item) => item.phase === snapshot.project.phase && item.progress);
+  const job =
+    snapshot.jobs.find((item) => item.phase === snapshot.project.phase && item.progress) ||
+    snapshot.jobs.find((item) => item.progress);
   const progress = job?.progress;
   if (!progress) return null;
   const native = progress.stage_id.startsWith('05-') || progress.stage_id.startsWith('07-');
@@ -89,15 +91,13 @@ function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
           <span>REAL EXECUTION</span>
           <strong>{native ? 'AFO 预测与原生过滤' : progress.substage_label || 'BoltzGen'}</strong>
         </div>
-        <b>
-          {progress.completed} / {progress.total} 条
-        </b>
+        <b>{progress.total ? `${progress.completed} / ${progress.total} 条` : '等待资源'}</b>
       </div>
       <div
         className="easy-progress-track"
         role="progressbar"
         aria-valuemin={0}
-        aria-valuemax={progress.total}
+        aria-valuemax={progress.total || 1}
         aria-valuenow={progress.completed}
       >
         <span style={{ width: `${overall}%` }} />

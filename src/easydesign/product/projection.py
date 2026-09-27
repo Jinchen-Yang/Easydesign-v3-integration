@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -34,6 +35,7 @@ _PDB_ID = re.compile(r"[0-9A-Za-z]{4}")
 _ATTEMPT_ID = re.compile(r"attempt-[0-9]{4}")
 
 PROGRESS_LABELS = {
+    "waiting-resource": "Waiting for an available GPU",
     "boltzgen-initialize": "Initialize",
     "boltzgen-generate": "Generate",
     "boltzgen-inverse-fold": "Inverse fold",
@@ -43,18 +45,84 @@ PROGRESS_LABELS = {
 }
 
 
+def _job_run_root(job: LocalStepJob, runs_root: Path) -> Path | None:
+    """Resolve the run created by a continuation job while it is still active."""
+
+    boundary = runs_root.resolve()
+    if job.run_id:
+        requested = (boundary / job.project_id / job.run_id).resolve()
+        if requested.is_relative_to(boundary) and requested.is_dir():
+            return requested
+    if job.run_root is None:
+        return None
+    root = job.run_root.resolve()
+    return root if root.is_relative_to(boundary) else None
+
+
+def _waiting_gpu_progress(root: Path) -> dict[str, Any] | None:
+    """Expose a truthful pre-plan GPU wait before pipeline progress exists."""
+
+    for stage_id in ("06-scale-generation-and-refolding", "04-pilot-generation"):
+        inventory_path = root / stage_id / "attempt-0001" / "runtime" / "gpu-inventory.json"
+        try:
+            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if inventory.get("waiting_for_resources") is not True:
+            continue
+        planned = 0
+        total_tasks = 0
+        if stage_id.startswith("04-"):
+            matrix_path = (
+                root
+                / "03-boltzgen-configuration"
+                / "attempt-0001"
+                / "artifacts"
+                / "design-matrix.json"
+            )
+            try:
+                matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+                strategies = matrix.get("strategies", [])
+                if isinstance(strategies, list):
+                    counts = [
+                        item.get("candidates_per_strategy")
+                        for item in strategies
+                        if isinstance(item, dict)
+                    ]
+                    if counts and all(isinstance(value, int) and value >= 0 for value in counts):
+                        planned = sum(counts)
+                        total_tasks = len(counts)
+            except (OSError, ValueError):
+                pass
+        return {
+            "stage_id": stage_id,
+            "status": "waiting-resource",
+            "completed": 0,
+            "total": planned,
+            "completed_tasks": 0,
+            "total_tasks": total_tasks,
+            "running_tasks": 0,
+            "estimated_remaining_seconds": None,
+            "substage": "waiting-resource",
+            "substage_label": PROGRESS_LABELS["waiting-resource"],
+            "substage_completed": None,
+            "substage_total": None,
+            "pipeline_step": None,
+            "pipeline_steps": None,
+        }
+    return None
+
+
 def job_progress(job: LocalStepJob, runs_root: Path) -> dict[str, Any] | None:
     """Project only verified pipeline progress belonging to the configured runs root."""
 
-    if job.step < 4 or job.run_root is None:
-        return None
-    root = job.run_root.resolve()
-    if not root.is_relative_to(runs_root.resolve()):
+    root = _job_run_root(job, runs_root)
+    if root is None:
         return None
     try:
         progress = read_pipeline_progress(root)
     except (ManifestStateError, OSError, ValueError):
-        return None
+        return _waiting_gpu_progress(root)
     heartbeats = sorted(progress.task_heartbeats, key=lambda item: item.updated_at)
     current = heartbeats[-1] if heartbeats else None
     substage = current.phase if current else None
@@ -1099,29 +1167,34 @@ def workbench(
             {"label": label, "status": "complete" if done else "waiting"}
             for label, done in checks.get(step["id"], [])
         ]
-    jobs = [
-        {
-            "id": j.job_id,
-            "phase": {
-                1: "target",
-                2: "site",
-                3: "design",
-                4: "pilot",
-                5: "pilot",
-                6: "scale",
-                7: "candidates",
-            }.get(j.step, "unknown"),
-            "status": str(j.status),
-            "resumable": str(j.status) in {"failed", "lost", "drained"},
-            "validation_only": project.validation_only,
-            **(
-                {"progress": progress}
-                if (progress := job_progress(j, b.context.runs_root)) is not None
-                else {}
-            ),
-        }
-        for j in b.controller.list(project_id=b.project_id)
-    ][:40]
+    jobs = []
+    for j in b.controller.list(project_id=b.project_id)[:40]:
+        progress = job_progress(j, b.context.runs_root)
+        phase = {
+            1: "target",
+            2: "site",
+            3: "design",
+            4: "pilot",
+            5: "pilot",
+            6: "scale",
+            7: "candidates",
+        }.get(j.step, "unknown")
+        if progress is not None:
+            stage_id = str(progress["stage_id"])
+            if stage_id.startswith(("04-", "05-")):
+                phase = "pilot"
+            elif stage_id.startswith(("06-", "07-")):
+                phase = "scale"
+        jobs.append(
+            {
+                "id": j.job_id,
+                "phase": phase,
+                "status": str(j.status),
+                "resumable": str(j.status) in {"failed", "lost", "drained"},
+                "validation_only": project.validation_only,
+                **({"progress": progress} if progress is not None else {}),
+            }
+        )
     events = activity(session, recent=True)
     projected_tasks = activity_tasks(activity(session, limit=200, recent=True))
     known_tasks = {task.get("task_id"): task for task in projected_tasks}

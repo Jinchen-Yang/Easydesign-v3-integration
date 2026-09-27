@@ -686,7 +686,9 @@ def activity_rows(
                     (tool.replace("_", " ").title(), "Executing an authorized Runtime action."),
                 ),
             )
-            phase = phase_for(stage, None)
+            # These generic stages span Target, Site and Design. The event has
+            # no bound Gate type; do not invent Target authority for its display.
+            phase = None if stage in {"judge", "scientist-gate"} else phase_for(stage, None)
             task_id = f"execution-{execution_id or payload.get('action_id') or row['seq']}"
             status = "running"
             event_type = "runtime.started"
@@ -700,7 +702,7 @@ def activity_rows(
                     (tool.replace("_", " ").title(), "Authorized Runtime action recorded."),
                 ),
             )
-            phase = phase_for(stage, None)
+            phase = None if stage in {"judge", "scientist-gate"} else phase_for(stage, None)
             task_id = f"execution-{execution_id or payload.get('action_id') or row['seq']}"
             status = (
                 "blocked"

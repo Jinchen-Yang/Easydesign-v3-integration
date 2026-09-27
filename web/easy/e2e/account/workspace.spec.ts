@@ -177,7 +177,7 @@ test.describe('account-mode Easy workspace', () => {
   test('accounts-only service keeps browsing and co-editing but removes execution', async ({page}) => {
     installWorkspaceRoutes(page, 'alice', 'team-1', false);
     await page.goto('/easy/?scope=team-1&project=proj-1');
-    await expect(page.getByText('未连接科学执行器')).toBeVisible();
+    await expect(page.getByText('未连接科学执行器', {exact: true})).toBeVisible();
     await expect(page.getByText(/当前服务未连接科学执行器（账号管理模式）/)).toBeVisible();
     // Even the team admin loses launch/approval affordances without a launcher.
     await expect(page.getByRole('button', {name: /开始设计/})).toBeDisabled();

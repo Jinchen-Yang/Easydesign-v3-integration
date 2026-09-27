@@ -62,6 +62,30 @@ def service_for(bridge, tmp_path):
     )
 
 
+@pytest.mark.parametrize("stage", ["judge", "scientist-gate"])
+def test_generic_runtime_review_does_not_invent_a_target_phase(bridge, stage):
+    before = bridge.store.db.execute("SELECT MAX(seq) FROM events").fetchone()[0] or 0
+    for kind, status in (
+        ("runtime-dispatch", "running"),
+        ("runtime-action-timing", "awaiting-human-approval"),
+    ):
+        bridge.store.event(
+            bridge.thread,
+            kind,
+            {
+                "execution_id": "review",
+                "action_id": "review",
+                "stage": stage,
+                "tool": "task",
+                "specialist": "evidence-judge",
+                "status": status,
+            },
+        )
+    rows = activity_rows(bridge.store, bridge.thread, after=before)
+    assert len(rows) == 2
+    assert all(row["phase"] is None for row in rows)
+
+
 def test_goal_only_create_is_immediately_persistent_and_reloadable(bridge, tmp_path):
     service = service_for(bridge, tmp_path)
     request = CreateProject(

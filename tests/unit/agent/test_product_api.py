@@ -510,6 +510,9 @@ def test_same_origin_server_keeps_pro_and_easy_static_roots_isolated(bridge, tmp
     (easy / "index.html").write_text("easy-index")
     (pro / "assets/app.js").write_text("pro-asset")
     (easy / "assets/app.js").write_text("easy-asset")
+    (easy / "mascot/rabbit/originals").mkdir(parents=True)
+    (easy / "mascot/rabbit/rabbit-mascot.png").write_bytes(b"rabbit-png")
+    (easy / "mascot/rabbit/originals/01-welcome.jpg").write_bytes(b"rabbit-album")
 
     with http_api(service, web_root=pro, easy_web_root=easy) as client:
         assert client.get("/").text == "pro-index"
@@ -517,7 +520,13 @@ def test_same_origin_server_keeps_pro_and_easy_static_roots_isolated(bridge, tmp
         assert client.get("/easy").text == "easy-index"
         assert client.get("/easy/").text == "easy-index"
         assert client.get("/easy/assets/app.js").text == "easy-asset"
+        assert client.get("/easy/mascot/rabbit/rabbit-mascot.png").content == b"rabbit-png"
+        assert (
+            client.get("/easy/mascot/rabbit/originals/01-welcome.jpg").content
+            == b"rabbit-album"
+        )
         assert client.get("/easy/%2e%2e/assets/app.js").status_code == 403
+        assert client.get("/easy/mascot/%2e%2e/assets/app.js").status_code == 403
         assert client.get("/easy/unknown.js").status_code == 404
 
 

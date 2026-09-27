@@ -437,7 +437,7 @@ class Handler(BaseHTTPRequestHandler):
         relative = relative or "index.html"
         if not (
             relative == "index.html"
-            or relative.startswith(("assets/", "structures/"))
+            or relative.startswith(("assets/", "structures/", "mascot/rabbit/"))
             or relative in {"favicon.svg"}
         ):
             raise ProductError("not_found", "Unknown Workbench resource", 404)

@@ -119,6 +119,33 @@ def test_easy_project_listing_is_explicit_recent_and_excludes_other_surfaces(bri
     }
 
 
+def test_easy_project_listing_reuses_the_persisted_lightweight_projection(
+    bridge, tmp_path, monkeypatch
+):
+    service = service_for(bridge, tmp_path)
+    created = service.create(
+        CreateProject(
+            request_id=str(uuid4()),
+            title="Indexed Easy design",
+            goal="Design a bounded extracellular VHH.",
+            surface="easy",
+        )
+    )
+    project = created["project"]
+    first = service.projects(limit=5, surface="easy")
+    journal = service.journal()
+    try:
+        assert journal.project(project)["projection"] == first["items"][0]
+    finally:
+        journal.close()
+
+    def must_not_open_the_scientific_project(_value):
+        raise AssertionError("The lightweight index must not reproject the scientific project")
+
+    monkeypatch.setattr(service, "_bootstrap_project_view", must_not_open_the_scientific_project)
+    assert service.projects(limit=5, surface="easy")["items"] == first["items"]
+
+
 def test_gate1_remote_structure_candidates_have_checksum_bound_previews(tmp_path):
     workspace = tmp_path / "workspace"
     root = workspace / "runs" / "project" / "run"
@@ -1114,6 +1141,31 @@ def test_native_candidate_product_projection_preserves_fail_and_missing(tmp_path
     value = candidate_view(session, incomplete, pool, {}, catalog)
     assert not value.evaluable and not value.competition_eligible
     assert value.native_status == "not-available"
+    compact = candidate_view(session, rows[0], pool, {}, catalog, compact=True)
+    assert compact.metrics == []
+    assert compact.id == values[0].id
+    assert compact.sequence_sha256 == values[0].sequence_sha256
+    assert compact.artifacts == values[0].artifacts
+
+
+def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):
+    service = service_for(bridge, tmp_path)
+    observed = []
+
+    def candidates(project, offset, limit, candidate=None, *, compact=False):
+        observed.append((project, offset, limit, candidate, compact))
+        return {"items": [], "total": 0, "offset": offset, "limit": limit}
+
+    monkeypatch.setattr(service, "candidates", candidates)
+    with http_api(service) as client:
+        response = client.get(
+            "/api/v1/projects/example/candidates?offset=0&limit=20&view=summary"
+        )
+        assert response.status_code == 200
+        assert observed == [("example", 0, 20, None, True)]
+        assert (
+            client.get("/api/v1/projects/example/candidates?view=unknown").status_code == 400
+        )
 
 
 def test_gate3_decision_is_bound_to_current_pilot_plan(design_bridge, tmp_path):

@@ -22,6 +22,8 @@ const zh: Record<string, string> = {
   'Stop reply': '停止回复',
   'Sends chat & page summary to DeepSeek': '消息与页面摘要发送至 DeepSeek',
   'Reply stopped.': '已停止回复。',
+  'Reply paused when the panel closed. Retry when ready.': '面板关闭时已暂停回复，可随时重试。',
+  'Retry reply': '重试回复',
   'Chat is not connected yet.': '聊天服务尚未连接。',
   'The model key is unavailable. Please check the server configuration.':
     '模型密钥不可用，请检查服务器配置。',

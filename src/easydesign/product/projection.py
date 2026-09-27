@@ -473,6 +473,8 @@ def candidate_view(
     owner: Any,
     panel: dict[str, Any],
     catalog: ArtifactCatalog,
+    *,
+    compact: bool = False,
 ) -> CandidateView:
     b, line = session.bridge, candidate.lineage
     native = native_for(candidate, owner)
@@ -481,36 +483,38 @@ def candidate_view(
     values = {**{name: m.value for name, m in original_metrics.items()}, **values}
     decisions = {d.feature: d for d in native.decisions} if native else {}
     metrics = []
-    for name, value in values.items():
-        if name in {"designed_chain_sequence", "target_chain_sequence"}:
-            continue
-        rule, observation = decisions.get(name), original_metrics.get(name)
-        metrics.append(
-            MetricView(
-                id=name,
-                label=name.replace("_", " "),
-                value=value,
-                unit=observation.unit if observation else None,
-                direction=("lower" if rule.lower_is_better else "higher")
-                if rule
-                else cast(
-                    Literal["lower", "higher", "context"], METRIC_DIRECTIONS.get(name, "context")
-                ),
-                status="missing" if value is None else "available",
-                rule_result=(
-                    "unknown" if rule.passed is None else "pass" if rule.passed else "fail"
+    if not compact:
+        for name, value in values.items():
+            if name in {"designed_chain_sequence", "target_chain_sequence"}:
+                continue
+            rule, observation = decisions.get(name), original_metrics.get(name)
+            metrics.append(
+                MetricView(
+                    id=name,
+                    label=name.replace("_", " "),
+                    value=value,
+                    unit=observation.unit if observation else None,
+                    direction=("lower" if rule.lower_is_better else "higher")
+                    if rule
+                    else cast(
+                        Literal["lower", "higher", "context"],
+                        METRIC_DIRECTIONS.get(name, "context"),
+                    ),
+                    status="missing" if value is None else "available",
+                    rule_result=(
+                        "unknown" if rule.passed is None else "pass" if rule.passed else "fail"
+                    )
+                    if rule
+                    else None,
+                    threshold=rule.threshold if rule else None,
+                    profile_id=native.profile_sha256 if native else None,
+                    source=native.metric_sources.get(name)
+                    if native
+                    else observation.source
+                    if observation
+                    else None,
                 )
-                if rule
-                else None,
-                threshold=rule.threshold if rule else None,
-                profile_id=native.profile_sha256 if native else None,
-                source=native.metric_sources.get(name)
-                if native
-                else observation.source
-                if observation
-                else None,
             )
-        )
     if isinstance(owner, GlobalCandidatePool):
         root, _ = b.run(line.source_run_id)
         refs = line.artifact_refs
@@ -588,6 +592,8 @@ def candidate_page(
     offset: int,
     limit: int,
     candidate_id: str | None = None,
+    *,
+    compact: bool = False,
 ) -> Page:
     _, _, revision = session.current()
     candidates, owner, panel = population(session)
@@ -606,7 +612,9 @@ def candidate_page(
         offset=offset,
         limit=limit,
         items=[
-            candidate_view(session, c, owner, panel, catalog).model_dump(mode="json")
+            candidate_view(session, c, owner, panel, catalog, compact=compact).model_dump(
+                mode="json"
+            )
             for c in candidates[offset : offset + limit]
         ],
     )

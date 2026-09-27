@@ -342,8 +342,17 @@ class Handler(BaseHTTPRequestHandler):
                     if resource == "workbench" and len(tail) == 3:
                         result = service.snapshot(project)
                     elif resource == "candidates" and len(tail) in {3, 4}:
+                        view = query.get("view", ["full"])[0]
+                        if view not in {"full", "summary"}:
+                            raise ProductError(
+                                "invalid_request", "Candidate view must be full or summary", 400
+                            )
                         result = service.candidates(
-                            project, offset, limit, tail[3] if len(tail) == 4 else None
+                            project,
+                            offset,
+                            limit,
+                            tail[3] if len(tail) == 4 else None,
+                            compact=view == "summary",
                         )
                     elif resource == "events" and len(tail) == 3:
                         result = service.events(project, int(query.get("after", ["0"])[0]), limit)

@@ -40,6 +40,8 @@ class RequestJournal:
         }
         if "surface" not in columns:
             self.db.execute("ALTER TABLE product_projects ADD COLUMN surface TEXT")
+        if "projection" not in columns:
+            self.db.execute("ALTER TABLE product_projects ADD COLUMN projection TEXT")
         self.db.commit()
 
     def close(self) -> None:
@@ -119,6 +121,9 @@ class RequestJournal:
             return None
         value = dict(row)
         value["detail"] = json.loads(value["detail"])
+        value["projection"] = (
+            json.loads(value["projection"]) if value.get("projection") else None
+        )
         return value
 
     def register_project(
@@ -161,8 +166,8 @@ class RequestJournal:
             now = time.time()
             self.db.execute(
                 "INSERT INTO product_projects("
-                "id,request_id,title,goal,thread,input_id,state,detail,created,updated,surface"
-                ") VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "id,request_id,title,goal,thread,input_id,state,detail,created,updated,surface,"
+                "projection) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL)",
                 (
                     project,
                     request_id,
@@ -196,7 +201,7 @@ class RequestJournal:
     def update_project(self, project: str, state: str, detail: dict[str, Any]) -> None:
         with self.db:
             changed = self.db.execute(
-                "UPDATE product_projects SET state=?,detail=?,updated=? WHERE id=?",
+                "UPDATE product_projects SET state=?,detail=?,updated=?,projection=NULL WHERE id=?",
                 (state, json.dumps(detail), time.time(), project),
             ).rowcount
         if changed != 1:
@@ -204,12 +209,37 @@ class RequestJournal:
 
     def rename_project(self, project: str, title: str) -> None:
         with self.db:
+            row = self.db.execute(
+                "SELECT projection FROM product_projects WHERE id=?", (project,)
+            ).fetchone()
+            projection = json.loads(row[0]) if row and row[0] else None
+            if isinstance(projection, dict):
+                projection["title"] = title
             changed = self.db.execute(
-                "UPDATE product_projects SET title=?,updated=? WHERE id=?",
-                (title, time.time(), project),
+                "UPDATE product_projects SET title=?,updated=?,projection=? WHERE id=?",
+                (
+                    title,
+                    time.time(),
+                    json.dumps(projection) if projection is not None else None,
+                    project,
+                ),
             ).rowcount
         if changed != 1:
             raise ProductError("not_found", "Unknown product project", 404)
+
+    def update_projection(self, project: str, projection: dict[str, Any]) -> None:
+        """Persist the small product-list view, never the scientific workspace."""
+        encoded = json.dumps(projection, separators=(",", ":"), ensure_ascii=False)
+        with self.db:
+            changed = self.db.execute(
+                "UPDATE product_projects SET projection=? WHERE id=? AND "
+                "COALESCE(projection,'')<>?",
+                (encoded, project, encoded),
+            ).rowcount
+            if changed == 0 and self.db.execute(
+                "SELECT 1 FROM product_projects WHERE id=?", (project,)
+            ).fetchone() is None:
+                raise ProductError("not_found", "Unknown product project", 404)
 
     def for_project(self, project: str, limit: int = 10) -> list[dict[str, Any]]:
         rows = self.db.execute(

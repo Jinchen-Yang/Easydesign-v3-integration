@@ -141,6 +141,78 @@ function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
   );
 }
 
+function HistoricalStagePanel({
+  snapshot,
+  stageIndex,
+  onReturn,
+}: {
+  snapshot: ProductSnapshot;
+  stageIndex: number;
+  onReturn: () => void;
+}) {
+  const context = snapshot.scientific_context;
+  const workflow = snapshot.workflow.find((item) => item.id === STEPS[stageIndex].toLowerCase());
+  const rows: [string, string | number][] = [];
+  if (stageIndex === 0) {
+    rows.push(
+      ['Target', context.target_id || 'Verified target'],
+      ['Sequence length', context.sequence_length || '—'],
+      ['Chains', context.chains?.join(', ') || '—'],
+      ['Structure', context.structure?.label || '—'],
+    );
+  } else if (stageIndex === 1) {
+    rows.push(
+      ['Candidate sites', context.sites.length],
+      ['Approved site', context.approved_site?.selected_rank || 'Not recorded'],
+    );
+    const approved = context.sites.find(
+      (site) => site.id === context.approved_site?.selected_candidate_id,
+    );
+    if (approved) rows.push(['Hotspots', approved.design_labels.join(', ')]);
+  } else if (stageIndex === 2) {
+    rows.push(
+      ['Design arms', context.arms.length],
+      ['Design approval', context.design_approved ? 'Recorded' : 'Not recorded'],
+    );
+  } else if (stageIndex === 3 || stageIndex === 4) {
+    const phase = stageIndex === 3 ? 'pilot' : 'scale';
+    const job = snapshot.jobs.find((item) => item.phase === phase);
+    rows.push(['Execution status', job?.status || 'Complete']);
+    if (job?.progress)
+      rows.push(
+        ['Candidates', `${job.progress.completed} / ${job.progress.total}`],
+        ['Strategy tasks', `${job.progress.completed_tasks} / ${job.progress.total_tasks}`],
+      );
+  } else {
+    rows.push(
+      ['Candidate total', snapshot.candidates.total],
+      ['Native pass', snapshot.candidates.counts.pass || 0],
+      ['Workflow state', snapshot.current_action.stage],
+    );
+  }
+  return (
+    <section className="easy-live-history-card" aria-label={`${STEPS[stageIndex]} history`}>
+      <div className="easy-live-kicker">HISTORICAL STAGE · READ ONLY</div>
+      <h3>{STEPS[stageIndex]} 阶段记录</h3>
+      <p>
+        {workflow?.subtasks?.filter((item) => item.status === 'complete').length || 0}{' '}
+        个步骤已记录。
+      </p>
+      <dl>
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <button className="easy-outline" onClick={onReturn}>
+        返回当前阶段
+      </button>
+    </section>
+  );
+}
+
 function GatePanel({
   snapshot,
   busy,
@@ -432,6 +504,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const [file, setFile] = useState<File | null>(null);
   const [token, setToken] = useState('');
   const [selectedSite, setSelectedSite] = useState<string | undefined>();
+  const [viewedIndex, setViewedIndex] = useState<number | null>(null);
   const [order, setOrder] = useState<LabOrderView | null>(null);
   const [error, setError] = useState('');
   const autoContinuation = useRef<string | null>(null);
@@ -482,20 +555,23 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     setSelectedSite(defaultSite || snapshot?.decision?.default_option_id || undefined);
     setOrder(snapshot?.lab_order || null);
   }, [snapshot?.revision]);
+  useEffect(() => {
+    setViewedIndex(null);
+  }, [snapshot?.project.id]);
   const issue = validateInput(input);
   const index = activeIndex(snapshot);
+  const shownIndex = viewedIndex ?? index;
   const active = Boolean(
     state?.pending ||
       snapshot?.project.status === 'running' ||
       snapshot?.project.status === 'incomplete',
   );
+  const candidateArtifact = state?.selectedCandidate?.artifacts.find((item) =>
+    ['pdb', 'cif', 'mmcif'].includes(item.format),
+  );
   const artifact =
-    state?.selectedCandidate?.artifacts.find((item) =>
-      ['pdb', 'cif', 'mmcif'].includes(item.format),
-    ) ||
-    snapshot?.scientific_context.structure ||
-    null;
-  const roles = state?.selectedCandidate?.structure_roles || {};
+    (shownIndex >= 3 ? candidateArtifact : null) || snapshot?.scientific_context.structure || null;
+  const roles = shownIndex >= 3 ? state?.selectedCandidate?.structure_roles || {} : {};
   const technicalActivity = (snapshot?.recent_activity || [])
     .filter((item) => item.visible !== false && !(completed && item.type === 'gate.awaiting'))
     .slice(-8)
@@ -532,6 +608,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     adapter.clearProject();
     setOrder(null);
     setSelectedSite(undefined);
+    setViewedIndex(null);
     autoContinuation.current = null;
     const params = new URLSearchParams(location.search);
     params.delete('project');
@@ -723,7 +800,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
             <div className="easy-run-heading">
               <div>
                 <span className="easy-kicker">{snapshot.project.title}</span>
-                <h2>{STEPS[index]}</h2>
+                <h2>{STEPS[shownIndex]}</h2>
               </div>
               <span className={`easy-status ${snapshot.project.status}`}>
                 {state.pending || active ? (
@@ -738,7 +815,10 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
               {STEPS.map((step, stepIndex) => (
                 <button
                   key={step}
-                  className={`${stageStatus(snapshot, stepIndex) === 'complete' ? 'done' : ''} ${stepIndex === index ? 'current' : ''}`}
+                  className={`${stageStatus(snapshot, stepIndex) === 'complete' ? 'done' : ''} ${stepIndex === shownIndex ? 'current' : ''}`}
+                  aria-pressed={stepIndex === shownIndex}
+                  disabled={stepIndex > index && stageStatus(snapshot, stepIndex) !== 'complete'}
+                  onClick={() => setViewedIndex(stepIndex === index ? null : stepIndex)}
                 >
                   <span>
                     {stageStatus(snapshot, stepIndex) === 'complete' ? (
@@ -753,7 +833,13 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
             </div>
             <div className="easy-live-workspace">
               <div className="easy-live-center">
-                {completed ? (
+                {shownIndex !== index ? (
+                  <HistoricalStagePanel
+                    snapshot={snapshot}
+                    stageIndex={shownIndex}
+                    onReturn={() => setViewedIndex(null)}
+                  />
+                ) : completed ? (
                   <section className="easy-live-progress-card easy-live-complete-card">
                     <Check size={22} />
                     <div>
@@ -814,44 +900,46 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     </div>
                   </section>
                 )}
-                <ExecutionProgress snapshot={snapshot} />
-                <section className="easy-live-activity">
-                  <h3>实时过程</h3>
-                  {activity.map((item) => (
-                    <article key={item.id}>
-                      <span className={item.status || ''} />
-                      <div>
-                        <strong>{item.title}</strong>
-                        <p>{item.summary}</p>
-                      </div>
-                    </article>
-                  ))}
-                  {technicalActivity.length > 0 && (
-                    <details className="easy-live-technical-details">
-                      <summary>查看技术详情</summary>
-                      {snapshot.decision?.details_url && (
-                        <a href={snapshot.decision.details_url} target="_blank" rel="noreferrer">
-                          查看当前 Gate 的审查与 provenance
-                        </a>
-                      )}
-                      <div>
-                        {technicalActivity.map((item) => (
-                          <article key={`technical-${item.id}`}>
-                            <span className={item.status || ''} />
-                            <div>
-                              <strong>{item.title || item.role || item.type}</strong>
-                              <p>{item.summary || item.text}</p>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                </section>
+                {shownIndex === index && <ExecutionProgress snapshot={snapshot} />}
+                {shownIndex === index && (
+                  <section className="easy-live-activity">
+                    <h3>实时过程</h3>
+                    {activity.map((item) => (
+                      <article key={item.id}>
+                        <span className={item.status || ''} />
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p>{item.summary}</p>
+                        </div>
+                      </article>
+                    ))}
+                    {technicalActivity.length > 0 && (
+                      <details className="easy-live-technical-details">
+                        <summary>查看技术详情</summary>
+                        {snapshot.decision?.details_url && (
+                          <a href={snapshot.decision.details_url} target="_blank" rel="noreferrer">
+                            查看当前 Gate 的审查与 provenance
+                          </a>
+                        )}
+                        <div>
+                          {technicalActivity.map((item) => (
+                            <article key={`technical-${item.id}`}>
+                              <span className={item.status || ''} />
+                              <div>
+                                <strong>{item.title || item.role || item.type}</strong>
+                                <p>{item.summary || item.text}</p>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </section>
+                )}
               </div>
               <aside className="easy-live-science">
                 <div className="easy-live-kicker">
-                  SCIENTIFIC CONTEXT · {snapshot.project.phase.toUpperCase()}
+                  SCIENTIFIC CONTEXT · {STEPS[shownIndex].toUpperCase()}
                 </div>
                 <EasyStructureViewer
                   artifact={artifact}
@@ -859,7 +947,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                   sites={snapshot.scientific_context.sites}
                   selectedSite={visibleSiteId}
                 />
-                {snapshot.scientific_context.sites.length > 0 && (
+                {shownIndex >= 1 && snapshot.scientific_context.sites.length > 0 && (
                   <div className="easy-live-site-tabs">
                     {snapshot.scientific_context.sites.map((site) => (
                       <button
@@ -872,7 +960,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     ))}
                   </div>
                 )}
-                {candidates.length > 0 && (
+                {shownIndex >= 3 && candidates.length > 0 && (
                   <div className="easy-live-candidates">
                     <h3>候选分子</h3>
                     {candidates.map((candidate) => (
@@ -894,7 +982,9 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                 )}
               </aside>
             </div>
-            {order && <SimulatedOrder order={order} adapter={adapter} onUpdate={setOrder} />}
+            {shownIndex === index && order && (
+              <SimulatedOrder order={order} adapter={adapter} onUpdate={setOrder} />
+            )}
           </section>
         )}
 

@@ -168,6 +168,39 @@
   flex: 1;
 }
 
+.easy-live-history-card {
+  padding: 22px;
+  border: 1px solid #e2dfeb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
+}
+
+.easy-live-history-card > p {
+  color: #777381;
+}
+
+.easy-live-history-card dl {
+  margin: 18px 0;
+}
+
+.easy-live-history-card dl > div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eeecf3;
+}
+
+.easy-live-history-card dt {
+  color: #817b89;
+}
+
+.easy-live-history-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .easy-execution-progress {
   margin-top: 16px;
   padding: 20px;

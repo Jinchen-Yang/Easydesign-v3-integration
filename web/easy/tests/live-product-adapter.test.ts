@@ -182,6 +182,51 @@ describe('Easy live adapter preserves Product API authority', () => {
     expect(selected).toBeNull();
   });
 
+  it('loads the Easy summary candidate view without the unused metric payload', async () => {
+    const current = snapshot();
+    current.candidates.total = 1;
+    const paths: string[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      paths.push(path);
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [project] });
+      return Response.json({ total: 1, offset: 0, limit: 20, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates?offset=0&limit=20&view=summary',
+    );
+  });
+
+  it('does not keep two-second polling after a project becomes complete', async () => {
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const current = snapshot();
+      current.project = { ...project, phase: 'handoff', status: 'complete' };
+      const fetcher = vi.fn(async (url: string | URL | Request) => {
+        const path = String(url);
+        if (path.endsWith('/workbench')) return Response.json(current);
+        if (path.includes('/projects?'))
+          return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+        return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+      });
+      const adapter = new EasyProductAdapter(fetcher as typeof fetch, 2000);
+      adapters.push(adapter);
+      await adapter.load();
+      await adapter.selectProject(project.id);
+      await adapter.refresh();
+      expect(timers.mock.calls.some((call) => call[1] === 60000)).toBe(true);
+      expect(timers.mock.calls.some((call) => call[1] === 2000)).toBe(false);
+    } finally {
+      timers.mockRestore();
+    }
+  });
+
   it('binds simulated-order commands to the current server revision', async () => {
     const bodies: Record<string, unknown>[] = [];
     const order = {

@@ -28,7 +28,7 @@ test('Doudou offers fresh clickable follow-ups every turn, keeps history and swi
         .join(''),
     });
   });
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await page.getByRole('button', { name: '试用溶菌酶 · VHH' }).click();
   await page.getByRole('button', { name: '保存草稿', exact: true }).click();
   const research = await page.evaluate(() => localStorage.getItem('easydesign-easy-preview-v1'));
@@ -86,7 +86,7 @@ test('Doudou offers fresh clickable follow-ups every turn, keeps history and swi
   await expect(page.getByRole('button', { name: 'Pause animation' })).toBeVisible();
 });
 
-test('failed and stopped replies recover without auto-retrying or rendering HTML', async ({
+test('unexpected failures retry once while explicit stops remain explicit and retryable', async ({
   page,
 }) => {
   let calls = 0;
@@ -94,7 +94,12 @@ test('failed and stopped replies recover without auto-retrying or rendering HTML
     if (route.request().method() === 'GET') return route.fulfill({ json: { configured: true } });
     calls++;
     if (calls === 1) return route.fulfill({ status: 503, json: { error: 'unavailable' } });
-    if (calls === 2) {
+    if (calls === 2)
+      return route.fulfill({
+        contentType: 'application/x-ndjson',
+        body: '{"type":"delta","text":"自动重试成功"}\n{"type":"done"}\n',
+      });
+    if (calls === 3) {
       await new Promise((r) => setTimeout(r, 2000));
       return route
         .fulfill({ contentType: 'application/x-ndjson', body: '{"type":"done"}\n' })
@@ -105,7 +110,7 @@ test('failed and stopped replies recover without auto-retrying or rendering HTML
       body: '{"type":"delta","text":"<img src=x onerror=alert(1)>"}\n{"type":"done"}\n',
     });
   });
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   await page.getByRole('button', { name: '和豆豆聊天', exact: true }).click();
   const panel = page.getByRole('dialog', { name: '和豆豆聊天' });
   async function send() {
@@ -113,14 +118,15 @@ test('failed and stopped replies recover without auto-retrying or rendering HTML
     await panel.getByRole('button', { name: '发送消息' }).click();
   }
   await send();
-  await expect(panel.getByText('暂时连接不上，请重试。')).toBeVisible();
+  await expect(panel.locator('.rabbit-message.assistant').last()).toContainText('自动重试成功');
   await expect(panel.getByRole('group', { name: '接着聊' })).toHaveCount(0);
-  expect(calls).toBe(1);
+  expect(calls).toBe(2);
   await send();
   await panel.getByRole('button', { name: '停止回复' }).click();
   await expect(panel.getByText('已停止回复。')).toBeVisible();
+  await expect(panel.getByRole('button', { name: '重试回复' })).toBeVisible();
   await expect(panel.getByRole('group', { name: '接着聊' })).toHaveCount(0);
-  await send();
+  await panel.getByRole('button', { name: '重试回复' }).click();
   await expect(panel.locator('.rabbit-message.assistant').last()).toContainText('<img');
   expect(await panel.locator('.rabbit-message img').count()).toBe(0);
   await panel.getByRole('textbox').focus();
@@ -132,7 +138,7 @@ test('chat never covers the whole rabbit at dragged positions or after a compact
   page,
 }, info) => {
   await page.route('**/api/rabbit/chat', (route) => route.fulfill({ json: { configured: true } }));
-  await page.goto('/');
+  await page.goto('/easy/?mode=demo');
   const pet = page.getByRole('button', { name: '和豆豆聊天', exact: true });
   const panel = page.getByRole('dialog', { name: '和豆豆聊天' });
   async function visibleTogether() {

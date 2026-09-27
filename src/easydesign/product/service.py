@@ -11,8 +11,10 @@ import re
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +58,20 @@ class ProductService:
         self.root.mkdir(parents=True, exist_ok=True)
         self.catalog = ArtifactCatalog(self.context.root, self.root / "artifacts")
         self.launcher = launcher or self.launch
+        self._cache_lock = threading.Lock()
+        self._stable_snapshots: dict[str, dict[str, Any]] = {}
+
+    def _invalidate_projection_cache(self, project: str) -> None:
+        with self._cache_lock:
+            self._stable_snapshots.pop(project, None)
+
+    def _remember_project_view(self, project: str, value: dict[str, Any]) -> None:
+        journal = self.journal()
+        try:
+            if journal.project(project) is not None:
+                journal.update_projection(project, value)
+        finally:
+            journal.close()
 
     def journal(self) -> RequestJournal:
         return RequestJournal(self.root / "requests.sqlite")
@@ -89,6 +105,7 @@ class ProductService:
             store.close()
 
     def apply_lab_order(self, project: str, command: LabOrderCommand) -> dict[str, Any]:
+        self._invalidate_projection_cache(project)
         with self.gateway.session(project) as session:
             handoff = self._current_handoff(session)
         store = self.order_store()
@@ -156,6 +173,7 @@ class ProductService:
         title = title.strip()
         if not title or len(title) > 80:
             raise ProductError("invalid_title", "Use a project name between 1 and 80 characters")
+        self._invalidate_projection_cache(project)
         journal = self.journal()
         try:
             registered = journal.project(project)
@@ -243,16 +261,34 @@ class ProductService:
         )
         items = []
         for project in names:
+            registered_project = registered.get(project)
+            if surface is not None and registered_project is not None:
+                cached = registered_project.get("projection")
+                if isinstance(cached, dict):
+                    view = ProjectView.model_validate(cached).model_copy(
+                        update={
+                            "title": registered_project["title"],
+                            "goal": registered_project["goal"],
+                        }
+                    )
+                    if view.status != "unavailable":
+                        items.append(view.model_dump(mode="json"))
+                    continue
             try:
                 if (self.context.projects_root / project / "PROJECT.yaml").is_file():
                     with self.gateway.session(project) as session:
-                        items.append(
-                            project_view(session, self.title(session)).model_dump(mode="json")
-                        )
+                        view = project_view(session, self.title(session))
                 else:
-                    items.append(
-                        self._bootstrap_project_view(registered[project]).model_dump(mode="json")
+                    view = self._bootstrap_project_view(registered[project])
+                if registered_project is not None:
+                    view = view.model_copy(
+                        update={
+                            "title": registered_project["title"],
+                            "goal": registered_project["goal"],
+                        }
                     )
+                    self._remember_project_view(project, view.model_dump(mode="json"))
+                items.append(view.model_dump(mode="json"))
             except (
                 ProductError,
                 AgentBoundaryError,
@@ -267,6 +303,24 @@ class ProductService:
                 if surface is not None:
                     # A surface-scoped user list contains usable product projects only.
                     # The canonical project remains intact and directly addressable for repair.
+                    if registered_project is not None:
+                        self._remember_project_view(
+                            project,
+                            ProjectView(
+                                id=project,
+                                title=registered_project["title"],
+                                goal=registered_project["goal"],
+                                thread_id=registered_project["thread"],
+                                phase="target",
+                                status="unavailable",
+                                last_activity=0,
+                                notice=(
+                                    error.code
+                                    if isinstance(error, ProductError)
+                                    else "incompatible_session"
+                                ),
+                            ).model_dump(mode="json"),
+                        )
                     continue
                 items.append(
                     {
@@ -415,6 +469,10 @@ class ProductService:
         return value
 
     def snapshot(self, project: str) -> dict[str, Any]:
+        with self._cache_lock:
+            cached = self._stable_snapshots.get(project)
+        if cached is not None:
+            return deepcopy(cached)
         journal = self.journal()
         try:
             registered = journal.project(project)
@@ -468,15 +526,30 @@ class ProductService:
             value["lab_order"] = None
         value["capabilities"]["lab_order"] = value["lab_order"] is not None
         value["connection"] = "connected"
+        self._remember_project_view(project, value["project"])
+        if value["project"]["status"] in {
+            "awaiting_scientist",
+            "available",
+            "complete",
+            "blocked",
+        }:
+            with self._cache_lock:
+                self._stable_snapshots[project] = deepcopy(value)
         return value
 
     def candidates(
-        self, project: str, offset: int, limit: int, candidate: str | None = None
+        self,
+        project: str,
+        offset: int,
+        limit: int,
+        candidate: str | None = None,
+        *,
+        compact: bool = False,
     ) -> dict[str, Any]:
         with self.gateway.session(project) as session:
-            return candidate_page(session, self.catalog, offset, limit, candidate).model_dump(
-                mode="json"
-            )
+            return candidate_page(
+                session, self.catalog, offset, limit, candidate, compact=compact
+            ).model_dump(mode="json")
 
     def events(self, project: str, after: int, limit: int) -> dict[str, Any]:
         journal = self.journal()
@@ -529,6 +602,7 @@ class ProductService:
         return {"id": key, "sha256": ref.sha256, "size_bytes": ref.size_bytes, "format": suffix[1:]}
 
     def submit(self, project: str, request: ActionRequest) -> dict[str, Any]:
+        self._invalidate_projection_cache(project)
         journal = self.journal()
         try:
             previous = journal.get(request.request_id)
@@ -644,6 +718,7 @@ class ProductService:
         row = self.request(request_id)
         if row["state"] not in {"interrupted", "failed"}:
             return row
+        self._invalidate_projection_cache(row["project"])
         journal = self.journal()
         try:
             claimed = journal.retry(request_id)

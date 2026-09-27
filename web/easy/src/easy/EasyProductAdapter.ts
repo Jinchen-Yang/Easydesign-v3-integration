@@ -66,6 +66,25 @@ export class EasyProductAdapter implements EasyProductPort {
     private transport: typeof fetch = (input, init) => fetch(input, init),
     private interval = 2000,
   ) {}
+  private nextRefreshDelay() {
+    if (
+      this.state.pending ||
+      (this.state.pendingRequest &&
+        ['accepted', 'running'].includes(this.state.pendingRequest.state)) ||
+      ['running', 'incomplete'].includes(this.state.snapshot?.project.status || '')
+    )
+      return this.interval;
+    if (this.state.snapshot?.project.status === 'awaiting_scientist') return 10000;
+    // Finished projects are immutable until an explicit user action. A slow
+    // heartbeat keeps multi-tab changes visible without a permanent 2 s poll.
+    if (
+      ['available', 'complete', 'blocked', 'stopped'].includes(
+        this.state.snapshot?.project.status || '',
+      )
+    )
+      return 60000;
+    return 30000;
+  }
   private emit(update: Partial<LiveState>) {
     this.state = { ...this.state, ...update };
     for (const listener of this.listeners) listener({ type: 'snapshot', snapshot: this.state });
@@ -132,7 +151,8 @@ export class EasyProductAdapter implements EasyProductPort {
     this.refreshing = this.observe().finally(() => {
       this.refreshing = undefined;
       clearTimeout(this.timer);
-      if (!this.stopped) this.timer = setTimeout(() => void this.refresh(), this.interval);
+      if (!this.stopped)
+        this.timer = setTimeout(() => void this.refresh(), this.nextRefreshDelay());
     });
     return this.refreshing;
   }
@@ -163,7 +183,8 @@ export class EasyProductAdapter implements EasyProductPort {
         const changed =
           this.state.snapshot?.revision !== snapshot.revision ||
           this.state.snapshot?.event_cursor !== snapshot.event_cursor;
-        this.emit({ snapshot, connection: 'connected', error: null });
+        if (changed || this.state.snapshot?.project.status !== snapshot.project.status)
+          this.emit({ snapshot, connection: 'connected', error: null });
         if (changed) await this.candidatePage(this.state.candidates.offset);
       }
     } catch (error) {
@@ -235,7 +256,7 @@ export class EasyProductAdapter implements EasyProductPort {
       return;
     }
     const candidates = await this.api<Page<Candidate>>(
-      `/projects/${id}/candidates?offset=${offset}&limit=20`,
+      `/projects/${id}/candidates?offset=${offset}&limit=20&view=summary`,
     );
     if (generation !== this.generation) return;
     const prior = this.state.selectedCandidate?.id;

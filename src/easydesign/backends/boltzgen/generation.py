@@ -80,7 +80,7 @@ def read_generation_heartbeat(
     """Parse only BoltzGen's bounded log tail; absence remains an initializing state."""
 
     if not path.is_file():
-        return "boltzgen-initialize", "Initializing BoltzGen", None, None, None, 5
+        return "boltzgen-initialize", "Initializing BoltzGen", None, None, None, None
     with path.open("rb") as handle:
         handle.seek(0, os.SEEK_END)
         size = handle.tell()
@@ -112,7 +112,7 @@ def read_generation_heartbeat(
             int(match.group("bracket_step") or match.group("plain_step")),
             int(match.group("bracket_steps") or match.group("plain_steps")),
         )
-    return "boltzgen-initialize", "Initializing BoltzGen", None, None, None, 5
+    return "boltzgen-initialize", "Initializing BoltzGen", None, None, None, None
 
 
 BoltzGenHeartbeatCallback = Callable[[BoltzGenGenerationHeartbeat], None]
@@ -265,9 +265,15 @@ class BoltzGenGenerationAdapter:
             if heartbeat_thread is not None:
                 heartbeat_thread.join(timeout=max(1.0, self.heartbeat_interval_seconds))
         if heartbeat_errors:
-            raise BackendContractError(
-                f"BoltzGen heartbeat 写入失败: {heartbeat_errors[0]}"
-            ) from heartbeat_errors[0]
+            # Progress reporting is an operational observer, not part of the
+            # scientific result.  Preserve the warning for diagnosis, but do
+            # not discard an otherwise valid BoltzGen execution merely because
+            # its UI heartbeat could not be persisted.
+            with request.stderr_path.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    "\nEasyDesign progress heartbeat warning: "
+                    f"{heartbeat_errors[0]}\n"
+                )
         ended = datetime.now(UTC)
         return BoltzGenGenerationResult(
             command=command,

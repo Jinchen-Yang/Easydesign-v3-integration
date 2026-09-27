@@ -39,7 +39,7 @@ def test_generation_heartbeat_reports_initialize_without_log(tmp_path: Path) -> 
         None,
         None,
         None,
-        5,
+        None,
     )
 
 
@@ -138,3 +138,45 @@ def test_generation_emits_process_heartbeats_without_counting_candidates(
     assert result.return_code == 0
     assert observed
     assert all(value > 0 for value in observed)
+
+
+def test_generation_keeps_valid_execution_when_progress_observer_fails(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    adapter = BoltzGenGenerationAdapter(
+        check_adapter=BoltzGenCheckAdapter(
+            executable=Path("/runtime/boltzgen"),
+            repository_root=Path("/runtime/repository"),
+            cache_root=Path("/runtime/cache"),
+        ),
+        heartbeat_interval_seconds=0.005,
+    )
+    design = tmp_path / "design.yaml"
+    design.write_text("entities: []\n", encoding="utf-8")
+    request = BoltzGenGenerationRequest(
+        design_specification=design,
+        output_directory=tmp_path / "output",
+        requested_candidates=2,
+        physical_device=0,
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+    )
+
+    monkeypatch.setattr(BoltzGenGenerationAdapter, "probe", lambda self: {})
+
+    def fake_run(*_: object, **__: object) -> subprocess.CompletedProcess[str]:
+        time.sleep(0.025)
+        return subprocess.CompletedProcess(("boltzgen",), 0)
+
+    def broken_observer(_: object) -> None:
+        raise RuntimeError("progress store unavailable")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = adapter.execute(request, heartbeat_callback=broken_observer)
+
+    assert result.return_code == 0
+    assert "progress heartbeat warning" in request.stderr_path.read_text(
+        encoding="utf-8"
+    )

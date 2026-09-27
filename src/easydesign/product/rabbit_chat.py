@@ -88,9 +88,7 @@ def _valid_translation(source: str, translated: Any) -> bool:
         and bool(translated.strip())
         and len(translated) <= max(80, len(source) * 4)
         and (not _requires_chinese(source) or bool(re.search(r"[\u3400-\u9fff]", translated)))
-        and _protected_tokens(source).issubset(
-            _protected_tokens(translated) | set(translated.split())
-        )
+        and all(token in translated for token in _protected_tokens(source))
     )
 
 

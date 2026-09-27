@@ -649,7 +649,7 @@ def test_scientific_localization_is_bounded_validated_and_cached(bridge, tmp_pat
                     "items": [
                         {
                             "id": "site.why",
-                            "text": "ECL2 与 TM6 邻近，并保留残基 273 和 7.39 的编号。",
+                            "text": "ECL2与TM6邻近，并保留残基273和7.39的编号。",
                         }
                     ]
                 },

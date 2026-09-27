@@ -766,7 +766,13 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
             set(map(str, hypothesis.get("evidence_card_ids", [])))
             & verified_orthosteric_card_ids
         )
-        kernel_outer_pore_mechanism = "transmembrane-pore" in interpretation
+        kernel_outer_pore_mechanism = (
+            "transmembrane-pore" in interpretation
+            or (
+                "transmembrane" in interpretation
+                and "outer-pore" in interpretation
+            )
+        )
         if not any(
             (
                 direct_orthosteric,

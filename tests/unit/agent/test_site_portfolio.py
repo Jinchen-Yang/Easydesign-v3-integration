@@ -397,6 +397,66 @@ def test_explicit_pdb_gpcr_pocket_occupancy_wording_still_requires_rank_a(site_b
     assert hydrated.portfolio[0].rank == "A"
 
 
+def test_structure_upload_kernel_outer_pore_name_still_requires_rank_a(site_bridge):
+    """Protect the canonical kernel label observed for an uploaded NK2R structure."""
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {"status": "resolved", "accession": "P21452"},
+            "membrane": {
+                "status": "resolved",
+                "reliable": True,
+                "topology_reliable": True,
+                "helix_count": 7,
+            },
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = (
+        "Outer-vestibule blockade (ECL2/ECL3 mouth)"
+    )
+    shallow["research_hypothesis"]["rationale"] = (
+        "Extracellular vestibule at the signed 7TM mouth."
+    )
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "Transmembrane outer-pore blockade"
+    deep["research_hypothesis"]["rationale"] = (
+        "Extracellular half of the 7TM pore, overlapping residues implicated in agonist "
+        "binding/selectivity. Deep-pore penetration by a whole VHH is uncertain."
+    )
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
+
+
 def test_verified_orthosteric_evidence_cannot_be_demoted_for_unmodeled_vhh_reach(site_bridge):
     """A verified orthosteric evidence card plus outer-pore geometry survives wording drift."""
     case = setup_portfolio(site_bridge)

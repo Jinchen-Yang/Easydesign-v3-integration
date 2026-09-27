@@ -547,6 +547,60 @@ def test_supported_judge_alternative_routes_back_to_target_owner(bridge: Any) ->
     assert fresh_review.arguments["subagent_type"] == "evidence-judge"
 
 
+def test_insufficient_target_review_routes_discouraged_proposal_to_scientist(bridge: Any) -> None:
+    from easydesign.agent.contracts import (
+        ApplyDecision,
+        EvidenceBinding,
+        JudgeVerdict,
+        TargetInterpretation,
+    )
+    from easydesign.agent.target_assessment import register_target
+    from easydesign.agent.tools import JUDGE_EVIDENCE
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    b.prepare_target()
+    terminal(b)
+    register_target(
+        b,
+        TargetInterpretation(
+            interpretation=["SYNTHETIC owner selected the runtime-eligible target chain."],
+            unresolved_identity=["SYNTHETIC post-approval identity details remain pending."],
+            limitations=["SYNTHETIC fixture has only pre-approval facts."],
+            recommended_action="Select chain A.",
+            recommended_option="chain-a",
+        ),
+        None,
+    )
+    snapshot = b.judge_evidence()
+    token = JUDGE_EVIDENCE.set(
+        EvidenceBinding.model_validate({k: snapshot[k] for k in EvidenceBinding.model_fields})
+    )
+    try:
+        assessment = b.register_judge(
+            JudgeVerdict(
+                verdict="insufficient",
+                reasons=["SYNTHETIC canonical facts are pending until Gate 1 approval."],
+                limitations=["SYNTHETIC absence is not a deterministic chain conflict."],
+                recommendation={
+                    "option_id": "chain-a",
+                    "status": "DISCOURAGED",
+                    "warnings": ["SYNTHETIC review concern must remain visible."],
+                    "alternative": "SYNTHETIC revise the target evidence before approval.",
+                },
+            )
+        )
+    finally:
+        JUDGE_EVIDENCE.reset(token)
+
+    action = next_action(b)
+    assert action.stage == "scientist-gate"
+    card = b.decision_card(
+        ApplyDecision(assessment_id=assessment.assessment_id, option_id="chain-a")
+    )
+    assert card.judge_status == "DISCOURAGED"
+    assert "SYNTHETIC review concern" in card.warnings[0]
+
+
 def test_target_judge_revision_is_bounded_across_restartable_state(bridge: Any) -> None:
     from easydesign.agent.contracts import EvidenceBinding, JudgeVerdict, TargetInterpretation
     from easydesign.agent.target_assessment import register_target

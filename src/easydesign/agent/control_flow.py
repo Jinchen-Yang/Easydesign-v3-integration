@@ -303,7 +303,6 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
         or assessment.verdict == "ready-to-ask"
         or (
             gate == "target-structure"
-            and assessment.verdict == "reject"
             and assessment.recommendation is not None
             and assessment.recommendation.status == "DISCOURAGED"
         )

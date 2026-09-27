@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ProductError(Exception):
@@ -32,12 +32,65 @@ class ActionRequest(Value):
     acknowledgement: str | None = Field(default=None, max_length=1500)
 
 
+class DescriptionTargetInput(Value):
+    kind: Literal["description"]
+    description: str = Field(min_length=12, max_length=4000)
+
+
+class ProteinNameTargetInput(Value):
+    kind: Literal["protein-name"]
+    name: str = Field(min_length=1, max_length=160)
+    organism: str = Field(min_length=1, max_length=100)
+
+
+class UniProtTargetInput(Value):
+    kind: Literal["uniprot"]
+    accession: str = Field(
+        pattern=r"(?i)^(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})$"
+    )
+
+
+class PDBTargetInput(Value):
+    kind: Literal["pdb-id"]
+    pdb_id: str = Field(pattern=r"(?i)^[1-9][A-Z0-9]{3}$")
+    chain: str | None = Field(default=None, min_length=1, max_length=16)
+
+
+class ArtifactTargetInput(Value):
+    kind: Literal["structure", "sequence"]
+    artifact_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+ProductTargetInput = Annotated[
+    DescriptionTargetInput
+    | ProteinNameTargetInput
+    | UniProtTargetInput
+    | PDBTargetInput
+    | ArtifactTargetInput,
+    Field(discriminator="kind"),
+]
+
+
 class CreateProject(Value):
     request_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{16,96}$")
     title: str = Field(min_length=1, max_length=120)
-    goal: str = Field(min_length=1, max_length=1500)
+    goal: str = Field(min_length=1, max_length=4000)
+    target_input: ProductTargetInput | None = None
+    # Compatibility for product clients predating the typed target-input contract.
+    # New clients bind structure/sequence artifacts through target_input.artifact_id.
     input_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     surface: Literal["professional", "easy"] | None = None
+
+    @model_validator(mode="after")
+    def one_artifact_binding(self) -> CreateProject:
+        typed_artifact = (
+            self.target_input.artifact_id
+            if isinstance(self.target_input, ArtifactTargetInput)
+            else None
+        )
+        if self.input_id is not None and typed_artifact is not None:
+            raise ValueError("Use target_input.artifact_id instead of the legacy input_id")
+        return self
 
 
 class RenameProject(Value):

@@ -32,7 +32,8 @@ class RequestJournal:
             "CREATE TABLE IF NOT EXISTS product_projects ("
             "id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, title TEXT NOT NULL, "
             "goal TEXT NOT NULL, thread TEXT NOT NULL, input_id TEXT, state TEXT NOT NULL, "
-            "detail TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL, surface TEXT)"
+            "detail TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL, surface TEXT, "
+            "target_input TEXT)"
         )
         columns = {
             str(row["name"])
@@ -42,6 +43,8 @@ class RequestJournal:
             self.db.execute("ALTER TABLE product_projects ADD COLUMN surface TEXT")
         if "projection" not in columns:
             self.db.execute("ALTER TABLE product_projects ADD COLUMN projection TEXT")
+        if "target_input" not in columns:
+            self.db.execute("ALTER TABLE product_projects ADD COLUMN target_input TEXT")
         self.db.commit()
 
     def close(self) -> None:
@@ -124,6 +127,9 @@ class RequestJournal:
         value["projection"] = (
             json.loads(value["projection"]) if value.get("projection") else None
         )
+        value["target_input"] = (
+            json.loads(value["target_input"]) if value.get("target_input") else None
+        )
         return value
 
     def register_project(
@@ -136,6 +142,7 @@ class RequestJournal:
         thread: str,
         input_id: str | None,
         surface: str | None,
+        target_input: dict[str, Any] | None,
     ) -> tuple[dict[str, Any], bool]:
         """Persist product identity before a scientific target/config exists."""
         with self.db:
@@ -154,6 +161,7 @@ class RequestJournal:
                 "thread": thread,
                 "input_id": input_id,
                 "surface": surface,
+                "target_input": target_input,
             }
             if previous is not None:
                 if any(previous[key] != value for key, value in expected.items()):
@@ -167,7 +175,7 @@ class RequestJournal:
             self.db.execute(
                 "INSERT INTO product_projects("
                 "id,request_id,title,goal,thread,input_id,state,detail,created,updated,surface,"
-                "projection) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL)",
+                "projection,target_input) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL,?)",
                 (
                     project,
                     request_id,
@@ -180,6 +188,7 @@ class RequestJournal:
                     now,
                     now,
                     surface,
+                    json.dumps(target_input) if target_input is not None else None,
                 ),
             )
         saved = self.project(project)

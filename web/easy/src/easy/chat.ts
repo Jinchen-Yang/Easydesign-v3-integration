@@ -78,10 +78,11 @@ export async function streamChat(
   signal: AbortSignal,
   delta: (text: string) => void,
   suggestions: (questions: string[]) => void = () => {},
+  transport: typeof fetch = fetch,
 ) {
-  const response = await fetch(CHAT_ENDPOINT, {
+  const response = await transport(CHAT_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Request-ID': crypto.randomUUID() },
     body: JSON.stringify(request),
     signal,
   });

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowUp, RotateCcw, Settings2, Square, X } from 'lucide-react';
 import { CHAT_ENDPOINT, streamChat, type ChatContext, type ChatMessage } from './chat';
 import { translate, type Locale } from './i18n';
 import './rabbit-chat.css';
+import {AccountTransportContext} from '../accounts/AccountTransportContext';
 
 type Message = ChatMessage & { complete: boolean };
 export function RabbitChat({
@@ -22,6 +23,9 @@ export function RabbitChat({
   onSettings: () => void;
   onActivity: (activity: 'idle' | 'waiting' | 'replying') => void;
 }) {
+  const account = useContext(AccountTransportContext);
+  const transport = account?.transport || fetch;
+  const readOnly = account ? !account.scope.can_edit : false;
   const t = (key: string) => translate(locale, key);
   const [messages, setMessages] = useState<Message[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -40,12 +44,12 @@ export function RabbitChat({
     }
     field.current?.focus();
     const abort = new AbortController();
-    fetch(CHAT_ENDPOINT, { signal: abort.signal })
+    transport(CHAT_ENDPOINT, { signal: abort.signal })
       .then((r) => r.json())
       .then((v) => setConfigured(v.configured === true))
       .catch(() => {});
     return () => abort.abort();
-  }, [open]);
+  }, [open, transport]);
   useEffect(
     () => () => {
       controller.current?.abort();
@@ -58,7 +62,7 @@ export function RabbitChat({
 
   async function send(text = input) {
     const content = text.trim();
-    if (!content || content.length > 4000 || controller.current) return;
+    if (!content || content.length > 4000 || controller.current || readOnly) return;
     const id = ++sequence.current;
     const history = messages
       .filter((m) => m.complete)
@@ -95,6 +99,7 @@ export function RabbitChat({
         (questions) => {
           nextQuestions = questions;
         },
+        transport,
       );
       if (sequence.current !== id || abort.signal.aborted) return;
       setMessages((previous) =>
@@ -191,7 +196,7 @@ export function RabbitChat({
             <p>{t('Hi! What would you like to know?')}</p>
             <div className="rabbit-chat-suggestions">
               {['What is happening in this step?', 'What is a VHH?'].map((s) => (
-                <button key={s} onClick={() => void send(t(s))}>
+                <button key={s} disabled={readOnly} onClick={() => void send(t(s))}>
                   {t(s)}
                 </button>
               ))}
@@ -214,7 +219,7 @@ export function RabbitChat({
         {!busy && suggestions.length > 0 && (
           <div className="rabbit-chat-suggestions" role="group" aria-label={t('Keep chatting')}>
             {suggestions.map((question) => (
-              <button key={question} onClick={() => void send(question)}>
+              <button key={question} disabled={readOnly} onClick={() => void send(question)}>
                 {question}
               </button>
             ))}
@@ -223,6 +228,7 @@ export function RabbitChat({
         {configured === false && !error && (
           <p className="rabbit-chat-error">{t(errors.not_configured)}</p>
         )}
+        {readOnly && <p className="rabbit-chat-error">当前是只读访问，请切换到自己的工作区后使用豆豆。</p>}
         {error && (
           <p className="rabbit-chat-error" role="status">
             {t(errors[error])}
@@ -241,6 +247,7 @@ export function RabbitChat({
           value={input}
           maxLength={4000}
           rows={2}
+          disabled={readOnly}
           placeholder={t('Ask bunny…')}
           aria-label={t('Message bunny')}
           onChange={(e) => setInput(e.target.value)}
@@ -267,7 +274,7 @@ export function RabbitChat({
             className="rabbit-chat-send"
             title={t('Send message')}
             aria-label={t('Send message')}
-            disabled={!input.trim()}
+            disabled={!input.trim() || readOnly}
           >
             <ArrowUp size={20} />
           </button>

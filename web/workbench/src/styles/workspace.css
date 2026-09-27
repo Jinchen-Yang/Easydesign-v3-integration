@@ -846,3 +846,21 @@
     margin-right: 21px;
   }
 }
+@media (max-width: 520px) {
+  .decision-bar {
+    flex-wrap: wrap;
+  }
+  .decision-copy {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+  .decision-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .decision-actions > button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}

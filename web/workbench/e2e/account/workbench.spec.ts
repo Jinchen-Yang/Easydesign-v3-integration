@@ -101,6 +101,14 @@ test.describe('professional mode under accounts', () => {
       await expect(page.getByRole('button', {name: 'Promote pilot', exact: true})).toHaveCount(0);
       await expect(page.getByText(incompleteTurn, {exact: true})).toHaveCount(0);
       await expect(page.getByRole('region', {name: 'Gate 4 decision', exact: true})).toBeVisible();
+      for (const width of [320, 390]) {
+        await page.setViewportSize({width, height: 844});
+        for (const control of ['Revise', label]) {
+          const bounds = await page.getByRole('button', {name: control, exact: true}).boundingBox();
+          expect(bounds!.x).toBeGreaterThanOrEqual(0);
+          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+        }
+      }
     });
   }
   test('unresolved asynchronous work retains its incomplete message', async ({page}) => {

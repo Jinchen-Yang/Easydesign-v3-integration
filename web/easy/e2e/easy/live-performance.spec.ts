@@ -91,32 +91,45 @@ test('live project open and Site switching stay within the interactive budget', 
     route.fulfill({ json: snapshot }),
   );
   await page.route('**/api/v1/projects/performance-project/candidates?**', async (route) => {
-    expect(route.request().url()).toContain('view=summary');
+    const url = new URL(route.request().url());
+    expect(url.searchParams.get('view')).toBe('summary');
+    expect(url.searchParams.get('limit')).toBe('100');
+    const phase = url.searchParams.get('phase') || 'candidates';
+    const rows =
+      phase === 'pilot'
+        ? [
+            { id: 'pilot-pass', status: 'pass', scaffold: '7xl0' },
+            { id: 'pilot-fail', status: 'fail', scaffold: '8z8v' },
+          ]
+        : phase === 'scale'
+          ? [
+              { id: 'scale-pass-1', status: 'pass', scaffold: '7eow' },
+              { id: 'scale-pass-2', status: 'pass', scaffold: '8coh' },
+            ]
+          : [{ id: 'candidate-1', status: 'pass', scaffold: '7eow' }];
     await route.fulfill({
       json: {
-        items: [
-          {
-            id: 'candidate-1',
-            arm: 'arm-1',
-            backend_id: null,
-            scaffold: null,
-            native_status: 'pass',
-            evaluable: true,
-            competition_eligible: true,
-            independent_prediction: 'complete',
-            sequence: 'AAA',
-            sequence_sha256: 'b'.repeat(64),
-            metrics: [],
-            artifacts: [{ ...artifact, candidate_id: 'candidate-1' }],
-            panel_role: 'primary',
-            failure_reason: null,
-            lineage: {},
-            structure_roles: {},
-          },
-        ],
-        total: 1,
+        items: rows.map((row, index) => ({
+          id: row.id,
+          arm: `arm-1-scaffold-${row.scaffold}`,
+          backend_id: null,
+          scaffold: row.scaffold,
+          native_status: row.status,
+          evaluable: true,
+          competition_eligible: row.status === 'pass',
+          independent_prediction: 'complete',
+          sequence: 'AAA',
+          sequence_sha256: 'b'.repeat(64),
+          metrics: [],
+          artifacts: [{ ...artifact, candidate_id: row.id }],
+          panel_role: phase === 'candidates' && index === 0 ? 'primary' : null,
+          failure_reason: null,
+          lineage: {},
+          structure_roles: { A: 'target', B: 'binder' },
+        })),
+        total: rows.length,
         offset: 0,
-        limit: 20,
+        limit: 100,
       },
     });
   });
@@ -128,8 +141,12 @@ test('live project open and Site switching stay within the interactive budget', 
   await page.goto('/easy/');
   const started = Date.now();
   await page.getByRole('button', { name: '打开', exact: true }).click();
-  await expect(page.locator('.molecule[data-status="ready"]')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Candidates', exact: true })).toBeVisible();
   expect(Date.now() - started).toBeLessThan(1500);
+  await expect(page.locator('.molecule[data-status="ready"]')).toBeVisible();
+  // Software WebGL in CI is slower than a user's GPU-backed browser, but a cold
+  // viewer must still become interactive within a tight bounded interval.
+  expect(Date.now() - started).toBeLessThan(3000);
   expect(artifactRequests).toBe(1);
 
   const switched = Date.now();
@@ -138,6 +155,26 @@ test('live project open and Site switching stay within the interactive budget', 
   expect(Date.now() - switched).toBeLessThan(500);
   expect(artifactRequests).toBe(1);
   await expect(page.getByText('Loading verified coordinates…')).toHaveCount(0);
+
+  await expect(page.locator('.pdb-label')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Top 1/ })).toContainText('主候选');
+  await expect(page.getByText('primary', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Pilot', exact: true }).click();
+  await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Pilot');
+  await expect(page.getByRole('region', { name: '真实执行进度' })).toContainText('2 / 2 条');
+  await expect(page.getByText('Scaffold 7XL0')).toBeVisible();
+  await expect(page.getByText('查看未通过或未完成的候选（1）')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Scale', exact: true }).click();
+  await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Scale');
+  await expect(page.getByRole('region', { name: '真实执行进度' })).toContainText('2 / 2 条');
+  await expect(page.getByText('Scaffold 8COH')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Candidates', exact: true }).click();
+  await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Candidates');
+  await expect(page.getByRole('region', { name: '真实执行进度' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Top 1/ })).toContainText('主候选');
 
   await page.getByRole('button', { name: 'Target', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Target history' })).toBeVisible();

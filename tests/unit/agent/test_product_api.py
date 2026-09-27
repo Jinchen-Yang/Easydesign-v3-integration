@@ -1144,6 +1144,7 @@ def test_native_candidate_product_projection_preserves_fail_and_missing(tmp_path
     compact = candidate_view(session, rows[0], pool, {}, catalog, compact=True)
     assert compact.metrics == []
     assert compact.id == values[0].id
+    assert compact.scaffold == rows[0].lineage.strategy_id.rsplit("-scaffold-", 1)[1]
     assert compact.sequence_sha256 == values[0].sequence_sha256
     assert compact.artifacts == values[0].artifacts
 
@@ -1152,8 +1153,8 @@ def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):
     service = service_for(bridge, tmp_path)
     observed = []
 
-    def candidates(project, offset, limit, candidate=None, *, compact=False):
-        observed.append((project, offset, limit, candidate, compact))
+    def candidates(project, offset, limit, candidate=None, *, compact=False, phase=None):
+        observed.append((project, offset, limit, candidate, compact, phase))
         return {"items": [], "total": 0, "offset": offset, "limit": limit}
 
     monkeypatch.setattr(service, "candidates", candidates)
@@ -1162,16 +1163,24 @@ def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):
             "/api/v1/projects/example/candidates?offset=0&limit=20&view=summary"
         )
         assert response.status_code == 200
-        assert observed == [("example", 0, 20, None, True)]
+        assert observed == [("example", 0, 20, None, True, None)]
         assert (
             client.get("/api/v1/projects/example/candidates?view=unknown").status_code == 400
         )
+        assert (
+            client.get("/api/v1/projects/example/candidates?phase=design").status_code == 400
+        )
+        response = client.get(
+            "/api/v1/projects/example/candidates?offset=0&limit=20&view=summary&phase=pilot"
+        )
+        assert response.status_code == 200
+        assert observed[-1] == ("example", 0, 20, None, True, "pilot")
 
 
 def test_compact_candidate_cache_is_project_scoped_and_invalidated(bridge, tmp_path, monkeypatch):
     service = service_for(bridge, tmp_path)
     cached = {"items": [], "total": 0, "offset": 0, "limit": 20}
-    service._compact_candidate_pages[("project", 0, 20, None)] = cached
+    service._compact_candidate_pages[("project", 0, 20, None, None)] = cached
 
     def must_not_open(_project):
         raise AssertionError("A stable compact candidate page must not reopen the project")

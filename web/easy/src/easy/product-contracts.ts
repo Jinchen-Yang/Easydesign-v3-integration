@@ -220,6 +220,7 @@ export interface LiveState {
   projects: Page<Project>;
   snapshot: ProductSnapshot | null;
   candidates: Page<Candidate>;
+  candidatePhase: 'pilot' | 'scale' | 'candidates' | null;
   selectedCandidate: Candidate | null;
   selectedProject: string | null;
   pending: boolean;

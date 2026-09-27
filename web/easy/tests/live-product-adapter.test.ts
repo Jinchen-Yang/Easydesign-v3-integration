@@ -198,8 +198,37 @@ describe('Easy live adapter preserves Product API authority', () => {
     adapters.push(adapter);
     await adapter.load();
     await adapter.selectProject(project.id);
+    await vi.waitFor(() =>
+      expect(paths).toContain(
+        '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=candidates',
+      ),
+    );
+  });
+
+  it('loads a phase-specific candidate population for historical Pilot and Scale views', async () => {
+    const current = snapshot();
+    current.project = { ...project, phase: 'handoff', status: 'complete' };
+    current.candidates.total = 30;
+    const paths: string[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      paths.push(path);
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      return Response.json({ total: 0, offset: 0, limit: 100, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await adapter.candidatePage(0, 'pilot');
+    await adapter.candidatePage(0, 'scale');
     expect(paths).toContain(
-      '/api/v1/projects/native-project/candidates?offset=0&limit=20&view=summary',
+      '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=pilot',
+    );
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=scale',
     );
   });
 

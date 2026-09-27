@@ -28,7 +28,7 @@ export interface EasyProductPort {
   clearProject(): void;
   projectPage(offset: number): Promise<void>;
   renameProject(id: string, title: string): Promise<void>;
-  candidatePage(offset: number): Promise<void>;
+  candidatePage(offset: number, phase?: 'pilot' | 'scale' | 'candidates'): Promise<void>;
   selectCandidate(id: string): Promise<void>;
   createProject(title: string, goal: string, file?: File | null): Promise<void>;
   decide(input: GateInput): Promise<void>;
@@ -48,6 +48,7 @@ export class EasyProductAdapter implements EasyProductPort {
     projects: emptyPage(),
     snapshot: null,
     candidates: emptyPage(),
+    candidatePhase: null,
     selectedCandidate: null,
     selectedProject: null,
     pending: false,
@@ -229,13 +230,26 @@ export class EasyProductAdapter implements EasyProductPort {
       snapshot: null,
       selectedCandidate: null,
       candidates: emptyPage(),
+      candidatePhase: null,
       error: null,
     });
     const generation = this.generation;
     const snapshot = await this.api<ProductSnapshot>(`/projects/${id}/workbench`);
     if (generation !== this.generation) return;
     this.emit({ snapshot, connection: 'connected', error: null });
-    await this.candidatePage(0);
+    const phase =
+      snapshot.project.phase === 'pilot'
+        ? 'pilot'
+        : snapshot.project.phase === 'scale'
+          ? 'scale'
+          : 'candidates';
+    // The scientific shell is useful before the candidate page and 3D viewer
+    // finish loading. Do not batch the user's Open click behind that heavier read.
+    setTimeout(() => {
+      void this.candidatePage(0, phase).catch((error) =>
+        this.emit({ error: (error as Error).message, connection: 'reconnecting' }),
+      );
+    }, 0);
   }
   clearProject() {
     this.generation++;
@@ -244,26 +258,31 @@ export class EasyProductAdapter implements EasyProductPort {
       snapshot: null,
       selectedCandidate: null,
       candidates: emptyPage(),
+      candidatePhase: null,
       pendingRequest: null,
       error: null,
     });
   }
-  async candidatePage(offset: number) {
+  async candidatePage(offset: number, phase = this.state.candidatePhase || 'candidates') {
     const id = this.state.selectedProject,
       generation = this.generation;
-    if (!id || !this.state.snapshot?.candidates.total) {
-      this.emit({ candidates: emptyPage(), selectedCandidate: null });
+    if (!id) {
+      this.emit({ candidates: emptyPage(), candidatePhase: phase, selectedCandidate: null });
       return;
     }
     const candidates = await this.api<Page<Candidate>>(
-      `/projects/${id}/candidates?offset=${offset}&limit=20&view=summary`,
+      `/projects/${id}/candidates?offset=${offset}&limit=100&view=summary&phase=${phase}`,
     );
     if (generation !== this.generation) return;
-    const prior = this.state.selectedCandidate?.id;
+    const prior = this.state.candidatePhase === phase ? this.state.selectedCandidate?.id : null;
     this.emit({
       candidates,
+      candidatePhase: phase,
       selectedCandidate:
-        candidates.items.find((c) => c.id === prior) ?? candidates.items[0] ?? null,
+        candidates.items.find((c) => c.id === prior) ??
+        candidates.items.find((c) => c.native_status === 'pass') ??
+        candidates.items[0] ??
+        null,
     });
   }
   async selectCandidate(id: string) {
@@ -286,6 +305,7 @@ export class EasyProductAdapter implements EasyProductPort {
           selectedProject: request.project,
           snapshot: null,
           candidates: emptyPage(),
+          candidatePhase: null,
           selectedCandidate: null,
         });
       }

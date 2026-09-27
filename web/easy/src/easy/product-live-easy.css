@@ -70,6 +70,10 @@
   padding: 18px;
 }
 
+.easy-live-science .viewer-top {
+  justify-content: flex-end;
+}
+
 .easy-live-gate,
 .easy-live-activity,
 .easy-live-order {
@@ -415,6 +419,75 @@
   margin-top: 18px;
 }
 
+.easy-live-candidate-panel {
+  margin-top: 16px;
+  padding: 22px;
+  border: 1px solid #e2dfeb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
+}
+
+.easy-live-candidate-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.easy-live-candidate-heading span {
+  color: #7361e4;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.easy-live-candidate-heading h3 {
+  margin: 4px 0 0;
+}
+
+.easy-live-candidate-heading b {
+  color: #39866b;
+  font-size: 12px;
+}
+
+.easy-live-candidate-panel .easy-live-candidates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.easy-live-candidate-panel .easy-live-candidates button {
+  min-height: 72px;
+  margin-top: 0;
+  padding: 14px 16px;
+}
+
+.easy-live-candidate-panel .easy-live-candidates strong {
+  font-size: 15px;
+}
+
+.easy-live-filtered-candidates {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #efedf4;
+}
+
+.easy-live-filtered-candidates summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #777381;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.easy-live-empty-candidates {
+  margin: 0;
+  color: #817c89;
+  font-size: 12px;
+}
+
 .easy-live-candidates button {
   display: flex;
   width: 100%;
@@ -566,6 +639,10 @@
   }
 
   .easy-live-order-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .easy-live-candidate-panel .easy-live-candidates {
     grid-template-columns: 1fr;
   }
 

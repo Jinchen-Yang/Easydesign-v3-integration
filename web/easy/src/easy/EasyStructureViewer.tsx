@@ -170,9 +170,6 @@ export function EasyStructureViewer({
       data-candidate={artifact?.candidate_id || ''}
     >
       <div className="viewer-top">
-        <span className="pdb-label" title={artifact?.label}>
-          {artifact?.label || 'Target structure'}
-        </span>
         <div className="viewer-view-toggle">
           <button
             aria-pressed={representation === 'cartoon'}

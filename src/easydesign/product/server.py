@@ -347,12 +347,20 @@ class Handler(BaseHTTPRequestHandler):
                             raise ProductError(
                                 "invalid_request", "Candidate view must be full or summary", 400
                             )
+                        phase = query.get("phase", [None])[0]
+                        if phase not in {None, "pilot", "scale", "candidates"}:
+                            raise ProductError(
+                                "invalid_request",
+                                "Candidate phase must be pilot, scale or candidates",
+                                400,
+                            )
                         result = service.candidates(
                             project,
                             offset,
                             limit,
                             tail[3] if len(tail) == 4 else None,
                             compact=view == "summary",
+                            phase=phase,
                         )
                     elif resource == "events" and len(tail) == 3:
                         result = service.events(project, int(query.get("after", ["0"])[0]), limit)

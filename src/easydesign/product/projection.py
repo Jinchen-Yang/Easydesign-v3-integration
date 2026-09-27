@@ -424,14 +424,16 @@ def phase_for(stage: str, gate_type: str | None) -> str:
     return "target"
 
 
-def population(session: DomainSession) -> tuple[list[Any], Any, dict[str, Any]]:
+def population(
+    session: DomainSession, phase: str | None = None
+) -> tuple[list[Any], Any, dict[str, Any]]:
     b = session.bridge
     if not isinstance(b, Phase34Runtime):
         return [], None, {}
     final = b.current_final_dossier() if b.downstream_scope == "handoff" else None
     pool_event = b.project_latest("phase34-global-candidate-pool")
     authority = b.project_latest("phase34-scale-authority")
-    if pool_event and authority:
+    if phase != "pilot" and pool_event and authority:
         pool = b.load_contract(
             kind="phase34-global-candidate-pool", contract_type=GlobalCandidatePool
         )
@@ -439,7 +441,7 @@ def population(session: DomainSession) -> tuple[list[Any], Any, dict[str, Any]]:
             authority["ref"]
         ):
             panel = final.proposed_selection.model_dump(mode="json") if final else {}
-            return list(pool.candidates), pool, panel
+            return list(pool.candidates), pool, {} if phase == "scale" else panel
     dossier = b.current_pilot_dossier()
     event = b.project_latest("phase34-pilot-measurement")
     measurement = (
@@ -554,6 +556,11 @@ def candidate_view(
     return CandidateView(
         id=line.candidate_id,
         arm=line.strategy_id,
+        scaffold=(
+            line.strategy_id.rsplit("-scaffold-", 1)[1]
+            if "-scaffold-" in line.strategy_id
+            else None
+        ),
         backend_id=line.backend_candidate_id,
         native_status="not-available"
         if native is None
@@ -594,11 +601,14 @@ def candidate_page(
     candidate_id: str | None = None,
     *,
     compact: bool = False,
+    phase: str | None = None,
 ) -> Page:
     _, _, revision = session.current()
-    candidates, owner, panel = population(session)
+    candidates, owner, panel = population(session, phase=phase)
     # Presentation order preserves the actual selection. It does not run another ranking.
     panel_ids = [*panel.get("primary_candidate_ids", []), *panel.get("backup_candidate_ids", [])]
+    if not panel_ids and isinstance(owner, GlobalCandidatePool):
+        panel_ids = list(owner.global_ranking_candidate_ids)
     if panel_ids:
         order = {identifier: index for index, identifier in enumerate(panel_ids)}
         candidates.sort(

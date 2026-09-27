@@ -61,7 +61,7 @@ class ProductService:
         self._cache_lock = threading.Lock()
         self._stable_snapshots: dict[str, dict[str, Any]] = {}
         self._compact_candidate_pages: dict[
-            tuple[str, int, int, str | None], dict[str, Any]
+            tuple[str, int, int, str | None, str | None], dict[str, Any]
         ] = {}
 
     def _invalidate_projection_cache(self, project: str) -> None:
@@ -553,8 +553,9 @@ class ProductService:
         candidate: str | None = None,
         *,
         compact: bool = False,
+        phase: str | None = None,
     ) -> dict[str, Any]:
-        key = (project, offset, limit, candidate)
+        key = (project, offset, limit, candidate, phase)
         if compact:
             with self._cache_lock:
                 cached = self._compact_candidate_pages.get(key)
@@ -562,7 +563,13 @@ class ProductService:
                 return deepcopy(cached)
         with self.gateway.session(project) as session:
             value = candidate_page(
-                session, self.catalog, offset, limit, candidate, compact=compact
+                session,
+                self.catalog,
+                offset,
+                limit,
+                candidate,
+                compact=compact,
+                phase=phase,
             ).model_dump(mode="json")
         if compact:
             # Candidate pages are cached only after the same server instance has

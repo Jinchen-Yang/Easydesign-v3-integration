@@ -22,12 +22,15 @@ import {
 } from './live-presentation';
 import type { EasyProductPort } from './EasyProductAdapter';
 import type {
+  Candidate,
   GateInput,
   LabOrderDraftInput,
   LabOrderView,
   LiveState,
   ProductSnapshot,
 } from './product-contracts';
+
+type CandidatePhase = 'pilot' | 'scale' | 'candidates';
 
 const PHASE_INDEX: Record<string, number> = {
   target: 0,
@@ -86,20 +89,46 @@ const PIPELINE_STEPS = [
   ['native-filter', 'AFO / native filter'],
 ] as const;
 
-function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
-  const job =
-    snapshot.jobs.find((item) => item.phase === snapshot.project.phase && item.progress) ||
-    snapshot.jobs.find((item) => item.progress);
+function ExecutionProgress({
+  snapshot,
+  phase,
+  candidates,
+  candidatePhase,
+}: {
+  snapshot: ProductSnapshot;
+  phase: 'pilot' | 'scale';
+  candidates: Candidate[];
+  candidatePhase: CandidatePhase | null;
+}) {
+  const phaseJobs = snapshot.jobs.filter((item) => item.phase === phase && item.progress);
+  const job = phaseJobs.reduce<(typeof phaseJobs)[number] | undefined>(
+    (best, item) =>
+      !best || (item.progress?.completed || 0) > (best.progress?.completed || 0) ? item : best,
+    undefined,
+  );
   const progress = job?.progress;
-  if (!progress) return null;
-  const native = progress.stage_id.startsWith('05-') || progress.stage_id.startsWith('07-');
-  const current = native ? 'native-filter' : progress.substage;
+  const recorded = candidatePhase === phase ? candidates : [];
+  const workflowComplete =
+    snapshot.workflow.find((item) => item.id === phase)?.status === 'complete';
+  if (!progress && !recorded.length) return null;
+  const native =
+    progress?.stage_id.startsWith('05-') === true || progress?.stage_id.startsWith('07-') === true;
+  const current = native ? 'native-filter' : progress?.substage;
   const currentIndex = PIPELINE_STEPS.findIndex(([id]) => id === current);
-  const overall = progress.total
-    ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
-    : 0;
+  const pipelineComplete = workflowComplete && recorded.length > 0;
+  const completed =
+    workflowComplete && recorded.length ? recorded.length : progress?.completed || 0;
+  const total = recorded.length || progress?.total || 0;
+  const completedTasks =
+    workflowComplete && recorded.length
+      ? new Set(recorded.map((item) => item.arm)).size
+      : progress?.completed_tasks || 0;
+  const totalTasks = recorded.length
+    ? new Set(recorded.map((item) => item.arm)).size
+    : progress?.total_tasks || 0;
+  const overall = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
   const substage =
-    progress.substage_total && progress.substage_completed !== null
+    progress?.substage_total && progress.substage_completed !== null
       ? `${progress.substage_completed} / ${progress.substage_total}`
       : null;
   return (
@@ -107,22 +136,26 @@ function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
       <div className="easy-execution-title">
         <div>
           <span>REAL EXECUTION</span>
-          <strong>{native ? 'AFO 预测与原生过滤' : progress.substage_label || 'BoltzGen'}</strong>
+          <strong>
+            {phase === 'pilot' ? 'Pilot' : 'Scale'} ·{' '}
+            {native ? 'AFO 预测与原生过滤' : progress?.substage_label || 'BoltzGen'}
+          </strong>
         </div>
-        <b>{progress.total ? `${progress.completed} / ${progress.total} 条` : '等待资源'}</b>
+        <b>{total ? `${completed} / ${total} 条` : '等待资源'}</b>
       </div>
       <div
         className="easy-progress-track"
         role="progressbar"
         aria-valuemin={0}
-        aria-valuemax={progress.total || 1}
-        aria-valuenow={progress.completed}
+        aria-valuemax={total || 1}
+        aria-valuenow={completed}
       >
         <span style={{ width: `${overall}%` }} />
       </div>
       <div className="easy-pipeline-steps">
         {PIPELINE_STEPS.map(([id, label], stepIndex) => {
-          const done = native || (currentIndex >= 0 && stepIndex < currentIndex);
+          const done =
+            pipelineComplete || native || (currentIndex >= 0 && stepIndex < currentIndex);
           const active = id === current;
           return (
             <div key={id} className={active ? 'active' : done ? 'done' : ''}>
@@ -134,9 +167,81 @@ function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
         })}
       </div>
       <p>
-        {progress.completed_tasks} / {progress.total_tasks} 个策略任务完成
-        {progress.running_tasks ? `，${progress.running_tasks} 个正在运行` : ''}
+        {completedTasks} / {totalTasks} 个 scaffold 任务完成
+        {progress?.running_tasks ? `，${progress.running_tasks} 个正在运行` : ''}
       </p>
+    </section>
+  );
+}
+
+function candidateScaffold(candidate: Candidate) {
+  return candidate.scaffold || candidate.arm.split('-scaffold-').at(-1) || '未标注';
+}
+
+function CandidatePanel({
+  phase,
+  candidates,
+  selected,
+  onSelect,
+}: {
+  phase: CandidatePhase;
+  candidates: Candidate[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const passed = candidates.filter((candidate) => candidate.native_status === 'pass');
+  const notPassed = candidates.filter((candidate) => candidate.native_status !== 'pass');
+  const card = (candidate: Candidate, rank: number, passedCandidate: boolean) => (
+    <button
+      key={candidate.id}
+      className={selected === candidate.id ? 'selected' : ''}
+      onClick={() => onSelect(candidate.id)}
+      title={`技术 ID：${candidate.id}`}
+    >
+      <span>
+        <strong>{passedCandidate ? `Top ${rank}` : `未通过 ${rank}`}</strong>
+        <small>
+          Scaffold {candidateScaffold(candidate).toUpperCase()} ·{' '}
+          {passedCandidate
+            ? '已通过'
+            : candidate.native_status === 'incomplete'
+              ? '未完成'
+              : '未通过'}
+        </small>
+      </span>
+      <em>
+        {candidate.panel_role === 'primary'
+          ? '主候选'
+          : candidate.panel_role === 'backup'
+            ? '备选'
+            : ''}
+      </em>
+    </button>
+  );
+  return (
+    <section className="easy-live-candidate-panel" aria-label={`${phase} 候选分子`}>
+      <div className="easy-live-candidate-heading">
+        <div>
+          <span>{phase === 'pilot' ? 'PILOT' : phase === 'scale' ? 'SCALE' : 'FINAL PANEL'}</span>
+          <h3>候选分子</h3>
+        </div>
+        <b>{passed.length} 条通过</b>
+      </div>
+      <div className="easy-live-candidates">
+        {passed.length ? (
+          passed.map((candidate, index) => card(candidate, index + 1, true))
+        ) : (
+          <p className="easy-live-empty-candidates">当前阶段尚无通过候选。</p>
+        )}
+      </div>
+      {notPassed.length > 0 && (
+        <details className="easy-live-filtered-candidates">
+          <summary>查看未通过或未完成的候选（{notPassed.length}）</summary>
+          <div className="easy-live-candidates">
+            {notPassed.map((candidate, index) => card(candidate, index + 1, false))}
+          </div>
+        </details>
+      )}
     </section>
   );
 }
@@ -176,13 +281,11 @@ function HistoricalStagePanel({
     );
   } else if (stageIndex === 3 || stageIndex === 4) {
     const phase = stageIndex === 3 ? 'pilot' : 'scale';
-    const job = snapshot.jobs.find((item) => item.phase === phase);
-    rows.push(['Execution status', job?.status || 'Complete']);
-    if (job?.progress)
-      rows.push(
-        ['Candidates', `${job.progress.completed} / ${job.progress.total}`],
-        ['Strategy tasks', `${job.progress.completed_tasks} / ${job.progress.total_tasks}`],
-      );
+    const jobs = snapshot.jobs.filter((item) => item.phase === phase);
+    rows.push([
+      'Execution status',
+      jobs.some((item) => item.status === 'running') ? 'Running' : 'Complete',
+    ]);
   } else {
     rows.push(
       ['Candidate total', snapshot.candidates.total],
@@ -411,9 +514,10 @@ function SimulatedOrder({
               }
             />
             <span>
-              <strong>{item.id}</strong>
+              <strong>Top {item.selection_rank}</strong>
               <small>
-                {item.selection_class} · {item.sequence_length} aa · 完整序列已验证
+                {item.selection_class === 'primary' ? '主候选' : '备选'} · {item.sequence_length} aa
+                · 完整序列已验证
               </small>
             </span>
           </label>
@@ -561,6 +665,20 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const issue = validateInput(input);
   const index = activeIndex(snapshot);
   const shownIndex = viewedIndex ?? index;
+  const shownCandidatePhase: CandidatePhase | null =
+    shownIndex === 3
+      ? 'pilot'
+      : shownIndex === 4
+        ? 'scale'
+        : shownIndex === 5
+          ? 'candidates'
+          : null;
+  useEffect(() => {
+    if (!snapshot || !shownCandidatePhase || state?.candidatePhase === shownCandidatePhase) return;
+    void adapter
+      .candidatePage(0, shownCandidatePhase)
+      .catch((reason) => setError((reason as Error).message));
+  }, [adapter, shownCandidatePhase, snapshot?.project.id, state?.candidatePhase]);
   const active = Boolean(
     state?.pending ||
       snapshot?.project.status === 'running' ||
@@ -569,9 +687,14 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const candidateArtifact = state?.selectedCandidate?.artifacts.find((item) =>
     ['pdb', 'cif', 'mmcif'].includes(item.format),
   );
+  const candidateDataReady = Boolean(
+    shownCandidatePhase && state?.candidatePhase === shownCandidatePhase,
+  );
   const artifact =
-    (shownIndex >= 3 ? candidateArtifact : null) || snapshot?.scientific_context.structure || null;
-  const roles = shownIndex >= 3 ? state?.selectedCandidate?.structure_roles || {} : {};
+    (candidateDataReady ? candidateArtifact : null) ||
+    snapshot?.scientific_context.structure ||
+    null;
+  const roles = candidateDataReady ? state?.selectedCandidate?.structure_roles || {} : {};
   const technicalActivity = (snapshot?.recent_activity || [])
     .filter((item) => item.visible !== false && !(completed && item.type === 'gate.awaiting'))
     .slice(-8)
@@ -583,7 +706,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     ? snapshot?.scientific_context.sites.find((site) => site.rank === gateOption.rank)
     : selectedSite;
   const visibleSiteId = typeof visibleSite === 'string' ? visibleSite : visibleSite?.id;
-  const candidates = state?.candidates.items || [];
+  const candidates = candidateDataReady ? state?.candidates.items || [] : [];
 
   async function start() {
     if (issue || !state) return;
@@ -834,11 +957,21 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
             <div className="easy-live-workspace">
               <div className="easy-live-center">
                 {shownIndex !== index ? (
-                  <HistoricalStagePanel
-                    snapshot={snapshot}
-                    stageIndex={shownIndex}
-                    onReturn={() => setViewedIndex(null)}
-                  />
+                  <>
+                    <HistoricalStagePanel
+                      snapshot={snapshot}
+                      stageIndex={shownIndex}
+                      onReturn={() => setViewedIndex(null)}
+                    />
+                    {(shownIndex === 3 || shownIndex === 4) && (
+                      <ExecutionProgress
+                        snapshot={snapshot}
+                        phase={shownIndex === 3 ? 'pilot' : 'scale'}
+                        candidates={candidates}
+                        candidatePhase={state.candidatePhase}
+                      />
+                    )}
+                  </>
                 ) : completed ? (
                   <section className="easy-live-progress-card easy-live-complete-card">
                     <Check size={22} />
@@ -900,7 +1033,14 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     </div>
                   </section>
                 )}
-                {shownIndex === index && <ExecutionProgress snapshot={snapshot} />}
+                {shownIndex === index && (shownIndex === 3 || shownIndex === 4) && (
+                  <ExecutionProgress
+                    snapshot={snapshot}
+                    phase={shownIndex === 3 ? 'pilot' : 'scale'}
+                    candidates={candidates}
+                    candidatePhase={state.candidatePhase}
+                  />
+                )}
                 {shownIndex === index && (
                   <section className="easy-live-activity">
                     <h3>实时过程</h3>
@@ -936,6 +1076,14 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     )}
                   </section>
                 )}
+                {shownCandidatePhase && state.candidatePhase === shownCandidatePhase && (
+                  <CandidatePanel
+                    phase={shownCandidatePhase}
+                    candidates={candidates}
+                    selected={state.selectedCandidate?.id || null}
+                    onSelect={(id) => void adapter.selectCandidate(id)}
+                  />
+                )}
               </div>
               <aside className="easy-live-science">
                 <div className="easy-live-kicker">
@@ -956,26 +1104,6 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                         onClick={() => setSelectedSite(site.id)}
                       >
                         Site {site.rank}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {shownIndex >= 3 && candidates.length > 0 && (
-                  <div className="easy-live-candidates">
-                    <h3>候选分子</h3>
-                    {candidates.map((candidate) => (
-                      <button
-                        key={candidate.id}
-                        className={state.selectedCandidate?.id === candidate.id ? 'selected' : ''}
-                        onClick={() => void adapter.selectCandidate(candidate.id)}
-                      >
-                        <span>
-                          <strong>{candidate.id}</strong>
-                          <small>
-                            {candidate.arm} · {candidate.native_status}
-                          </small>
-                        </span>
-                        <em>{candidate.panel_role || ''}</em>
                       </button>
                     ))}
                   </div>
@@ -1028,11 +1156,17 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       </main>
       <RabbitMascot
         locale="zh"
-        mood={state.pending || active ? 'running' : snapshot ? 'complete' : 'idle'}
-        stage={(snapshot ? STEPS[index] : 'Idle') as (typeof STEPS)[number] | 'Idle'}
+        mood={
+          state.pending || (active && shownIndex === index)
+            ? 'running'
+            : snapshot
+              ? 'complete'
+              : 'idle'
+        }
+        stage={(snapshot ? STEPS[shownIndex] : 'Idle') as (typeof STEPS)[number] | 'Idle'}
         chatContext={{
-          stage: snapshot ? STEPS[index] : 'Idle',
-          status: active ? 'running' : snapshot ? 'complete' : 'idle',
+          stage: snapshot ? STEPS[shownIndex] : 'Idle',
+          status: active && shownIndex === index ? 'running' : snapshot ? 'complete' : 'idle',
           goal: snapshot?.project.goal.slice(0, 1200) || '',
         }}
       />

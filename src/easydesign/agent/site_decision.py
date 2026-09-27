@@ -705,9 +705,11 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
     def mandatory_gpcr_a(candidate: dict[str, Any]) -> bool:
         """Recognize a narrow model/runtime-consistency invariant, not a new epitope claim.
 
-        Research must itself identify the candidate as orthosteric. Runtime independently
+        Research must itself identify an orthosteric mechanism, either by naming it directly or
+        by explicitly describing ligand entry/occupancy/competition. Runtime independently
         supplies the extracellular outer-pore geometry. This prevents an unperformed whole-VHH
-        clearance guess from reversing the explicit GPCR ranking policy.
+        clearance guess (or a vocabulary-only omission of ``orthosteric``) from reversing the
+        explicit GPCR ranking policy.
         """
         if runtime_block(candidate) is not None:
             return False
@@ -715,7 +717,26 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
         interpretation = " ".join(
             str(hypothesis.get(key, "")) for key in ("name", "rationale")
         ).casefold()
-        if "orthosteric" not in interpretation and "正构" not in interpretation:
+        direct_orthosteric = "orthosteric" in interpretation or "正构" in interpretation
+        ligand_mechanism = (
+            "ligand" in interpretation
+            and any(
+                term in interpretation
+                for term in (
+                    "occupancy",
+                    "entry",
+                    "entrance",
+                    "binding pocket",
+                    "binding site",
+                    "competition",
+                    "competitive",
+                )
+            )
+        ) or (
+            "配体" in interpretation
+            and any(term in interpretation for term in ("占位", "入口", "结合", "竞争"))
+        )
+        if not direct_orthosteric and not ligand_mechanism:
             return False
         geometry = candidate.get("location", {}).get("membrane_geometry", [])
         outer_pore = [

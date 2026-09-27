@@ -282,6 +282,56 @@ def test_extracellular_deep_orthosteric_gpcr_candidate_must_rank_a(site_bridge):
     assert intent.portfolio[0].rank == "A"
 
 
+def test_deep_gpcr_ligand_occupancy_mechanism_cannot_evade_rank_a_by_omitting_keyword(
+    site_bridge,
+):
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {"status": "resolved"},
+            "membrane": {"status": "resolved", "reliable": True},
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = "Peripheral ECL-only surface"
+    shallow["research_hypothesis"]["rationale"] = "Extracellular loop surface."
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "Upper 7TM pore occlusion"
+    deep["research_hypothesis"]["rationale"] = (
+        "Extracellular half of the TM pore that could occlude productive ligand occupancy."
+    )
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
+        compile_site_decision(dossier, case["decision"])
+
+
 def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):
     case = setup_portfolio(site_bridge)
     dossier = deepcopy(case["dossier"])

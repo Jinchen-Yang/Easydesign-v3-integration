@@ -438,7 +438,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         source = SiteResearchHandoff.model_validate(submitted)
         normalized = demote_invalid_question_citations(source, typed_findings)
         assert isinstance(self.bridge, Phase2Bridge)
-        site_dossier(self.bridge, normalized)
+        overview = self.bridge.read_site_evidence()
+        binding = EvidenceBinding.model_validate(
+            {key: overview[key] for key in EvidenceBinding.model_fields}
+        )
+        token = SITE_EVIDENCE.set(binding)
+        try:
+            site_dossier(self.bridge, normalized)
+        finally:
+            SITE_EVIDENCE.reset(token)
         self.bridge.store.event(
             self.bridge.thread,
             "site-research-citation-demotion",

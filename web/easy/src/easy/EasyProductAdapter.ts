@@ -194,7 +194,17 @@ export class EasyProductAdapter implements EasyProductPort {
         const changed =
           this.state.snapshot?.revision !== snapshot.revision ||
           this.state.snapshot?.event_cursor !== snapshot.event_cursor;
-        if (changed || this.state.snapshot?.project.status !== snapshot.project.status)
+        // A scientific approval revision intentionally stays fixed while native
+        // workers update progress, requests and execution permissions.
+        const liveFields = (value: ProductSnapshot | null) =>
+          JSON.stringify([value?.jobs, value?.requests, value?.capabilities, value?.lifecycle]);
+        if (
+          changed ||
+          this.state.snapshot?.project.status !== snapshot.project.status ||
+          liveFields(this.state.snapshot) !== liveFields(snapshot) ||
+          this.state.connection !== 'connected' ||
+          this.state.error
+        )
           this.emit({ snapshot, connection: 'connected', error: null });
         if (changed) await this.candidatePage(this.state.candidates.offset);
       }

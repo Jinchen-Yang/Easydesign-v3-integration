@@ -107,6 +107,55 @@ function fixture(post: (path: string, body: Record<string, unknown>) => Promise<
 }
 
 describe('Easy live adapter preserves Product API authority', () => {
+  it('refreshes native job progress without requiring a new scientific revision', async () => {
+    const current = snapshot();
+    current.project = { ...project, phase: 'pilot', status: 'running' };
+    current.decision = null;
+    current.jobs = [
+      {
+        id: 'pilot-job',
+        phase: 'pilot',
+        status: 'running',
+        resumable: false,
+        validation_only: true,
+      },
+    ];
+    const fetcher = vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith('/workbench')
+        ? Response.json(current)
+        : Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] }),
+    );
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    let observed: ProductSnapshot | null = null;
+    adapter.subscribe((event) => {
+      observed = event.snapshot.snapshot;
+    });
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    current.jobs[0].progress = {
+      stage_id: '04-pilot-generation',
+      status: 'running',
+      completed: 2,
+      total: 28,
+      completed_tasks: 1,
+      total_tasks: 14,
+      running_tasks: 1,
+      estimated_remaining_seconds: null,
+      substage: 'boltzgen-generate',
+      substage_label: 'Generate',
+      substage_completed: 1,
+      substage_total: 2,
+      pipeline_step: 1,
+      pipeline_steps: 5,
+    };
+    await adapter.refresh();
+    expect((observed as ProductSnapshot | null)?.jobs[0].progress?.completed).toBe(2);
+    expect((observed as ProductSnapshot | null)?.revision).toBe(current.revision);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('/candidates'))).toHaveLength(
+      0,
+    );
+  });
   it('dispatches database identifiers as native sources, not just natural-language hints', async () => {
     const bodies: Record<string, unknown>[] = [];
     const { adapter } = fixture(async (_path, body) => {

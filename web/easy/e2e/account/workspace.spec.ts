@@ -143,6 +143,26 @@ function installChatRoutes(page: Page, behavior: 'transient' | 'forbidden'): Rec
 }
 
 test.describe('account-mode Easy workspace', () => {
+  test('native progress updates without refreshing or changing the approval revision', async ({page}) => {
+    installWorkspaceRoutes(page, 'alice', 'team-1');
+    let completed = 0;
+    await page.route('**/workbench', route => {
+      const snapshot = workbenchSnapshot();
+      return jsonResponse(route, {
+        ...snapshot, project:{...snapshot.project,phase:'pilot',status:'running'},decision:null,
+        capabilities:{decide:false,resume:false},
+        jobs:[{id:'job-native',phase:'pilot',status:'running',resumable:false,validation_only:true,
+          progress:{stage_id:'04-pilot-generation',status:'running',completed,total:28,completed_tasks:completed/2,total_tasks:14,running_tasks:1,substage:'boltzgen-generate',substage_label:'Generate',substage_completed:completed,substage_total:28}}],
+      });
+    });
+    await page.goto('/easy/?scope=team-1&project=proj-1');
+    const progress = page.getByRole('region',{name:'真实执行进度'});
+    await expect(progress.getByRole('progressbar')).toHaveAttribute('aria-valuenow','0');
+    completed = 2;
+    await expect(progress.getByRole('progressbar')).toHaveAttribute('aria-valuenow','2');
+    await expect(progress).toContainText('2 / 28 条');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
   for (const state of ['accepted', 'running']) {
     test(`accepted Gate approval stays disabled while the request is ${state}`, async ({page}) => {
       installWorkspaceRoutes(page, 'alice', 'team-1');

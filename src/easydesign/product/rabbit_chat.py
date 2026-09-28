@@ -90,6 +90,10 @@ def _requires_chinese(value: str) -> bool:
     return any(not word.isupper() for word in re.findall(r"[A-Za-z]{3,}", value))
 
 
+def _contains_chinese(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff]", value))
+
+
 def _valid_translation(source: str, translated: Any) -> bool:
     return (
         isinstance(translated, str)
@@ -129,6 +133,45 @@ def _parse_localization(text: str, passages: list[dict[str, str]]) -> dict[str, 
     if set(localized) != set(source):
         raise ProductError("localization_unavailable", "Academic Chinese is unavailable", 502)
     return {"locale": "zh-CN", "items": localized}
+
+
+def _parse_localization_candidates(
+    text: str, passages: list[dict[str, str]]
+) -> dict[str, str]:
+    """Keep only complete, scientifically valid items from a provider attempt.
+
+    A fast translation model may occasionally echo one passage or omit one item in
+    an otherwise useful batch.  Those items must be retried, but valid translations
+    should not be discarded or exposed before the full response is complete.
+    """
+    clean = text.strip()
+    if clean.startswith("```"):
+        clean = clean.split("\n", 1)[1] if "\n" in clean else ""
+        clean = clean.rsplit("```", 1)[0].strip()
+    try:
+        value = json.loads(clean)
+    except json.JSONDecodeError:
+        return {}
+    raw_items = value.get("items") if isinstance(value, dict) else None
+    if not isinstance(raw_items, list):
+        return {}
+    source = {item["id"]: item["text"] for item in passages}
+    localized: dict[str, str] = {}
+    duplicates: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        identity, translated = item.get("id"), item.get("text")
+        if identity not in source or not isinstance(translated, str):
+            continue
+        if identity in localized or identity in duplicates:
+            localized.pop(identity, None)
+            duplicates.add(identity)
+            continue
+        translated = translated.strip()
+        if _valid_translation(source[identity], translated):
+            localized[identity] = translated
+    return localized
 
 
 def validate_chat_request(value: Any) -> dict[str, Any]:
@@ -364,30 +407,58 @@ class RabbitChatService:
             self._active += 1
             self._requests.append(now)
         try:
-            chunks: list[str] = []
-            terminal = False
-            for raw in self.provider(request):
-                event = public_event(raw)
-                if event is None:
-                    continue
-                if event["type"] == "delta":
-                    chunks.append(event["text"])
-                    if sum(map(len, chunks)) > 200000:
+            sources = {item["id"]: item["text"] for item in request["passages"]}
+            localized = {
+                identity: source
+                for identity, source in sources.items()
+                if _contains_chinese(source) or not _requires_chinese(source)
+            }
+            pending = [
+                item for item in request["passages"] if item["id"] not in localized
+            ]
+
+            def translate(batch: list[dict[str, str]]) -> dict[str, str]:
+                chunks: list[str] = []
+                terminal = False
+                provider_request = {**request, "passages": batch}
+                for raw in self.provider(provider_request):
+                    event = public_event(raw)
+                    if event is None:
+                        continue
+                    if event["type"] == "delta":
+                        chunks.append(event["text"])
+                        if sum(map(len, chunks)) > 200000:
+                            raise ProductError(
+                                "localization_unavailable",
+                                "Academic Chinese is unavailable",
+                                502,
+                            )
+                    elif event["type"] == "done":
+                        terminal = True
+                        break
+                    elif event["type"] == "error":
                         raise ProductError(
                             "localization_unavailable", "Academic Chinese is unavailable", 502
                         )
-                elif event["type"] == "done":
-                    terminal = True
-                    break
-                elif event["type"] == "error":
+                if not terminal:
                     raise ProductError(
                         "localization_unavailable", "Academic Chinese is unavailable", 502
                     )
-            if not terminal:
+                return _parse_localization_candidates("".join(chunks), batch)
+
+            if pending:
+                localized.update(translate(pending))
+                unresolved = [item for item in pending if item["id"] not in localized]
+                if unresolved:
+                    localized.update(translate(unresolved))
+            if set(localized) != set(sources) or not all(
+                _valid_translation(source, localized.get(identity))
+                for identity, source in sources.items()
+            ):
                 raise ProductError(
                     "localization_unavailable", "Academic Chinese is unavailable", 502
                 )
-            result = _parse_localization("".join(chunks), request["passages"])
+            result = {"locale": "zh-CN", "items": localized}
             result["source_sha256"] = key
             with self._lock:
                 self._localization_cache[key] = result

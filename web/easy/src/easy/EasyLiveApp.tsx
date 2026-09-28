@@ -614,12 +614,6 @@ function GatePanel({
       ? decision.options.filter((item) => item.option_id === decision.default_option_id)
       : decision.options;
   const gatePassages: LocalizationPassage[] = [
-    ...visibleOptions.flatMap((item, index) => [
-      ...(item.label ? [{ id: `gate.option.${index}.label`, text: item.label }] : []),
-      ...(item.description
-        ? [{ id: `gate.option.${index}.description`, text: item.description }]
-        : []),
-    ]),
     ...decision.warnings.map((text, index) => ({ id: `gate.warning.${index}`, text })),
     ...decision.limitations.map((text, index) => ({ id: `gate.limitation.${index}`, text })),
   ].filter((item) => item.text.trim());
@@ -688,15 +682,9 @@ function GatePanel({
               />
               <span>
                 <strong>
-                  {normalizeLiveScientificChinese(
-                    gateChinese[`gate.option.${index}.label`] || fallback.label,
-                  )}
+                  {normalizeLiveScientificChinese(fallback.label)}
                 </strong>
-                <small>
-                  {normalizeLiveScientificChinese(
-                    gateChinese[`gate.option.${index}.description`] || fallback.description,
-                  )}
-                </small>
+                <small>{normalizeLiveScientificChinese(fallback.description)}</small>
                 {item.design_labels && <em>热点残基：{item.design_labels.join(', ')}</em>}
               </span>
             </label>

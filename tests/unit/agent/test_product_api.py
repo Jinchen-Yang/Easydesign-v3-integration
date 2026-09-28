@@ -960,6 +960,55 @@ def test_scientific_localization_rejects_mutated_scientific_identifiers(bridge, 
         assert response.json()["error"]["code"] == "localization_unavailable"
 
 
+def test_scientific_localization_preserves_chinese_and_repairs_only_failed_english(
+    bridge, tmp_path
+):
+    service = service_for(bridge, tmp_path)
+    received = []
+
+    def provider(request):
+        received.append(request)
+        passages = request["passages"]
+        if len(received) == 1:
+            items = [
+                {"id": passages[0]["id"], "text": "规范生物学身份未经确认。"},
+                {"id": passages[1]["id"], "text": passages[1]["text"]},
+            ]
+        else:
+            items = [{"id": passages[0]["id"], "text": "参考序列完整性未知。"}]
+        yield {"type": "delta", "text": json.dumps({"items": items}, ensure_ascii=False)}
+        yield {"type": "done"}
+
+    payload = {
+        "locale": "zh",
+        "passages": [
+            {"id": "warning.0", "text": "坐标覆盖率约0.75，需下游核验。"},
+            {
+                "id": "limitation.0",
+                "text": "Canonical biological identity is unconfirmed.",
+            },
+            {
+                "id": "limitation.1",
+                "text": "Reference completeness is unknown.",
+            },
+        ],
+        "context": {"stage": "Target", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=RabbitChatService(provider)) as client:
+        response = client.post("/api/rabbit/localize", json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["items"] == {
+            "warning.0": "坐标覆盖率约0.75，需下游核验。",
+            "limitation.0": "规范生物学身份未经确认。",
+            "limitation.1": "参考序列完整性未知。",
+        }
+        assert [item["id"] for item in received[0]["passages"]] == [
+            "limitation.0",
+            "limitation.1",
+        ]
+        assert [item["id"] for item in received[1]["passages"]] == ["limitation.1"]
+
+
 def test_scientific_localization_preserves_opaque_runtime_markers(bridge, tmp_path):
     service = service_for(bridge, tmp_path)
     marker = "region-A-has-2-spatial-components;user-members-preserved"

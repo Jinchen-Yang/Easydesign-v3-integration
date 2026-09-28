@@ -13,6 +13,16 @@ import {
 import { Brand } from '../components/Brand';
 import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
 import { fileTypes, inputLabel, readInputFile, validateInput } from './inputs';
+import {
+  gateIntro,
+  gateOptionFallback,
+  gateTitle,
+  liveActionName,
+  liveConnectionName,
+  liveInputTypeName,
+  liveStageName,
+  liveStatusName,
+} from './liveChinese';
 import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
 import {
@@ -178,7 +188,7 @@ function ExecutionProgress({
         })}
       </div>
       <p>
-        {completedTasks} / {totalTasks} 个 scaffold 任务完成
+        {completedTasks} / {totalTasks} 个骨架任务完成
         {progress?.running_tasks ? `，${progress.running_tasks} 个正在运行` : ''}
       </p>
     </section>
@@ -434,7 +444,7 @@ function HistoricalStagePanel({
     rows.push(
       ['候选总数', snapshot.candidates.total],
       ['通过原生筛选', snapshot.candidates.counts.pass || 0],
-      ['工作流状态', snapshot.current_action.stage],
+      ['工作流状态', liveActionName(snapshot.current_action.stage)],
     );
   }
   const approvedSite = context.sites.find(
@@ -469,7 +479,7 @@ function HistoricalStagePanel({
           ].filter((item) => item.text.trim());
           return (
             <AcademicChineseDetails
-              summary={`为什么选择 Site ${approvedSite.rank}`}
+              summary={`为什么选择位点 ${approvedSite.rank}`}
               passages={passages}
               stage="Site"
               goal={snapshot.project.goal}
@@ -477,7 +487,7 @@ function HistoricalStagePanel({
             >
               {(zh) => (
                 <>
-                  <h4>Site {approvedSite.rank}（已批准）</h4>
+                  <h4>位点 {approvedSite.rank}（已批准）</h4>
                   <p>{zh['site.why']}</p>
                   {approvedSite.risks.length > 0 && (
                     <p>
@@ -619,42 +629,34 @@ function GatePanel({
     }
   }
   return (
-    <section className="easy-live-gate" aria-label={`Gate ${decision.gate}`}>
+    <section className="easy-live-gate" aria-label={`第 ${decision.gate} 关科学家审批`}>
       <div className="easy-live-kicker">
-        <ShieldCheck size={14} /> 科学家审批 · GATE {decision.gate}
+        <ShieldCheck size={14} /> 科学家审批 · 第 {decision.gate} 关
       </div>
-      <h3>
-        {decision.gate === 1
-          ? '确认自动推荐的目标结构'
-          : gateChinese['gate.question'] || '正在整理科学审批问题…'}
-      </h3>
-      <p>{gateChinese['gate.summary'] || '正在生成保持原始结论强度的学术中文…'}</p>
-      <div className="easy-live-options" role="radiogroup" aria-label="Scientific options">
-        {visibleOptions.map((item) => (
-          <label key={item.option_id} className={selected === item.option_id ? 'selected' : ''}>
-            <input
-              type="radio"
-              name="easy-live-option"
-              checked={selected === item.option_id}
-              disabled={!item.eligible || busy}
-              onChange={() => setSelected(item.option_id)}
-            />
-            <span>
-              <strong>
-                {item.rank ? `Site ${item.rank} · ` : ''}
-                {gateChinese[`gate.option.${visibleOptions.indexOf(item)}.label`] ||
-                  item.label ||
-                  item.option_id}
-              </strong>
-              <small>
-                {gateChinese[`gate.option.${visibleOptions.indexOf(item)}.description`] ||
-                  item.description ||
-                  (item.eligible ? '可选择' : '已阻断')}
-              </small>
-              {item.design_labels && <em>热点残基：{item.design_labels.join(', ')}</em>}
-            </span>
-          </label>
-        ))}
+      <h3>{gateTitle(decision.gate)}</h3>
+      <p>{gateChinese['gate.summary'] || gateIntro(decision.gate)}</p>
+      <div className="easy-live-options" role="radiogroup" aria-label="科学决策选项">
+        {visibleOptions.map((item, index) => {
+          const fallback = gateOptionFallback(decision, item, index);
+          return (
+            <label key={item.option_id} className={selected === item.option_id ? 'selected' : ''}>
+              <input
+                type="radio"
+                name="easy-live-option"
+                checked={selected === item.option_id}
+                disabled={!item.eligible || busy}
+                onChange={() => setSelected(item.option_id)}
+              />
+              <span>
+                <strong>{gateChinese[`gate.option.${index}.label`] || fallback.label}</strong>
+                <small>
+                  {gateChinese[`gate.option.${index}.description`] || fallback.description}
+                </small>
+                {item.design_labels && <em>热点残基：{item.design_labels.join(', ')}</em>}
+              </span>
+            </label>
+          );
+        })}
       </div>
       {(decision.warnings.length > 0 || decision.limitations.length > 0) && (
         <details>
@@ -676,10 +678,10 @@ function GatePanel({
       )}
       {showRevise && (
         <textarea
-          aria-label="Revision instruction"
+          aria-label="修改意见"
           value={instruction}
           maxLength={1500}
-          placeholder="说明希望科学 Agent 修改什么"
+          placeholder="说明希望设计助手修改什么"
           onChange={(event) => setInstruction(event.target.value)}
         />
       )}
@@ -776,7 +778,7 @@ function SimulatedOrder({
   return (
     <section className="easy-live-order">
       <div className="easy-live-kicker">
-        <FlaskConical size={14} /> GATE 5 · 模拟实验下单
+        <FlaskConical size={14} /> 第 5 关 · 模拟实验下单
       </div>
       <h3>{order.receipt ? '模拟下单回执已生成' : '模拟实验下单'}</h3>
       <p>{order.disclaimer}</p>
@@ -798,8 +800,8 @@ function SimulatedOrder({
             <span>
               <strong>Top {index + 1}</strong>
               <small>
-                {item.selection_class === 'primary' ? '主候选' : '备选'} · {item.sequence_length} aa
-                · 完整序列已验证
+                {item.selection_class === 'primary' ? '主候选' : '备选'} · {item.sequence_length}{' '}
+                个氨基酸 · 完整序列已验证
               </small>
             </span>
           </label>
@@ -1047,7 +1049,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
         <Brand />
         <h1>连接本地研究工作区</h1>
         <label>
-          Access token
+          访问令牌
           <input value={token} onChange={(event) => setToken(event.target.value)} />
         </label>
         <button
@@ -1085,7 +1087,9 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
           <a href="#my-designs">我的设计</a>
         </nav>
         <div className="easy-header-end">
-          <span className={`easy-live-connection ${state.connection}`}>● {state.connection}</span>
+          <span className={`easy-live-connection ${state.connection}`}>
+            ● {liveConnectionName(state.connection)}
+          </span>
           <button className="easy-help" onClick={() => void adapter.refresh()}>
             <RefreshCw size={14} /> 刷新
           </button>
@@ -1101,7 +1105,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
         <section className="easy-input-card" id="design">
           <div className="easy-section-top">
             <span className="easy-demo-pill easy-live-pill">
-              <Sparkles size={12} /> LIVE BACKEND
+              <Sparkles size={12} /> 实时后端
             </span>
           </div>
           <div className="easy-input-row">
@@ -1118,7 +1122,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                   {INPUT_TYPES.filter((item) => !['pse', 'bundle'].includes(item.id)).map(
                     (item) => (
                       <option key={item.id} value={item.id}>
-                        {item.label}
+                        {liveInputTypeName(item.id)}
                       </option>
                     ),
                   )}
@@ -1206,7 +1210,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
             <div className="easy-run-heading">
               <div>
                 <span className="easy-kicker">{snapshot.project.title}</span>
-                <h2>{STEPS[shownIndex]}</h2>
+                <h2>{liveStageName(shownIndex)}</h2>
               </div>
               <span className={`easy-status ${snapshot.project.status}`}>
                 {state.pending || active ? (
@@ -1214,7 +1218,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                 ) : (
                   <Check size={12} />
                 )}
-                {snapshot.project.status}
+                {liveStatusName(snapshot.project.status)}
               </span>
             </div>
             <div className="easy-steps">
@@ -1233,7 +1237,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       stepIndex + 1
                     )}
                   </span>
-                  <b>{step}</b>
+                  <b>{liveStageName(step.toLowerCase())}</b>
                 </button>
               ))}
             </div>
@@ -1260,7 +1264,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     <Check size={22} />
                     <div>
                       <h3>设计闭环已完成</h3>
-                      <p>Gate 5 已记录；实验与真实下单仍未授权。</p>
+                      <p>第 5 关已记录；实验与真实下单仍未授权。</p>
                     </div>
                   </section>
                 ) : snapshot.decision ? (
@@ -1279,7 +1283,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     <ShieldCheck size={22} />
                     <div>
                       <h3>正在恢复审批卡</h3>
-                      <p>项目正在等待 Scientist 批准；在审批选项恢复前不会显示为 Agent 工作中。</p>
+                      <p>项目正在等待科学家批准；审批选项恢复前不会显示为正在工作。</p>
                     </div>
                     <button
                       className="easy-primary"
@@ -1296,7 +1300,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       <h3>
                         {snapshot.capabilities.auto_continue ? '正在自动继续' : '当前步骤可以继续'}
                       </h3>
-                      <p>{snapshot.current_action.message || snapshot.current_action.stage}</p>
+                      <p>{liveActionName(snapshot.current_action.stage)}</p>
                     </div>
                     {!snapshot.capabilities.auto_continue && (
                       <button
@@ -1312,8 +1316,8 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                   <section className="easy-live-progress-card">
                     <LoaderCircle className="easy-spin" size={22} />
                     <div>
-                      <h3>Agent 正在工作</h3>
-                      <p>{snapshot.current_action.stage}</p>
+                      <h3>设计助手正在工作</h3>
+                      <p>{liveActionName(snapshot.current_action.stage)}</p>
                     </div>
                   </section>
                 )}
@@ -1409,7 +1413,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                         className={site.id === visibleSiteId ? 'selected' : ''}
                         onClick={() => setSelectedSite(site.id)}
                       >
-                        Site {site.rank}
+                        位点 {site.rank}
                       </button>
                     ))}
                   </div>
@@ -1446,8 +1450,8 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       <strong>{project.title}</strong>
                       <small>{summarizeGoal(project.goal)}</small>
                     </td>
-                    <td>{project.phase}</td>
-                    <td>{project.status}</td>
+                    <td>{liveStageName(project.phase)}</td>
+                    <td>{liveStatusName(project.status)}</td>
                     <td>
                       <button className="easy-outline" onClick={() => void openProject(project.id)}>
                         打开

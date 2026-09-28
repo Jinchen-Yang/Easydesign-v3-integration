@@ -67,7 +67,7 @@ export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySu
           ? '当前设计流程已完成。'
           : available
             ? '当前步骤已准备好，系统将继续推进。'
-            : '科学 Agent 正在处理当前阶段。',
+            : '设计助手正在处理当前阶段。',
       status: awaiting || completed || available ? 'completed' : 'running',
     },
   ];

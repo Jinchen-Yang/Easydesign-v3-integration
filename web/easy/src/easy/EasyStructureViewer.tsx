@@ -18,7 +18,7 @@ export function EasyStructureViewer({
   roles,
   sites = [],
   selectedSite,
-  emptyMessage = 'Structure evidence is not available yet.',
+  emptyMessage = '暂时没有可显示的结构证据。',
 }: {
   artifact: Artifact | null;
   roles: Record<string, string>;
@@ -93,10 +93,10 @@ export function EasyStructureViewer({
         observer.observe(host.current);
         setModelVersion((value) => value + 1);
         setStatus('ready');
-      } catch (error) {
+      } catch {
         if (!abort.signal.aborted) {
           instance?.clear();
-          setStatus((error as Error).message);
+          setStatus('error');
         }
       }
     })();
@@ -157,14 +157,14 @@ export function EasyStructureViewer({
         }
       }
       instance.render();
-    } catch (error) {
-      setStatus((error as Error).message);
+    } catch {
+      setStatus('error');
     }
   }, [chainMode, modelVersion, representation, rolesKey, selectedSite, sitesKey, status]);
   return (
     <section
       className="molecule live-molecule"
-      aria-label="Molecular structure"
+      aria-label="分子结构"
       data-status={status}
       data-artifact={artifact?.id}
       data-candidate={artifact?.candidate_id || ''}
@@ -175,26 +175,26 @@ export function EasyStructureViewer({
             aria-pressed={representation === 'cartoon'}
             onClick={() => setRepresentation('cartoon')}
           >
-            Ribbon
+            带状
           </button>
           <button
             aria-pressed={representation === 'sticks'}
             onClick={() => setRepresentation('sticks')}
           >
-            Atoms
+            原子
           </button>
         </div>
       </div>
       <div
         ref={host}
         className="molecule-canvas live-canvas"
-        aria-label="Interactive structure — drag to rotate, scroll to zoom"
+        aria-label="交互式结构：拖动旋转，滚轮缩放"
       />
       {status === 'ready' && (
         <>
           <div className="viewer-controls">
             <button
-              aria-label="Reset structure view"
+              aria-label="重置结构视角"
               onClick={() => {
                 viewer.current?.setView(framedView.current);
                 viewer.current?.render();
@@ -203,7 +203,7 @@ export function EasyStructureViewer({
               <RotateCcw size={14} />
             </button>
             <button
-              aria-label="Zoom in"
+              aria-label="放大"
               onClick={() => {
                 viewer.current?.zoom(1.2);
                 viewer.current?.render();
@@ -212,7 +212,7 @@ export function EasyStructureViewer({
               <ZoomIn size={14} />
             </button>
             <button
-              aria-label="Zoom out"
+              aria-label="缩小"
               onClick={() => {
                 viewer.current?.zoom(0.8);
                 viewer.current?.render();
@@ -223,40 +223,40 @@ export function EasyStructureViewer({
           </div>
           <span className="rotate-hint">
             <Rotate3D size={12} />
-            Drag to explore
+            拖动查看
           </span>
         </>
       )}
       {status !== 'ready' && (
         <div className="live-viewer-status" role="status">
           {status === 'loading'
-            ? 'Loading verified coordinates…'
+            ? '正在加载已验证坐标…'
             : status === 'unavailable'
               ? emptyMessage
-              : status}
+              : '结构暂时不可用。'}
           {artifact && status !== 'loading' && (
-            <button onClick={() => setRetry((r) => r + 1)}>Retry structure</button>
+            <button onClick={() => setRetry((r) => r + 1)}>重新加载结构</button>
           )}
         </div>
       )}
       <div className="viewer-bottom">
         <label className="chain-picker">
-          Show{' '}
+          显示{' '}
           <select
-            aria-label="Structure chains"
+            aria-label="结构链"
             value={chainMode}
             onChange={(e) => setChainMode(e.target.value)}
           >
             <option value="all">
               {Object.values(roles).includes('binder')
-                ? 'Target + VHH'
+                ? '靶点 + VHH'
                 : Object.values(roles).includes('focus-target')
-                  ? 'Target + partners'
-                  : 'Target'}
+                  ? '靶点 + 互作链'
+                  : '靶点'}
             </option>
             {Object.values(roles).includes('binder') && (
               <>
-                <option value="target">Target</option>
+                <option value="target">靶点</option>
                 <option value="binder">VHH</option>
               </>
             )}
@@ -264,12 +264,12 @@ export function EasyStructureViewer({
         </label>
         <span className="viewer-selection">
           {sites.length
-            ? `Site ${sites.find((s) => s.id === selectedSite)?.rank || ''} highlighted`
+            ? `已高亮位点 ${sites.find((s) => s.id === selectedSite)?.rank || ''}`
             : artifact?.candidate_id
               ? Object.values(roles).includes('focus-target')
-                ? 'Target chain highlighted'
-                : 'Candidate complex'
-              : 'Target structure'}
+                ? '已高亮靶点链'
+                : '候选复合物'
+              : '靶点结构'}
         </span>
       </div>
     </section>

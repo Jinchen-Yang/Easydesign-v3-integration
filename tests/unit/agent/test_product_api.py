@@ -833,6 +833,70 @@ def prime(bridge, goal):
     return asyncio.run(run_session(bridge, config, {r: NoInference(role=r) for r in ROLES}, goal))
 
 
+def test_scientist_gate_recovers_after_transitional_projection_without_card(site_bridge, tmp_path):
+    bridge = site_bridge
+    setup_portfolio(bridge)
+    review_card(bridge)
+    assert prime(bridge, "Synthetic ranked Site decision")["status"] == "awaiting-human-approval"
+    service = service_for(bridge, tmp_path)
+    authoritative = service.snapshot("target-test")
+    assert authoritative["project"]["status"] == "awaiting_scientist"
+    assert authoritative["decision"]["gate"] == 2
+
+    # Simulate the first poll racing the card commit. A later public snapshot
+    # must recover from native authority instead of reusing the shell forever.
+    transitional = json.loads(json.dumps(authoritative))
+    transitional["decision"] = None
+    service._stable_snapshots["target-test"] = transitional
+    recovered = service.snapshot("target-test")
+    assert recovered["decision"]["id"] == authoritative["decision"]["id"]
+
+
+def test_product_resume_binds_request_to_bounded_continuation(site_bridge, monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def bounded_resume(*args, **kwargs):
+        captured.update(kwargs)
+        return {"status": "incomplete-turn", "scientific_state": "site-not-proposed"}
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", bounded_resume)
+    session = DomainSession(
+        "target-test", site_bridge, "Continue a verified synthetic target."
+    )
+    revision = session.current()[2]
+    request = ActionRequest(
+        request_id="resume-site-0123456789", revision=revision, action="resume"
+    )
+    assert session.execute(
+        request,
+        scripted_config(),
+        {role: NoInference(role=role) for role in ROLES},
+        "synthetic-scientist",
+    )["scientific_state"] == "site-not-proposed"
+    assert captured["continuation_id"] == request.request_id
+
+
+def test_product_failure_context_reports_site_instead_of_target(site_bridge, tmp_path):
+    site_bridge.store.event(
+        site_bridge.thread,
+        "runtime-dispatch",
+        {
+            "execution_id": "turn-site",
+            "action_id": "site-action",
+            "stage": "site-not-proposed",
+            "tool": "task",
+            "specialist": "site-mechanism",
+        },
+    )
+    context = service_for(site_bridge, tmp_path)._failure_context(
+        site_bridge.store, site_bridge.thread
+    )
+    assert context["phase"] == "site"
+    assert context["title"] == "Site Intelligence"
+    assert context["task_id"] == "site-research"
+    assert "Site research paused" in context["project_message"]
+
+
 @pytest.mark.parametrize("rank", ["B", "C"])
 def test_http_ranked_choice_idempotency_reload_and_native_downstream(site_bridge, tmp_path, rank):
     b = site_bridge

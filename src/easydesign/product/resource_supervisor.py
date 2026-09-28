@@ -182,6 +182,17 @@ class ResourceSupervisor:
             handle.close()
             raise ProductError("controller_busy", "该工作区已有资源控制器", 409) from None
         self._controller_lock = handle
+        try:
+            # The HTTP server becomes ready after start() returns. Reclaim only
+            # confirmed dead Web owners first, independent of slow GPU/native
+            # observations in the background loop; never run scientific work here.
+            for admission in self.ledger.active():
+                if admission.dispatch_channel == "web_stream":
+                    self.ledger.reconcile_web_stream_owner(admission.id)
+        except BaseException:
+            handle.close()
+            self._controller_lock = None
+            raise
         self._stop.clear()
         self.runtime.launcher = self.launch
         self._thread = threading.Thread(
@@ -561,7 +572,8 @@ class ResourceSupervisor:
 
     def _tick_one(self, admission: Admission, memo: list[Any]) -> None:
         if admission.dispatch_channel == "web_stream":
-            return  # Web streaming owns its lifecycle, not the scientific dispatcher.
+            self.ledger.reconcile_web_stream_owner(admission.id)
+            return  # Only quota recovery; Web streaming still owns execution.
         _, service = self._service(admission)
         # Serialize cross-store preparation/cancellation/retry with dispatch.
         # A still-running HTTP prepare is never mistaken for an abandoned intent.

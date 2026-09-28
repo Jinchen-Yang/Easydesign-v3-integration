@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -18,6 +20,13 @@ from .contracts import ProductError
 
 ACTIVE_ADMISSIONS = ("reserved", "queued", "starting", "running", "held")
 DispatchChannel = Literal["legacy", "scoped_worker", "web_stream"]
+
+
+def _web_process_record(pid: int) -> tuple[str, str]:
+    parts = Path(f"/proc/{pid}/stat").read_text().rpartition(") ")[2].split()
+    if len(parts) < 20 or not parts[19].isdigit():
+        raise ValueError("Unverifiable Web process identity")
+    return parts[0], parts[19]
 
 
 def contract_digest(document: Any) -> str | None:
@@ -252,11 +261,22 @@ class ResourceLedger:
                 )
             grant_id = "grant-" + uuid4().hex
             scientific_actor = previous["actor_id"] if previous is not None else user.id
+            owner_pid, owner_start = None, None
+            if dispatch_channel == "web_stream":
+                # Persist ownership in the admission transaction itself: a crash
+                # before the HTTP handler publishes 'running' must not strand quota.
+                owner_pid = os.getpid()
+                try:
+                    _, owner_start = _web_process_record(owner_pid)
+                except (OSError, ValueError) as error:
+                    raise ProductError(
+                        "web_owner_unavailable", "无法确认对话服务进程身份", 503
+                    ) from error
             db.execute(
                 "INSERT INTO admissions(id,scope_id,request_id,actor_id,scientific_actor_id,"
                 "kind,state,gpu_slots,max_candidates,devices_json,worker_pid,worker_start,"
                 "created_at,updated_at,reason,dispatch_channel,auth_version) "
-                "VALUES(?,?,?,?,?,?,'reserved',?,?,?,NULL,NULL,?,?,NULL,?,?)",
+                "VALUES(?,?,?,?,?,?,'reserved',?,?,?,?,?,?,?,NULL,?,?)",
                 (
                     grant_id,
                     scope_id,
@@ -267,6 +287,8 @@ class ResourceLedger:
                     gpu_slots,
                     min(limit.max_candidates_per_job for limit in limits),
                     "[]",
+                    owner_pid,
+                    owner_start,
                     now,
                     now,
                     dispatch_channel,
@@ -286,6 +308,57 @@ class ResourceLedger:
             row = db.execute("SELECT * FROM admissions WHERE id=?", (grant_id,)).fetchone()
             assert row is not None
             return _admission(row), True
+
+    def reconcile_web_stream_owner(self, grant_id: str) -> Admission:
+        """Release only a provably lost local owner; never dispatch or kill a stream."""
+        admission = self.get(grant_id)
+        if admission.dispatch_channel != "web_stream" or admission.state not in ACTIVE_ADMISSIONS:
+            return admission
+        if admission.worker_pid is None or admission.worker_start is None:
+            # Historical ownerless rows have no safe death proof. They remain
+            # visible for operator reconciliation, never expired by a timer.
+            return admission
+        try:
+            state, identity = _web_process_record(admission.worker_pid)
+            lost = state in {"Z", "X"} or identity != admission.worker_start
+        except FileNotFoundError:
+            # Distinguish a missing owner from an unavailable proc filesystem.
+            try:
+                _web_process_record(os.getpid())
+            except (OSError, ValueError):
+                return admission
+            lost = True
+        except (OSError, ValueError):
+            return admission
+        if not lost:
+            return admission
+        with self.accounts.db(write=True) as db:
+            row = db.execute("SELECT * FROM admissions WHERE id=?", (grant_id,)).fetchone()
+            assert row is not None
+            current = _admission(row)
+            if (
+                current.dispatch_channel != "web_stream"
+                or current.state not in ACTIVE_ADMISSIONS
+                or (current.worker_pid, current.worker_start)
+                != (admission.worker_pid, admission.worker_start)
+            ):
+                return current
+            db.execute(
+                "UPDATE admissions SET state='failed',reason='web_owner_lost',updated_at=? "
+                "WHERE id=?",
+                (self.accounts.clock(), grant_id),
+            )
+            self.accounts.audit_record(
+                db,
+                current.actor_id,
+                "resource.failed",
+                scope=current.scope_id,
+                target=grant_id,
+                details={"reason": "web_owner_lost", "dispatch_channel": "web_stream"},
+            )
+            row = db.execute("SELECT * FROM admissions WHERE id=?", (grant_id,)).fetchone()
+            assert row is not None
+            return _admission(row)
 
     def get(self, grant_id: str) -> Admission:
         with self.accounts.db() as db:

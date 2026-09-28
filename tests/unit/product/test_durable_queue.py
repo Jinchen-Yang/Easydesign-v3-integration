@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
+import select
+import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
 from easydesign.backends.executors.local_multi_gpu import GpuResourceSnapshot
-from easydesign.product.accounts import AccountStore
+from easydesign.product.accounts import AccountStore, ResourceLimits
 from easydesign.product.artifacts import immutable_json
 from easydesign.product.contracts import CreateProject, ProductError
 from easydesign.product.domain import NativeGateway
+from easydesign.product.rabbit_chat import RabbitChatService
 from easydesign.product.resource_control import ResourceLedger
 from easydesign.product.resource_supervisor import ResourceSupervisor, process_identity
 from easydesign.product.tenancy import MultiUserRuntime
@@ -86,7 +92,10 @@ def test_unavailable_gpu_persists_queue_without_starting_a_process(queue, monkey
     assert runtime.resources.get(admission.id).state == "queued"
 
 
-def test_web_stream_admission_is_not_owned_by_scientific_supervisor(queue, monkeypatch):
+@pytest.mark.parametrize("phase", ["reserved", "running"])
+def test_live_web_stream_is_neither_dispatched_nor_expired_by_scientific_supervisor(
+    queue, monkeypatch, phase
+):
     runtime, control, accounts, _admin, alice, _bob = queue
     admission, _ = runtime.resources.reserve(
         alice,
@@ -96,10 +105,258 @@ def test_web_stream_admission_is_not_owned_by_scientific_supervisor(queue, monke
         kind="conversation",
         dispatch_channel="web_stream",
     )
-    monkeypatch.setattr(accounts, "clock", lambda: time.time() + 120)
+    assert admission.worker_pid == os.getpid()
+    assert admission.worker_start == process_identity(os.getpid())
+    if phase == "running":
+        runtime.resources.transition(admission.id, "running")
+
+    def unexpected_spawn(*args, **kwargs):
+        pytest.fail("Scientific supervisor must not dispatch Web streams")
+
+    monkeypatch.setattr(subprocess, "Popen", unexpected_spawn)
+    monkeypatch.setattr(accounts, "clock", lambda: time.time() + 7200)
     control.tick()
-    assert runtime.resources.get(admission.id).state == "reserved"
+    assert runtime.resources.get(admission.id).state == phase
     assert not control.pool.assignment_path(admission.id).exists()
+
+
+def test_web_owner_pid_reuse_releases_old_admission_without_killing_process(queue, monkeypatch):
+    runtime, control, _accounts, _admin, alice, _bob = queue
+    grant, _ = runtime.resources.reserve(
+        alice,
+        alice.id,
+        "reused-pid-request-001",
+        {},
+        kind="conversation",
+        dispatch_channel="web_stream",
+    )
+    runtime.resources.transition(grant.id, "running", worker_pid=os.getpid(), worker_start="0")
+
+    def unexpected_kill(*args, **kwargs):
+        pytest.fail("Owner reconciliation must not signal a reused process")
+
+    monkeypatch.setattr(os, "kill", unexpected_kill)
+    control.tick()
+    assert runtime.resources.get(grant.id).reason == "web_owner_lost"
+    assert runtime.resources.get(grant.id).state == "failed"
+
+
+@pytest.mark.parametrize("observation", ["permission_denied", "malformed", "proc_unavailable"])
+def test_unverifiable_web_owner_is_not_reaped(queue, monkeypatch, observation):
+    runtime, control, accounts, _admin, alice, _bob = queue
+    grant, _ = runtime.resources.reserve(
+        alice,
+        alice.id,
+        "unknown-owner-request-001",
+        {},
+        kind="conversation",
+        dispatch_channel="web_stream",
+    )
+    read_text = Path.read_text
+
+    def unreadable(path, *args, **kwargs):
+        if path == Path(f"/proc/{os.getpid()}/stat"):
+            if observation == "permission_denied":
+                raise PermissionError("fixture observation denied")
+            if observation == "proc_unavailable":
+                raise FileNotFoundError("fixture proc unavailable")
+            return "malformed fixture"
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    monkeypatch.setattr(accounts, "clock", lambda: time.time() + 7200)
+    control.tick()
+    assert runtime.resources.get(grant.id) == grant
+
+
+def test_legacy_ownerless_web_admission_stays_visible_without_guessing_death(queue, monkeypatch):
+    runtime, control, accounts, admin, alice, _bob = queue
+    grant, _ = runtime.resources.reserve(
+        alice,
+        alice.id,
+        "ownerless-web-request-001",
+        {},
+        kind="conversation",
+        dispatch_channel="web_stream",
+    )
+    # Synthetic legacy row from before ownership was persisted atomically.
+    with accounts.db(write=True) as db:
+        db.execute(
+            "UPDATE admissions SET worker_pid=NULL,worker_start=NULL WHERE id=?", (grant.id,)
+        )
+    monkeypatch.setattr(accounts, "clock", lambda: time.time() + 7200)
+    control.tick()
+    retained = runtime.resources.get(grant.id)
+    assert retained.state == "reserved" and retained.worker_pid is None
+    visible = next(row for row in runtime.resources.all_admissions(admin) if row["id"] == grant.id)
+    assert visible["dispatch_channel"] == "web_stream" and visible["worker_start"] is None
+
+
+def test_start_recovers_web_quota_before_ready_without_waiting_for_gpu_probe(queue):
+    runtime, _control, accounts, admin, alice, _bob = queue
+    accounts.set_limits(admin, alice.id, ResourceLimits(max_active_chats=1))
+    create(runtime, alice)  # Older scientific queue entry is observed first by the background loop.
+    grant, _ = runtime.resources.reserve(
+        alice,
+        alice.id,
+        "web-startup-barrier-01",
+        {},
+        kind="conversation",
+        dispatch_channel="web_stream",
+    )
+    runtime.resources.transition(grant.id, "running", worker_start="0")
+    probing, finish_probe, ready = threading.Event(), threading.Event(), threading.Event()
+
+    class SlowProbe:
+        def snapshots(self):
+            probing.set()
+            assert finish_probe.wait(10), "Fixture GPU probe was not released"
+            return ()
+
+    restarted = ResourceSupervisor(runtime, probe=SlowProbe())
+
+    def start():
+        restarted.start()
+        ready.set()
+
+    starter = threading.Thread(target=start)
+    starter.start()
+    try:
+        assert ready.wait(5), "Web recovery must not synchronously probe GPU resources"
+        assert probing.wait(5)
+        assert runtime.resources.get(grant.id).state == "failed"
+        replacement, created = runtime.resources.reserve(
+            alice,
+            alice.id,
+            "web-after-startup-001",
+            {},
+            kind="conversation",
+            dispatch_channel="web_stream",
+        )
+        assert created and replacement.state == "reserved"
+    finally:
+        finish_probe.set()
+        starter.join(timeout=10)
+        restarted.close()
+
+
+@pytest.mark.parametrize("phase", ["reserved", "running"])
+def test_crashed_web_owner_releases_chat_quota_without_replaying_ai(
+    queue, tmp_path, phase, monkeypatch
+):
+    runtime, control, accounts, admin, alice, _bob = queue
+    accounts.set_limits(admin, alice.id, ResourceLimits(max_active_chats=1))
+    team = accounts.create_team(alice, "Recovery team")["id"]
+    accounts.set_limits(admin, team, ResourceLimits(max_active_chats=1))
+    chat_path = tmp_path / "web-chat.sqlite"
+    request_id = "crashed-web-request-001"
+    payload = {
+        "locale": "en",
+        "messages": [{"role": "user", "content": "Synthetic chat"}],
+        "context": {"stage": "Idle", "status": "idle", "goal": ""},
+    }
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import json, os, sys\n"
+            "from pathlib import Path\n"
+            "from easydesign.product.accounts import AccountStore\n"
+            "from easydesign.product.resource_control import ResourceLedger\n"
+            "from easydesign.product.resource_supervisor import process_identity\n"
+            "from easydesign.product.rabbit_chat import RabbitChatService\n"
+            "accounts = AccountStore(Path(sys.argv[1]))\n"
+            "resources = ResourceLedger(accounts)\n"
+            "actor = accounts.user(sys.argv[2])\n"
+            "scope, request_id, phase = sys.argv[3:6]\n"
+            "payload = json.loads(sys.argv[7])\n"
+            "def provider(request):\n"
+            "    yield {'type':'delta', 'text':'synthetic'}\n"
+            "    yield {'type':'done'}\n"
+            "chat = RabbitChatService(provider, ledger_path=Path(sys.argv[6]))\n"
+            "grant, _ = resources.reserve(actor, scope, request_id, payload, "
+            "kind='conversation', dispatch_channel='web_stream')\n"
+            "stream = chat.events(payload, actor_id=actor.id, scope_id=scope, "
+            "request_id=request_id)\n"
+            "if phase == 'running':\n"
+            "    resources.transition(grant.id, 'running', worker_pid=os.getpid(), "
+            "worker_start=process_identity(os.getpid()))\n"
+            "    next(stream)\n"
+            "    next(stream)\n"
+            "print(grant.id, flush=True)\n"
+            "sys.stdin.readline()\n"
+            "os._exit(57)\n",
+            str(accounts.path),
+            alice.id,
+            team,
+            request_id,
+            phase,
+            str(chat_path),
+            json.dumps(payload),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert select.select([child.stdout], [], [], 20)[0], "Fixture owner did not start"
+        grant_id = child.stdout.readline().strip()
+        assert grant_id.startswith("grant-")
+        before = runtime.resources.get(grant_id)
+        with pytest.raises(ProductError) as full:
+            runtime.resources.reserve(
+                alice,
+                team,
+                "second-web-request-001",
+                payload,
+                kind="conversation",
+                dispatch_channel="web_stream",
+            )
+        assert full.value.code == "quota_exceeded"
+        monkeypatch.setattr(accounts, "clock", lambda: time.time() + 7200)
+        control.tick()
+        assert runtime.resources.get(grant_id).state == phase
+        assert child.poll() is None  # Even a long-lived real queued/streaming owner is kept.
+        child.communicate("crash\n", timeout=10)
+        assert child.returncode == 57
+        # A fresh supervisor observes the lost owner, not the provider outcome.
+        restarted = ResourceSupervisor(runtime, probe=control.probe)
+        restarted.tick()
+        after = runtime.resources.get(grant_id)
+        assert after.state == "failed" and after.reason == "web_owner_lost"
+        assert before.worker_pid == child.pid and before.worker_start is not None
+        replacement, created = runtime.resources.reserve(
+            alice,
+            team,
+            "second-web-request-001",
+            payload,
+            kind="conversation",
+            dispatch_channel="web_stream",
+        )
+        assert created and replacement.state == "reserved"
+        calls = []
+
+        def unexpected_provider(request):
+            calls.append(request)
+            yield {"type": "done"}
+
+        restored = RabbitChatService(unexpected_provider, ledger_path=chat_path)
+        try:
+            with pytest.raises(ProductError) as repeated:
+                restored.events(payload, actor_id=alice.id, scope_id=team, request_id=request_id)
+            assert repeated.value.code == "request_already_processed"
+            status = restored.request_status(
+                actor_id=alice.id, scope_id=team, request_id=request_id
+            )
+            assert status["code"] == ("outcome_unknown" if phase == "running" else "interrupted")
+            assert calls == []
+        finally:
+            restored.close()
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        child.communicate(timeout=10)
 
 
 def test_bounded_queue_cancellation_frees_capacity_and_is_idempotent(queue):

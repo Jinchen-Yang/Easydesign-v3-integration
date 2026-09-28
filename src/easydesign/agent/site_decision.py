@@ -161,9 +161,7 @@ def verified_location_conflict(
     axial = [row.get("axial_distance") for row in geometry]
     signed = bool(axial) and all(isinstance(value, (int, float)) for value in axial)
     candidate_positions = {
-        value
-        for value in location.get("canonical_positions", [])
-        if isinstance(value, int)
+        value for value in location.get("canonical_positions", []) if isinstance(value, int)
     }
     geometry_positions = {
         row.get("canonical_position")
@@ -176,8 +174,7 @@ def verified_location_conflict(
         declared_conflict = has_cyto and not has_extra
         geometric_conflict = (
             complete_geometry
-            and regions
-            <= {"inner_pore", "intracellular", "intracellular_tm_surface"}
+            and regions <= {"inner_pore", "intracellular", "intracellular_tm_surface"}
             and signed
             and all(value < 0 for value in axial)
             and not has_extra
@@ -288,9 +285,7 @@ def _compact_receptor_context(cards: list[dict[str, Any]]) -> list[dict[str, Any
             continue
         seen.add(context_key)
         receptor_chain = identity_facts.get("receptor_chain")
-        prepared_receptor_chain = identity_facts.get(
-            "prepared_receptor_chain", receptor_chain
-        )
+        prepared_receptor_chain = identity_facts.get("prepared_receptor_chain", receptor_chain)
         interfaces = card.get("complex_interfaces", {})
         receptor_edges = [
             {
@@ -595,6 +590,7 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
         "only Runtime hard-invalid status removes selectability.",
     }
 
+
 def hydrate_site_decision(
     bridge: Phase2Bridge, decision: SiteDecision | RankedSiteDecision, execution_id: str | None
 ) -> SiteIntent:
@@ -702,6 +698,25 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
             block = eligibility.get("cause") or "verified-compartment-conflict"
         return block
 
+    verified_orthosteric_card_ids: set[str] = set()
+    for question in dossier.get("decision_questions", []):
+        if question.get("status") != "VERIFIED":
+            continue
+        evidence = question.get("evidence", [])
+        question_text = " ".join(
+            [
+                str(question.get("question", "")),
+                str(question.get("decision_impact", "")),
+                *(str(item.get("claim", "")) for item in evidence),
+            ]
+        ).casefold()
+        if any(term in question_text for term in ("orthosteric", "正构")) and any(
+            term in question_text for term in ("deep", "pocket", "深", "口袋")
+        ):
+            verified_orthosteric_card_ids.update(
+                str(item["card_id"]) for item in evidence if item.get("card_id")
+            )
+
     def mandatory_gpcr_a(candidate: dict[str, Any]) -> bool:
         """Recognize a narrow model/runtime-consistency invariant, not a new epitope claim.
 
@@ -736,7 +751,25 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
             "配体" in interpretation
             and any(term in interpretation for term in ("占位", "入口", "结合", "竞争"))
         )
-        if not direct_orthosteric and not ligand_mechanism:
+        pocket_occupancy_mechanism = any(
+            term in interpretation
+            for term in ("pocket occlusion", "pore occlusion", "口袋阻断", "孔道阻断")
+        ) and any(term in interpretation for term in ("occupancy", "closure", "占位", "闭合"))
+        verified_orthosteric_mechanism = bool(
+            set(map(str, hypothesis.get("evidence_card_ids", []))) & verified_orthosteric_card_ids
+        )
+        kernel_outer_pore_mechanism = "transmembrane-pore" in interpretation or (
+            "transmembrane" in interpretation and "outer-pore" in interpretation
+        )
+        if not any(
+            (
+                direct_orthosteric,
+                ligand_mechanism,
+                pocket_occupancy_mechanism,
+                verified_orthosteric_mechanism,
+                kernel_outer_pore_mechanism,
+            )
+        ):
             return False
         geometry = candidate.get("location", {}).get("membrane_geometry", [])
         outer_pore = [

@@ -67,16 +67,14 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
             }
         ],
         "membrane_geometry": [
-            {"region": "inner_pore", "axial_distance": value}
-            for value in (-18.8, -11.9, -10.5)
+            {"region": "inner_pore", "axial_distance": value} for value in (-18.8, -11.9, -10.5)
         ],
     }
     outer_pore = {
         "segments": ["TM2", "TM6", "TM7"],
         "sequence_topology": [],
         "membrane_geometry": [
-            {"region": "outer_pore", "axial_distance": value}
-            for value in (7.1, 10.2, 17.3)
+            {"region": "outer_pore", "axial_distance": value} for value in (7.1, 10.2, 17.3)
         ],
     }
     ambiguous = {
@@ -98,17 +96,15 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         ],
     }
     incomplete_inner_geometry = deepcopy(complete_inner_geometry)
-    incomplete_inner_geometry["membrane_geometry"] = incomplete_inner_geometry[
-        "membrane_geometry"
-    ][:-1]
+    incomplete_inner_geometry["membrane_geometry"] = incomplete_inner_geometry["membrane_geometry"][
+        :-1
+    ]
     mixed_inner = {
         "segments": ["TM5", "ICL3", "TM6"],
         "sequence_topology": [
             {
                 "canonical_position": position,
-                "annotations": [
-                    {"type": "Topological domain", "description": "Cytoplasmic"}
-                ],
+                "annotations": [{"type": "Topological domain", "description": "Cytoplasmic"}],
             }
             for position in (227, 228, 229)
         ],
@@ -126,9 +122,7 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         "sequence_topology": [
             {
                 "canonical_position": position,
-                "annotations": [
-                    {"type": "Topological domain", "description": "Cytoplasmic"}
-                ],
+                "annotations": [{"type": "Topological domain", "description": "Cytoplasmic"}],
             }
             for position in (229, 231, 232)
         ],
@@ -139,9 +133,7 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         "sequence_topology": [
             {
                 "canonical_position": position,
-                "annotations": [
-                    {"type": "Topological domain", "description": "Extracellular"}
-                ],
+                "annotations": [{"type": "Topological domain", "description": "Extracellular"}],
             }
             for position in (273, 274, 275)
         ],
@@ -152,9 +144,7 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         "sequence_topology": [
             {
                 "canonical_position": 67,
-                "annotations": [
-                    {"type": "Topological domain", "description": "Cytoplasmic"}
-                ],
+                "annotations": [{"type": "Topological domain", "description": "Cytoplasmic"}],
             }
         ],
         "membrane_geometry": [],
@@ -164,40 +154,38 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         "sequence_topology": [
             {
                 "canonical_position": 67,
-                "annotations": [
-                    {"type": "Topological domain", "description": "Cytoplasmic"}
-                ],
+                "annotations": [{"type": "Topological domain", "description": "Cytoplasmic"}],
             },
             {
                 "canonical_position": 86,
-                "annotations": [
-                    {"type": "Topological domain", "description": "Extracellular"}
-                ],
+                "annotations": [{"type": "Topological domain", "description": "Extracellular"}],
             },
         ],
         "membrane_geometry": [],
     }
-    assert verified_location_conflict(inner, "extracellular") == (
-        "verified-compartment-conflict"
-    )
+    assert verified_location_conflict(inner, "extracellular") == ("verified-compartment-conflict")
     assert verified_location_conflict(outer_pore, "extracellular") is None
     assert verified_location_conflict(ambiguous, "extracellular") is None
-    assert verified_location_conflict(
-        complete_inner_geometry, "extracellular"
-    ) == "verified-compartment-conflict"
+    assert (
+        verified_location_conflict(complete_inner_geometry, "extracellular")
+        == "verified-compartment-conflict"
+    )
     assert verified_location_conflict(incomplete_inner_geometry, "extracellular") is None
     assert verified_location_conflict(mixed_inner, "extracellular") == (
         "verified-compartment-conflict"
     )
-    assert verified_location_conflict(
-        mixed_inner_without_geometry, "extracellular"
-    ) == "verified-compartment-conflict"
-    assert verified_location_conflict(
-        mixed_outer_without_geometry, "intracellular"
-    ) == "verified-compartment-conflict"
-    assert verified_location_conflict(
-        tm_only_wrong_side_without_geometry, "extracellular"
-    ) == "verified-compartment-conflict"
+    assert (
+        verified_location_conflict(mixed_inner_without_geometry, "extracellular")
+        == "verified-compartment-conflict"
+    )
+    assert (
+        verified_location_conflict(mixed_outer_without_geometry, "intracellular")
+        == "verified-compartment-conflict"
+    )
+    assert (
+        verified_location_conflict(tm_only_wrong_side_without_geometry, "extracellular")
+        == "verified-compartment-conflict"
+    )
     assert verified_location_conflict(mixed_topology_without_geometry, "extracellular") is None
     assert verified_location_conflict(inner, None) is None
 
@@ -332,6 +320,59 @@ def test_deep_gpcr_ligand_occupancy_mechanism_cannot_evade_rank_a_by_omitting_ke
         compile_site_decision(dossier, case["decision"])
 
 
+@pytest.mark.parametrize(
+    "rationale",
+    [
+        "Extracellular pocket occlusion causes productive closure; whole-VHH reach untested.",
+        "Verified transmembrane-pore outer-pore geometry near the extracellular entrance.",
+        "The transmembrane outer-pore spans the extracellular entrance.",
+    ],
+)
+def test_equivalent_gpcr_outer_pore_terms_preserve_existing_rank_policy(site_bridge, rationale):
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {"required_site_compartment": "extracellular"}
+    dossier["receptor_context"] = [
+        {"identity": {"status": "resolved"}, "membrane": {"reliable": True}}
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    deep = dossier["candidate_comparison"][1]
+    deep["research_hypothesis"]["name"] = "Upper GPCR entry"
+    deep["research_hypothesis"]["rationale"] = rationale
+    deep["location"] = {
+        "membrane_geometry": [{"region": "outer_pore", "pore_lining": True, "axial_distance": 9.0}]
+    }
+    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
+        compile_site_decision(dossier, case["decision"])
+
+
+def test_verified_orthosteric_card_supports_gpcr_rank_without_keyword_in_hypothesis(site_bridge):
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {"required_site_compartment": "extracellular"}
+    dossier["receptor_context"] = [
+        {"identity": {"status": "resolved"}, "membrane": {"reliable": True}}
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    dossier["decision_questions"] = [
+        {
+            "status": "VERIFIED",
+            "question": "Is the deep orthosteric pocket accessible?",
+            "decision_impact": "Verified deep pocket occupancy mechanism.",
+            "evidence": [{"card_id": "orthosteric-card-1", "claim": "Deep orthosteric pocket"}],
+        }
+    ]
+    deep = dossier["candidate_comparison"][1]
+    deep["research_hypothesis"]["name"] = "Upper receptor entry"
+    deep["research_hypothesis"]["rationale"] = "An extracellular entrance, access untested."
+    deep["research_hypothesis"]["evidence_card_ids"] = ["orthosteric-card-1"]
+    deep["location"] = {
+        "membrane_geometry": [{"region": "outer_pore", "pore_lining": True, "axial_distance": 9.0}]
+    }
+    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
+        compile_site_decision(dossier, case["decision"])
+
+
 def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):
     case = setup_portfolio(site_bridge)
     dossier = deepcopy(case["dossier"])
@@ -343,8 +384,7 @@ def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_brid
         "required_site_compartment": "extracellular",
     }
     constraint_ids = {
-        item["design_label"]: item["residue_id"]
-        for item in dossier["residue_constraints"]
+        item["design_label"]: item["residue_id"] for item in dossier["residue_constraints"]
     }
     valid_label = valid_alternative["research_hypothesis"]["hotspot_label_seq_ids"][0]
     blocked_label = blocked_candidate["research_hypothesis"]["hotspot_label_seq_ids"][0]
@@ -382,9 +422,7 @@ def test_phase2_registration_preserves_runtime_compartment_block(site_bridge):
         selection = selection.model_copy(
             update={
                 "candidates": [
-                    selection.candidates[0].model_copy(
-                        update={"hotspot_label_seq_ids": members}
-                    )
+                    selection.candidates[0].model_copy(update={"hotspot_label_seq_ids": members})
                     for members in ([1, 2], [3, 4], [5, 6])
                 ]
             }
@@ -435,7 +473,8 @@ def test_phase2_registration_preserves_runtime_compartment_block(site_bridge):
         bridge.register_site(intent, None)
         proposal = bridge.current_site()
         blocked = next(
-            entry for entry in proposal["intent"]["portfolio"]
+            entry
+            for entry in proposal["intent"]["portfolio"]
             if entry["candidate_id"] == blocked_id
         )
         assert blocked["rank"] is None

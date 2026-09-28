@@ -13,7 +13,7 @@ test('Doudou offers fresh clickable follow-ups every turn, keeps history and swi
       contentType: 'application/x-ndjson',
       body: [
         { type: 'delta', text: '你好，我是豆豆。' },
-        { type: 'delta', text: '当前是演示页面，我可以陪你聊聊。' },
+        { type: 'delta', text: '**当前是演示页面**，我可以陪你聊聊。' },
         {
           type: 'suggestions',
           questions: english
@@ -40,6 +40,7 @@ test('Doudou offers fresh clickable follow-ups every turn, keeps history and swi
   await panel.getByRole('textbox').fill('你好，介绍一下自己');
   await panel.getByRole('button', { name: '发送消息' }).click();
   await expect(panel.locator('.rabbit-message.assistant')).toContainText('当前是演示页面');
+  await expect(panel.locator('.rabbit-message.assistant strong')).toHaveText('当前是演示页面');
   await expect(panel.getByRole('group', { name: '接着聊' }).getByRole('button')).toHaveCount(2);
   await panel.getByRole('button', { name: '你可以帮我做什么？' }).click();
   await expect(panel.locator('.rabbit-message.assistant')).toHaveCount(2);

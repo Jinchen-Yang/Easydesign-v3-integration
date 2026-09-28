@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState, type CSSProperties } from 'rea
 import { ArrowUp, RotateCcw, Settings2, Square, X } from 'lucide-react';
 import { CHAT_ENDPOINT, streamChat, type ChatContext, type ChatMessage } from './chat';
 import { translate, type Locale } from './i18n';
+import { parseRabbitInlineMarkdown } from './rabbitMarkdown';
 import './rabbit-chat.css';
 import {AccountTransportContext} from '../accounts/AccountTransportContext';
 
@@ -235,7 +236,6 @@ export function RabbitChat({
       <header className="rabbit-chat-header">
         <div>
           <strong>{t('Little lab companion')}</strong>
-          <span>DeepSeek Flash</span>
         </div>
         <button title={t('New chat')} aria-label={t('New chat')} onClick={clear}>
           <RotateCcw size={17} />
@@ -271,14 +271,25 @@ export function RabbitChat({
         {messages.map((m, i) => (
           <div key={i} className={`rabbit-message ${m.role}`}>
             <span className="sr-only">{m.role === 'user' ? t('You') : t('Bunny')}</span>
-            {m.content ||
-              (busy && i === messages.length - 1 ? (
+            {m.content ? (
+              m.role === 'assistant' ? (
+                parseRabbitInlineMarkdown(m.content).map((token, tokenIndex) =>
+                  token.type === 'strong' ? (
+                    <strong key={tokenIndex}>{token.value}</strong>
+                  ) : (
+                    token.value
+                  ),
+                )
+              ) : (
+                m.content
+              )
+            ) : busy && i === messages.length - 1 ? (
                 <span className="rabbit-chat-dots" aria-label={t('Preparing a reply')}>
                   ···
                 </span>
               ) : (
                 t('No reply')
-              ))}
+              )}
           </div>
         ))}
         {!busy && suggestions.length > 0 && (
@@ -348,7 +359,7 @@ export function RabbitChat({
           </button>
         )}
       </form>
-      <footer>{t('Sends chat & page summary to DeepSeek')}</footer>
+      <footer>{t('Uses chat & page summary to prepare this reply')}</footer>
     </section>
   );
 }

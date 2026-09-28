@@ -7,7 +7,7 @@ import {
 } from 'react';
 import { ArrowLeftRight, Images, Minus, Pause, Play, RotateCcw, Settings2, X } from 'lucide-react';
 import { translate, type Locale } from './i18n';
-import { RabbitActor, RABBIT_ACTIONS, type RabbitStage } from './RabbitActor';
+import { RabbitActor, RABBIT_ACTIONS, RABBIT_STAGE_IMAGES, type RabbitStage } from './RabbitActor';
 import './rabbit-mascot.css';
 import { RabbitChat } from './RabbitChat';
 import type { ChatContext } from './chat';
@@ -116,6 +116,13 @@ export function RabbitMascot({
     location.y >= menuHeight + margin
       ? location.y - menuHeight - 8
       : Math.max(margin, Math.min(viewport.height - menuHeight - margin, location.y + size + 8));
+
+  useEffect(() => {
+    for (const file of Object.values(RABBIT_STAGE_IMAGES)) {
+      const artwork = new Image();
+      artwork.src = `${ROOT}originals/${file}`;
+    }
+  }, []);
 
   useEffect(() => {
     const visible = () => setChatViewport(visibleViewport());

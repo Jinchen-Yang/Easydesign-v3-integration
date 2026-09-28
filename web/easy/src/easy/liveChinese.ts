@@ -57,6 +57,13 @@ const GATE_INTROS: Record<number, string> = {
 };
 
 const LIVE_SCIENTIFIC_TERMS: ReadonlyArray<[RegExp, string]> = [
+  [
+    /region-A-has-2-spatial-components;user-members-preserved/gi,
+    '位点 A 包含两个空间组分；已保留用户指定残基',
+  ],
+  [/approach_validation\s+not-performed/gi, '尚未进行接近路径验证'],
+  [/region-A-has-2-spatial-components/gi, '位点 A 包含两个空间组分'],
+  [/user-members-preserved/gi, '已保留用户指定残基'],
   [/\bGate\s*([1-5])\b/gi, '第 $1 关'],
   [/\binverse[ -]?fold(?:ing)?\b/gi, '逆向折叠'],
   [/\bnative[ -]?filter(?:ing)?\b/gi, '原生筛选'],
@@ -73,6 +80,10 @@ const LIVE_SCIENTIFIC_TERMS: ReadonlyArray<[RegExp, string]> = [
   [/\bbinders?\b/gi, '结合分子'],
   [/\bprimary\b/gi, '主候选'],
   [/\bbackups?\b/gi, '备选'],
+  [/\boverride\b/gi, '越权批准'],
+  [/\bavoid\b/gi, '应避免'],
+  [/\bINCONCLUSIVE\b/g, '结论不确定'],
+  [/\bnot-performed\b/gi, '尚未执行'],
 ];
 
 /**

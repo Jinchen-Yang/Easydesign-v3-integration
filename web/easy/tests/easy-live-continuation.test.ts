@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canAutoContinue } from '../src/easy/EasyLiveApp';
+import { canAutoContinue, shouldOfferManualResume } from '../src/easy/EasyLiveApp';
 import type { ProductSnapshot } from '../src/easy/product-contracts';
 
 function snapshot(status: string, stage: string): ProductSnapshot {
@@ -49,5 +49,18 @@ describe('Easy live automatic continuation', () => {
 
   it('waits while a continuation request is already active', () => {
     expect(canAutoContinue(snapshot('available', 'pilot-card'), false, 'running')).toBe(false);
+  });
+
+  it('never offers a redundant resume button while compute is running', () => {
+    const current = snapshot('running', 'pilot-running');
+    current.capabilities.auto_continue = false;
+    expect(shouldOfferManualResume(current, false)).toBe(false);
+    expect(shouldOfferManualResume(snapshot('available', 'pilot-card'), true)).toBe(false);
+  });
+
+  it('offers recovery only for a stopped resumable step', () => {
+    const current = snapshot('incomplete', 'pilot-operational-evidence');
+    current.capabilities.auto_continue = false;
+    expect(shouldOfferManualResume(current, false)).toBe(true);
   });
 });

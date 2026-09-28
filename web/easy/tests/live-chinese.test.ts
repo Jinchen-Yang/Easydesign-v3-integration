@@ -83,4 +83,14 @@ describe('Easy live Chinese presentation', () => {
       ),
     ).toBe('科学家 reviews 位点 A 热点残基; AFO, BoltzGen, PDB and UniProt remain named.');
   });
+
+  it('turns internal review tokens into readable Chinese for approval risks', () => {
+    expect(
+      normalizeLiveScientificChinese(
+        'region-A-has-2-spatial-components;user-members-preserved; approach_validation not-performed; avoid; INCONCLUSIVE; override',
+      ),
+    ).toBe(
+      '位点 A 包含两个空间组分；已保留用户指定残基; 尚未进行接近路径验证; 应避免; 结论不确定; 越权批准',
+    );
+  });
 });

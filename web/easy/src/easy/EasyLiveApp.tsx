@@ -94,6 +94,16 @@ export function canAutoContinue(
   return !pending && !['running', 'accepted'].includes(requestState || '') && safeStatus;
 }
 
+export function shouldOfferManualResume(
+  snapshot: ProductSnapshot | null,
+  pending: boolean,
+  requestState?: string,
+) {
+  if (!snapshot || !snapshot.capabilities.resume || pending) return false;
+  if (['running', 'accepted'].includes(requestState || '')) return false;
+  return ['available', 'incomplete'].includes(snapshot.project.status);
+}
+
 function stageStatus(snapshot: ProductSnapshot | null, index: number) {
   if (!snapshot) return 'waiting';
   const phase = STEPS[index].toLowerCase();
@@ -137,6 +147,7 @@ function ExecutionProgress({
     progress?.stage_id.startsWith('05-') === true || progress?.stage_id.startsWith('07-') === true;
   const current = native ? 'native-filter' : progress?.substage;
   const currentIndex = PIPELINE_STEPS.findIndex(([id]) => id === current);
+  const currentLabel = PIPELINE_STEPS.find(([id]) => id === current)?.[1];
   const pipelineComplete = workflowComplete && recorded.length > 0;
   const completed =
     workflowComplete && recorded.length ? recorded.length : progress?.completed || 0;
@@ -160,7 +171,7 @@ function ExecutionProgress({
           <span>真实计算</span>
           <strong>
             {phase === 'pilot' ? '小规模试运行' : '扩大测试'} ·{' '}
-            {native ? 'AFO 预测与原生过滤' : progress?.substage_label || 'BoltzGen'}
+            {native ? 'AFO 独立结构预测与原生筛选' : currentLabel || 'BoltzGen'}
           </strong>
         </div>
         <b>{total ? `${completed} / ${total} 条` : '等待资源'}</b>
@@ -189,9 +200,19 @@ function ExecutionProgress({
         })}
       </div>
       <p>
-        {completedTasks} / {totalTasks} 个骨架任务完成
+        {completedTasks} / {totalTasks} 个设计策略任务完成
         {progress?.running_tasks ? `，${progress.running_tasks} 个正在运行` : ''}
       </p>
+      {phase === 'pilot' &&
+        totalTasks > 0 &&
+        snapshot.scientific_context.arms.length > 0 &&
+        totalTasks % snapshot.scientific_context.arms.length === 0 && (
+          <p className="easy-execution-allocation">
+            {snapshot.scientific_context.arms.length} 个设计分支 ×{' '}
+            {totalTasks / snapshot.scientific_context.arms.length} 个 VHH 骨架 = {totalTasks}{' '}
+            个策略任务；当前显示的是经 Gate 3 批准后的实际执行范围。
+          </p>
+        )}
     </section>
   );
 }
@@ -583,8 +604,6 @@ function GatePanel({
       ? decision.options.filter((item) => item.option_id === decision.default_option_id)
       : decision.options;
   const gatePassages: LocalizationPassage[] = [
-    { id: 'gate.question', text: decision.question },
-    { id: 'gate.summary', text: decision.action_summary },
     ...visibleOptions.flatMap((item, index) => [
       ...(item.label ? [{ id: `gate.option.${index}.label`, text: item.label }] : []),
       ...(item.description
@@ -635,9 +654,7 @@ function GatePanel({
         <ShieldCheck size={14} /> 科学家审批 · 第 {decision.gate} 关
       </div>
       <h3>{gateTitle(decision.gate)}</h3>
-      <p>
-        {normalizeLiveScientificChinese(gateChinese['gate.summary'] || gateIntro(decision.gate))}
-      </p>
+      <p>{gateIntro(decision.gate)}</p>
       <div className="easy-live-options" role="radiogroup" aria-label="科学决策选项">
         {visibleOptions.map((item, index) => {
           const fallback = gateOptionFallback(decision, item, index);
@@ -1306,24 +1323,20 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       刷新审批卡 <RefreshCw size={14} />
                     </button>
                   </section>
-                ) : snapshot.capabilities.resume ? (
+                ) : shouldOfferManualResume(
+                    snapshot,
+                    Boolean(state.pending),
+                    state.pendingRequest?.state,
+                  ) ? (
                   <section className="easy-live-progress-card">
-                    <LoaderCircle className="easy-spin" size={22} />
+                    <RefreshCw size={22} />
                     <div>
-                      <h3>
-                        {snapshot.capabilities.auto_continue ? '正在自动继续' : '当前步骤可以继续'}
-                      </h3>
+                      <h3>上次运行已暂停</h3>
                       <p>{liveActionName(snapshot.current_action.stage)}</p>
                     </div>
-                    {!snapshot.capabilities.auto_continue && (
-                      <button
-                        className="easy-primary"
-                        disabled={state.pending}
-                        onClick={() => void adapter.resume()}
-                      >
-                        继续研究 <ArrowRight size={14} />
-                      </button>
-                    )}
+                    <button className="easy-primary" onClick={() => void adapter.resume()}>
+                      恢复运行 <ArrowRight size={14} />
+                    </button>
                   </section>
                 ) : (
                   <section className="easy-live-progress-card">

@@ -1,5 +1,11 @@
+import asyncio
+import subprocess
+import sys
 from types import SimpleNamespace
 
+import anthropic
+import httpx
+import openai
 import pytest
 from langchain_core.messages import AIMessage
 
@@ -27,7 +33,10 @@ class Responses:
 
     async def ainvoke(self, messages):
         self.calls.append(messages)
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 def good(**changes):
@@ -52,7 +61,7 @@ def runtime(tmp_path):
     store.close()
 
 
-async def call(runtime, model):
+async def call(runtime, model, *, packet=None):
     return await structured_opinion(
         bridge=runtime,
         model=model,
@@ -60,7 +69,7 @@ async def call(runtime, model):
         execution_id=runtime.execution_id,
         role="judge",
         schema=DownstreamJudgeOpinion,
-        packet={"facts": {"arm-1": {"predicted": 2}}},
+        packet=packet if packet is not None else {"facts": {"arm-1": {"predicted": 2}}},
         prompt="Provide a compact independent critique.",
     )
 
@@ -154,3 +163,239 @@ async def test_shared_model_budget_not_reset_by_recovery(runtime):
             packet={},
             prompt="Review.",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", [openai, anthropic], ids=["openai", "anthropic"])
+@pytest.mark.parametrize("failure", ["connection", "timeout", "server"])
+async def test_unknown_provider_outcome_is_not_automatically_repeated(runtime, provider, failure):
+    request = httpx.Request("POST", "https://fixture.invalid/messages")
+    if failure == "server":
+        error = provider.InternalServerError(
+            "fixture failure", response=httpx.Response(503, request=request), body=None
+        )
+    elif failure == "timeout":
+        error = provider.APITimeoutError(request=request)
+    else:
+        error = provider.APIConnectionError(request=request)
+    model = Responses([error, good()])
+    with pytest.raises(StructuredOpinionUnavailable) as caught:
+        await call(runtime, model)
+    assert caught.value.categories == ["PROVIDER_UNAVAILABLE"]
+    assert len(model.calls) == 1
+    # Reopening the real durable store must not spend the remaining repair budget.
+    path = runtime.store.project_root
+    runtime.store.close()
+    runtime.store = SessionStore(path)
+    replay = Responses([good()])
+    with pytest.raises(StructuredOpinionUnavailable):
+        await call(runtime, replay)
+    assert replay.calls == []
+    events = runtime.store.events(runtime.thread)
+    assert len([event for event in events if event["kind"] == "model-call"]) == 1
+    attempt = [event["payload"] for event in events if event["kind"] == "phase34-model-attempt"][-1]
+    assert attempt["transport_status"] == "outcome_unknown"
+    assert attempt["transport_terminal"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", [openai, anthropic], ids=["openai", "anthropic"])
+async def test_explicit_rate_limit_waits_and_keeps_existing_call_limit(
+    runtime, provider, monkeypatch
+):
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    request = httpx.Request("POST", "https://fixture.invalid/messages")
+    error = provider.RateLimitError(
+        "fixture limit",
+        response=httpx.Response(429, request=request, headers={"Retry-After": "2"}),
+        body=None,
+    )
+    model = Responses([error] * 3)
+    with pytest.raises(StructuredOpinionUnavailable) as caught:
+        await call(runtime, model)
+    assert len(waits) == 2
+    assert all(0 < seconds <= 2 for seconds in waits)
+    assert len(model.calls) == 3
+    assert caught.value.transport_status == "rate_limited"
+    assert "rate_limited" in str(caught.value)
+    events = runtime.store.events(runtime.thread)
+    assert len([event for event in events if event["kind"] == "model-call"]) == 3
+    attempts = [event["payload"] for event in events if event["kind"] == "phase34-model-attempt"]
+    assert all(attempt["transport_status"] == "rate_limited" for attempt in attempts)
+    assert all(attempt["transport_status"] != "outcome_unknown" for attempt in attempts)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", [openai, anthropic], ids=["openai", "anthropic"])
+@pytest.mark.parametrize(
+    "header", [None, "", "0", "31", "999999", "NaN", "-1", "Wed, 21 Oct 2037 07:28:00 GMT"]
+)
+async def test_unsafe_rate_limit_delay_returns_explicit_terminal_limit(
+    runtime, provider, header, monkeypatch
+):
+    async def sleep(seconds):
+        pytest.fail("An unsupported Retry-After must not guess a delay")
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    request = httpx.Request("POST", "https://fixture.invalid/messages")
+    error = provider.RateLimitError(
+        "fixture limit",
+        response=httpx.Response(
+            429, request=request, headers={} if header is None else {"Retry-After": header}
+        ),
+        body=None,
+    )
+    model = Responses([error, good()])
+    with pytest.raises(StructuredOpinionUnavailable) as caught:
+        await call(runtime, model)
+    assert len(model.calls) == 1
+    assert caught.value.transport_status == "rate_limited"
+    assert "rate_limited" in str(caught.value)
+    before = runtime.store.events(runtime.thread)
+    with pytest.raises(StructuredOpinionUnavailable):
+        await call(runtime, model)
+    assert len(model.calls) == 1
+    assert runtime.store.events(runtime.thread) == before
+
+
+@pytest.mark.asyncio
+async def test_interrupted_rate_limit_wait_is_durable_and_does_not_rewrite_attempt(
+    runtime, monkeypatch
+):
+    from easydesign.agent import phase34_model
+
+    monkeypatch.setattr(phase34_model, "time", lambda: 1000.0)
+
+    async def interrupted_sleep(seconds):
+        assert seconds == 2.0
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", interrupted_sleep)
+    request = httpx.Request("POST", "https://fixture.invalid/messages")
+    error = openai.RateLimitError(
+        "fixture limit",
+        response=httpx.Response(429, request=request, headers={"Retry-After": "2"}),
+        body=None,
+    )
+    model = Responses([error, good()])
+    with pytest.raises(asyncio.CancelledError):
+        await call(runtime, model)
+    before = runtime.store.events(runtime.thread)
+    assert len(model.calls) == 1
+    path = runtime.store.project_root
+    runtime.store.close()
+    runtime.store = SessionStore(path)
+    waits = []
+
+    async def resumed_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(phase34_model, "time", lambda: 1001.0)
+    monkeypatch.setattr(asyncio, "sleep", resumed_sleep)
+    assert await call(runtime, model)
+    assert waits == [1.0]
+    assert len(model.calls) == 2
+    assert runtime.store.events(runtime.thread)[: len(before)] == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("new_context", ["binding", "execution"])
+async def test_transport_terminal_is_scoped_to_its_binding_and_execution(runtime, new_context):
+    request = httpx.Request("POST", "https://fixture.invalid/messages")
+    with pytest.raises(StructuredOpinionUnavailable):
+        await call(runtime, Responses([openai.APIConnectionError(request=request)]))
+    packet = None
+    if new_context == "binding":
+        packet = {"facts": {"arm-1": {"predicted": 2}}, "independent_intent": True}
+    else:
+        runtime.execution_id = runtime.store.begin_execution(runtime.thread, "new explicit turn")[
+            "execution_id"
+        ]
+    model = Responses([good()])
+    assert await call(runtime, model, packet=packet)
+    assert len(model.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_transport_cannot_hide_previous_fact_conflict_or_warnings(runtime):
+    request = httpx.Request("POST", "https://fixture.invalid/messages")
+    model = Responses(
+        [
+            good(
+                fact_claims=[dict(fact_ref="arm-1", field="predicted", value=20)],
+                warnings=["Retain this scientific concern."],
+            ),
+            openai.APIConnectionError(request=request),
+            good(),
+        ]
+    )
+    with pytest.raises(ReviewFactConflict) as caught:
+        await call(runtime, model)
+    assert caught.value.attempts == 2
+    assert caught.value.retained_warnings == ["Retain this scientific concern."]
+    assert len(model.calls) == 2
+    with pytest.raises(ReviewFactConflict):
+        await call(runtime, model)
+    assert len(model.calls) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interruption", ["cancel", "process_exit"])
+async def test_unclosed_provider_call_is_not_reissued_after_restart(runtime, interruption):
+    if interruption == "cancel":
+        model = Responses([asyncio.CancelledError()])
+        with pytest.raises(asyncio.CancelledError):
+            await call(runtime, model)
+        assert len(model.calls) == 1
+    else:
+        child = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import asyncio, os, sys\n"
+                "from pathlib import Path\n"
+                "from types import SimpleNamespace\n"
+                "from easydesign.agent.session_store import SessionStore\n"
+                "from tests.unit.agent.test_phase34_model import Responses, call\n"
+                "class InterruptedProvider(Responses):\n"
+                "    async def ainvoke(self, messages):\n"
+                "        os._exit(57)\n"
+                "runtime = SimpleNamespace(store=SessionStore(Path(sys.argv[1])), "
+                "thread='test', execution_id=sys.argv[2])\n"
+                "asyncio.run(call(runtime, InterruptedProvider([])))\n",
+                str(runtime.store.project_root),
+                runtime.execution_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        assert child.returncode == 57, child.stderr
+    before = runtime.store.events(runtime.thread)
+    assert len([event for event in before if event["kind"] == "model-context"]) == 1
+    assert not [event for event in before if event["kind"] == "phase34-model-attempt"]
+    path = runtime.store.project_root
+    runtime.store.close()
+    runtime.store = SessionStore(path)
+    replay = Responses([good()])
+    with pytest.raises(StructuredOpinionUnavailable) as caught:
+        await call(runtime, replay)
+    assert caught.value.transport_status == "outcome_unknown"
+    assert replay.calls == []
+    after = runtime.store.events(runtime.thread)
+    assert after[: len(before)] == before
+    assert not [event for event in after if event["kind"] == "phase34-model-attempt"]
+    assert len([event for event in after if event["kind"] == "model-call"]) == 1
+    assert (
+        len([event for event in after if event["kind"] == "phase34-model-transport-terminal"]) == 1
+    )
+    with pytest.raises(StructuredOpinionUnavailable):
+        await call(runtime, replay)
+    assert replay.calls == []
+    assert runtime.store.events(runtime.thread) == after

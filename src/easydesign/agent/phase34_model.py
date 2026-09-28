@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
 from collections.abc import Callable
 from copy import deepcopy
-from time import perf_counter
+from time import perf_counter, time
 from typing import Any, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -69,10 +71,20 @@ def _ranking_schema(schema: type[BaseModel], packet: dict[str, Any]) -> type[Bas
 
 
 class StructuredOpinionUnavailable(AgentBoundaryError):
-    def __init__(self, categories: list[str], retained_warnings: list[str]):
-        super().__init__("Structured scientific opinion unavailable: " + ", ".join(categories))
+    def __init__(
+        self,
+        categories: list[str],
+        retained_warnings: list[str],
+        *,
+        transport_status: str | None = None,
+    ):
+        detail = f" ({transport_status})" if transport_status else ""
+        super().__init__(
+            "Structured scientific opinion unavailable: " + ", ".join(categories) + detail
+        )
         self.categories = categories
         self.retained_warnings = retained_warnings
+        self.transport_status = transport_status
 
 
 class ReviewFactConflict(AgentBoundaryError):
@@ -151,9 +163,10 @@ async def structured_opinion(
             **({"submission_protocol": SUBMISSION_PROTOCOL} if native_decision else {}),
         }
     )
+    events = bridge.store.events(bridge.thread)
     previous = [
         e["payload"]
-        for e in bridge.store.events(bridge.thread)
+        for e in events
         if e["kind"] == "phase34-model-attempt"
         and e["payload"].get("binding") == binding
         and (
@@ -171,7 +184,53 @@ async def structured_opinion(
     retained = [w for p in previous for w in p.get("retained_warnings", [])]
     diagnostic = previous[-1].get("diagnostic") if previous else None
     last_submission = previous[-1].get("submission") if previous else None
+    transport_status = previous[-1].get("transport_status") if previous else None
+    retry_not_before = previous[-1].get("retry_not_before") if previous else None
+    completed_calls = {item["attempt"] - 1 for item in previous}
+    unclosed_contexts = [
+        event["seq"]
+        for event in events
+        if event["kind"] == "model-context"
+        and event["payload"].get("binding") == binding
+        and event["payload"].get("execution_id") == execution_id
+        and event["payload"].get("repair_attempt") not in completed_calls
+    ]
+    interrupted = any(
+        event["kind"] == "phase34-model-transport-terminal"
+        and event["payload"].get("binding") == binding
+        and event["payload"].get("execution_id") == execution_id
+        for event in events
+    )
+    if unclosed_contexts or interrupted:
+        # A pre-call context without a completed attempt may already have reached
+        # the provider. Record only transport uncertainty, never a synthetic opinion
+        # or scientific attempt. A completed 429 remains eligible for bounded backoff.
+        if not interrupted:
+            bridge.store.event(
+                bridge.thread,
+                "phase34-model-transport-terminal",
+                {
+                    "binding": binding,
+                    "execution_id": execution_id,
+                    "role": role,
+                    "transport_status": "outcome_unknown",
+                    "unclosed_contexts": unclosed_contexts,
+                },
+            )
+        interrupted = True
+        transport_status = "outcome_unknown"
+        categories.append("PROVIDER_UNAVAILABLE")
     for attempt in range(len(previous), 3):
+        if interrupted or any(item.get("transport_terminal") for item in previous):
+            break
+        if retry_not_before is not None:
+            delay = retry_not_before - time()
+            # A clock jump must not turn a short provider backoff into an unbounded wait.
+            if delay > 30:
+                break
+            if delay > 0:
+                await asyncio.sleep(delay)
+            retry_not_before = None
         use_patch = (
             delta_repair
             and role == "pilot-diagnosis"
@@ -280,6 +339,8 @@ async def structured_opinion(
         start = perf_counter()
         response = None
         category = "NO_SUBMISSION"
+        transport_status = None
+        transport_terminal = False
         try:
             response = await call_model.bind_tools(
                 [wire_schema], tool_choice=schema.__name__ if force_submission else "auto"
@@ -287,12 +348,22 @@ async def structured_opinion(
         except (
             AnthropicConnectionError,
             AnthropicServerError,
-            AnthropicRateLimit,
             OpenAIConnectionError,
             OpenAIServerError,
-            OpenAIRateLimit,
         ):
             category = "PROVIDER_UNAVAILABLE"
+            transport_status = "outcome_unknown"
+            transport_terminal = True
+        except (AnthropicRateLimit, OpenAIRateLimit) as error:
+            category = "PROVIDER_UNAVAILABLE"
+            transport_status = "rate_limited"
+            retry_after = error.response.headers.get("retry-after", "").strip()
+            # Only a short explicit delta is safe here. Missing, HTTP-date, malformed
+            # or long delays return an explicit limit instead of guessing or hammering.
+            if re.fullmatch(r"[0-9]{1,2}", retry_after) and 1 <= int(retry_after) <= 30:
+                retry_not_before = time() + int(retry_after)
+            else:
+                transport_terminal = True
         bridge.store.event(
             bridge.thread,
             "model-response",
@@ -386,16 +457,23 @@ async def structured_opinion(
                 "delta_repair": use_patch,
                 "diagnostic": diagnostic,
                 "retained_warnings": list(dict.fromkeys(retained)),
+                "transport_status": transport_status,
+                "transport_terminal": transport_terminal,
+                "retry_not_before": retry_not_before,
             },
         )
         if opinion is not None:
             return opinion
         last_submission = submission
         categories.append(category)
+        if transport_terminal:
+            break
     if "FACT_CONFLICT" in categories:
         raise ReviewFactConflict(
             "Independent review has an unresolved structured fact conflict",
             retained_warnings=list(dict.fromkeys(retained)),
             attempts=len(categories),
         )
-    raise StructuredOpinionUnavailable(categories, list(dict.fromkeys(retained)))
+    raise StructuredOpinionUnavailable(
+        categories, list(dict.fromkeys(retained)), transport_status=transport_status
+    )

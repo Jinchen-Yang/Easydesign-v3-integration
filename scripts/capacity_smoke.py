@@ -39,7 +39,7 @@ RECOGNIZED_REFUSALS = {
     "queue_timeout",
     "quota_exceeded",
 }
-LIGHT_OPERATIONS = {"me", "projects", "snapshot", "gpu_status", "health"}
+LIGHT_OPERATIONS = {"me", "projects", "snapshot", "gpu_status", "gpu_submit", "health"}
 
 
 def percentile(values: list[float], fraction: float) -> float | None:
@@ -352,7 +352,14 @@ def process_sample(pid: int) -> dict[str, Any]:
             if ":" in line
         }
         stats = Path(f"/proc/{pid}/stat").read_text().rpartition(") ")[2].split()
-        children = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
+        children: set[str] = set()
+        # Linux attributes a child to the particular thread which created it.
+        # Sampling only the thread-group leader misses live HTTP-worker providers.
+        for entry in Path(f"/proc/{pid}/task").glob("*/children"):
+            try:
+                children.update(entry.read_text().split())
+            except (FileNotFoundError, ProcessLookupError):
+                continue  # A thread can exit between listing and reading its entry.
         return {
             "at": time.time(),
             "pid": pid,
@@ -456,6 +463,7 @@ def resource_summary(path: Path, samples: list[dict[str, Any]]) -> dict[str, Any
         "ai_active_peak": max((row["provider"]["active"] for row in states), default=0),
         "ai_queue_peak": max((row["provider"]["queued"] for row in states), default=0),
         "sampling_interval_seconds": 0.5,
+        "peak_semantics": "observed at 0.5-second intervals, not absolute maxima",
     }
 
 
@@ -659,6 +667,7 @@ def slow_ai(
         "stream_outcomes": dict(Counter(row.get("code") or row["state"] for row in terminal)),
         "passed": len(initial) == len(flows) == cancelled
         and mixed_result["recognized_refusals"] == mixed_result["unexpected_failures"] == 0
+        and mixed_result["latency_targets_pass"]
         and all(flow.get("slow_upload_integrity") for flow in valid),
     }
 
@@ -1060,6 +1069,29 @@ def stage_counts(value: str) -> tuple[int, ...]:
     return counts
 
 
+def acceptance_passed(
+    report: dict[str, Any],
+    *,
+    slow: bool = False,
+    faults: bool = False,
+    boundaries: bool = False,
+) -> bool:
+    passed = (
+        (report["slow_ai"]["passed"] and all(flow.get("pre_ai_ok") for flow in report["flows"]))
+        if slow
+        else report["summary"]["goal_pass"]
+    )
+    return bool(
+        passed
+        and report.get("forbidden_scientific_spawns") == 0
+        and (not faults or (report["faults"] and report["faults"]["passed"]))
+        and (
+            not boundaries
+            or (report["upload_boundaries"] and report["upload_boundaries"]["passed"])
+        )
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serve", type=Path, help=argparse.SUPPRESS)
@@ -1118,25 +1150,17 @@ def main() -> int:
                         "faults",
                         "slow_ai",
                         "upload_boundaries",
+                        "forbidden_scientific_spawns",
                     )
                 }
             ),
             flush=True,
         )
-        passed = (
-            (report["slow_ai"]["passed"] and all(flow.get("pre_ai_ok") for flow in report["flows"]))
-            if args.hold_seconds
-            else report["summary"]["goal_pass"]
-        )
-        passed &= (
-            not args.fault_checks
-            or not final
-            or bool(report["faults"] and report["faults"]["passed"])
-        )
-        passed &= (
-            not args.boundary_uploads
-            or not final
-            or bool(report["upload_boundaries"] and report["upload_boundaries"]["passed"])
+        passed = acceptance_passed(
+            report,
+            slow=bool(args.hold_seconds),
+            faults=args.fault_checks and final,
+            boundaries=args.boundary_uploads and final,
         )
         if not passed:
             # Do not silently escalate a failed smaller workload to a larger one.

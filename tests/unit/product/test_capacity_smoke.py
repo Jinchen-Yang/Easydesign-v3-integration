@@ -4,8 +4,40 @@ import hashlib
 import os
 import subprocess
 import sys
+import threading
+import time
+
+import httpx
 
 from scripts import capacity_smoke
+
+
+def test_resource_sample_counts_child_spawned_by_a_live_http_worker_thread():
+    baseline = capacity_smoke.process_sample(os.getpid())["direct_child_processes"]
+    ready, release = threading.Event(), threading.Event()
+
+    def http_worker():
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(10)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            ready.set()
+            release.wait(5)
+        finally:
+            child.terminate()
+            child.wait(timeout=3)
+
+    thread = threading.Thread(target=http_worker)
+    thread.start()
+    try:
+        assert ready.wait(3)
+        assert capacity_smoke.process_sample(os.getpid())["direct_child_processes"] >= baseline + 1
+    finally:
+        release.set()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
 
 
 def test_refusals_remain_flow_failures_and_latency_does_not_hide_them():
@@ -37,6 +69,35 @@ def test_refusals_remain_flow_failures_and_latency_does_not_hide_them():
     assert report["operations"]["gpu_submit"]["rejected"] == 1
     assert report["operations"]["ai"]["rejected"] == 1
     assert report["goal_pass"] is False
+
+
+def test_persisted_gpu_request_admission_must_meet_the_one_second_p95_target():
+    report = capacity_smoke.summarize(
+        [{"operation": "gpu_submit", "seconds": 1.1, "status": 202, "ok": True, "code": None}],
+        [{"ok": True}],
+    )
+    assert report["full_flow_success_rate"] == 1
+    assert report["unexpected_failures"] == 0
+    assert report["latency_targets_pass"] is False
+    assert report["goal_pass"] is False
+
+
+def test_acceptance_fails_closed_if_any_scientific_spawn_was_attempted():
+    report = {
+        "summary": {"goal_pass": True},
+        "slow_ai": {"passed": True},
+        "flows": [{"pre_ai_ok": True}],
+        "forbidden_scientific_spawns": 0,
+    }
+    for slow in (False, True):
+        assert capacity_smoke.acceptance_passed(report, slow=slow) is True
+        assert (
+            capacity_smoke.acceptance_passed(
+                {**report, "forbidden_scientific_spawns": 1},
+                slow=slow,
+            )
+            is False
+        )
 
 
 def test_two_users_complete_real_http_with_gpu_waiting_and_ai_stub():
@@ -110,6 +171,26 @@ def test_slow_ai_keeps_real_mixed_requests_observable_and_cancels_owned_requests
     assert report["slow_ai"]["mixed"]["recognized_refusals"] == 0
     assert report["slow_ai"]["completed_model_responses"] == 0
     assert report["summary"]["full_flow_completed"] == 0
+
+
+def test_slow_ai_rejects_mixed_latency_failure_even_when_every_http_request_succeeds(monkeypatch):
+    class SlowSnapshotClient(httpx.Client):
+        def request(self, method, url, **kwargs):
+            if method == "GET" and str(url).endswith("/workbench"):
+                time.sleep(1.05)  # Inject delay at the external HTTP transport boundary.
+            return super().request(method, url, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", SlowSnapshotClient)
+    report = capacity_smoke.run_stage(
+        users=1,
+        profile="conservative",
+        login_window_seconds=0,
+        hold_seconds=0.1,
+    )
+    assert report["slow_ai"]["mixed"]["unexpected_failures"] == 0
+    assert report["slow_ai"]["mixed"]["recognized_refusals"] == 0
+    assert report["slow_ai"]["mixed"]["latency_targets_pass"] is False
+    assert report["slow_ai"]["passed"] is False
 
 
 def test_one_maximum_pdb_upload_and_declared_oversize_rejection_are_separate():

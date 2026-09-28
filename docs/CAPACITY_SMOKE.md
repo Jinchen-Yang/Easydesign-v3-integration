@@ -46,8 +46,9 @@ from unexpected failures but still fail the all-flows-success target. GPU queue
 refusal and AI refusal remain separate operations. No blanket 429/503 exception
 turns rejected work into a successful flow.
 
-The proposed local targets are login successful p95 <= 3 seconds and light-API
-successful p95 <= 1 second. `goal_pass` is stricter than an error-budget allowance:
+The proposed local targets are login successful p95 <= 3 seconds, light-API p95 <= 1
+second, and GPU submission-to-persisted-request-ID p95 <= 1 second. `goal_pass` is
+stricter than an error-budget allowance:
 every normal flow and request must succeed. AI completion time is recorded, not
 promised. The actual span of login request start times is recorded separately from
 the requested 5-second arrival window. HTTP requests are not browser page-load scores.
@@ -83,6 +84,9 @@ actual duration is recorded. Cleanup cancellation has bounded fan-out; normal mi
 requests are not retried. Cancelled streams are never counted as completed full flows.
 This scenario exposes interaction with the 384-connection HTTP cap; it does not assume
 that 84 nominal remaining connections guarantee acceptable login/read behavior.
+Its mixed-workload latency targets must also pass; successful-but-slow responses do
+not produce a passing exit code. Any attempted scientific-process spawn fails final
+acceptance in every scenario, even if the safety guard prevented execution.
 
 Fault checks kill only a new session/process group created by this tool, including its
 local model stub. PID/PGID ownership is retained in evidence. The same port/database
@@ -99,6 +103,9 @@ samples, process RSS/thread/CPU/child-count samples and child logs. Request bodi
 passwords, cookies, authorization headers and provider credentials are not logged.
 Synthetic credentials exist only in load-generator memory; hashes remain in the
 new private fixture database. Evidence is not automatically deleted.
+Resource peaks are **observed peaks sampled every 0.5 seconds**, not absolute maxima.
+Child counts include children created by all server threads, deduplicated across the
+thread group; short-lived processes between samples can still be missed.
 
 Source edits are verified via the official integration verifier. Only tiny local
 debugging runs are appropriate while development/regression is running. Formal

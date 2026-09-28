@@ -56,6 +56,37 @@ const GATE_INTROS: Record<number, string> = {
   5: '请确认最终候选及其排序，完成本轮设计。',
 };
 
+const LIVE_SCIENTIFIC_TERMS: ReadonlyArray<[RegExp, string]> = [
+  [/\bGate\s*([1-5])\b/gi, '第 $1 关'],
+  [/\binverse[ -]?fold(?:ing)?\b/gi, '逆向折叠'],
+  [/\bnative[ -]?filter(?:ing)?\b/gi, '原生筛选'],
+  [/\bTarget\b/gi, '靶点'],
+  [/\bSites?\b/gi, '位点'],
+  [/\bDesign\b/gi, '设计方案'],
+  [/\bPilot\b/gi, '小规模验证'],
+  [/\bScale\b/gi, '扩大验证'],
+  [/\bCandidates?\b/gi, '候选分子'],
+  [/\bScientist\b/gi, '科学家'],
+  [/\bAgents?\b/gi, '设计助手'],
+  [/\bhotspots?\b/gi, '热点残基'],
+  [/\bscaffolds?\b/gi, '骨架'],
+  [/\bbinders?\b/gi, '结合分子'],
+  [/\bprimary\b/gi, '主候选'],
+  [/\bbackups?\b/gi, '备选'],
+];
+
+/**
+ * Scientific localization may intentionally preserve acronyms and named tools.
+ * Normalize only product workflow vocabulary so live approvals remain concise
+ * Chinese without rewriting VHH, PDB, UniProt, YAML, AFO or BoltzGen.
+ */
+export function normalizeLiveScientificChinese(value: string): string {
+  return LIVE_SCIENTIFIC_TERMS.reduce(
+    (localized, [pattern, replacement]) => localized.replace(pattern, replacement),
+    value,
+  );
+}
+
 export function liveStageName(stage: string | number): string {
   if (typeof stage === 'number') return STAGE_NAMES[stage] || '研究阶段';
   return PHASE_NAMES[stage.toLowerCase()] || '研究阶段';

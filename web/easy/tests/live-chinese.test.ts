@@ -8,6 +8,7 @@ import {
   liveInputTypeName,
   liveStageName,
   liveStatusName,
+  normalizeLiveScientificChinese,
 } from '../src/easy/liveChinese';
 import type { Decision } from '../src/easy/product-contracts';
 
@@ -66,5 +67,20 @@ describe('Easy live Chinese presentation', () => {
       expect(fallback.label).not.toMatch(/Approve|Target|Site|Design|Pilot|Scale|Candidate/);
       expect(fallback.description).not.toMatch(/Approve|Target|Site|Design|Pilot|Scale|Candidate/);
     }
+  });
+
+  it('normalizes workflow terms retained by scientific localization without changing acronyms', () => {
+    expect(
+      normalizeLiveScientificChinese(
+        '批准此确切的Design和Pilot计划；未授权任何Scale。针对NK2R的VHH binder，仅冻结Gate3 YAML规范。',
+      ),
+    ).toBe(
+      '批准此确切的设计方案和小规模验证计划；未授权任何扩大验证。针对NK2R的VHH 结合分子，仅冻结第 3 关 YAML规范。',
+    );
+    expect(
+      normalizeLiveScientificChinese(
+        'Scientist reviews Site A hotspots; AFO, BoltzGen, PDB and UniProt remain named.',
+      ),
+    ).toBe('科学家 reviews 位点 A 热点残基; AFO, BoltzGen, PDB and UniProt remain named.');
   });
 });

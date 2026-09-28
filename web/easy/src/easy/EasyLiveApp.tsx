@@ -22,6 +22,7 @@ import {
   liveInputTypeName,
   liveStageName,
   liveStatusName,
+  normalizeLiveScientificChinese,
 } from './liveChinese';
 import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
@@ -634,7 +635,9 @@ function GatePanel({
         <ShieldCheck size={14} /> 科学家审批 · 第 {decision.gate} 关
       </div>
       <h3>{gateTitle(decision.gate)}</h3>
-      <p>{gateChinese['gate.summary'] || gateIntro(decision.gate)}</p>
+      <p>
+        {normalizeLiveScientificChinese(gateChinese['gate.summary'] || gateIntro(decision.gate))}
+      </p>
       <div className="easy-live-options" role="radiogroup" aria-label="科学决策选项">
         {visibleOptions.map((item, index) => {
           const fallback = gateOptionFallback(decision, item, index);
@@ -648,9 +651,15 @@ function GatePanel({
                 onChange={() => setSelected(item.option_id)}
               />
               <span>
-                <strong>{gateChinese[`gate.option.${index}.label`] || fallback.label}</strong>
+                <strong>
+                  {normalizeLiveScientificChinese(
+                    gateChinese[`gate.option.${index}.label`] || fallback.label,
+                  )}
+                </strong>
                 <small>
-                  {gateChinese[`gate.option.${index}.description`] || fallback.description}
+                  {normalizeLiveScientificChinese(
+                    gateChinese[`gate.option.${index}.description`] || fallback.description,
+                  )}
                 </small>
                 {item.design_labels && <em>热点残基：{item.design_labels.join(', ')}</em>}
               </span>
@@ -663,10 +672,14 @@ function GatePanel({
           <summary>风险与局限（{decision.warnings.length + decision.limitations.length}）</summary>
           <ul>
             {decision.warnings.map((_, index) => (
-              <li key={`warning-${index}`}>{gateChinese[`gate.warning.${index}`] || '…'}</li>
+              <li key={`warning-${index}`}>
+                {normalizeLiveScientificChinese(gateChinese[`gate.warning.${index}`] || '…')}
+              </li>
             ))}
             {decision.limitations.map((_, index) => (
-              <li key={`limitation-${index}`}>{gateChinese[`gate.limitation.${index}`] || '…'}</li>
+              <li key={`limitation-${index}`}>
+                {normalizeLiveScientificChinese(gateChinese[`gate.limitation.${index}`] || '…')}
+              </li>
             ))}
           </ul>
         </details>

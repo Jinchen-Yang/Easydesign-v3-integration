@@ -30,6 +30,8 @@ class HttpSettings(Settings):
     real_ip_header: str = "X-Real-IP"
     max_connections: int = Field(default=384, ge=2, le=4096)
     max_uploads: int = Field(default=4, ge=1, le=128)
+    max_pending_uploads: int = Field(default=300, ge=0, le=4096)
+    upload_wait_timeout: float = Field(default=10.0, ge=0, le=120)
     header_timeout: float = Field(default=10.0, gt=0, le=120)
     body_timeout: float = Field(default=60.0, gt=0, le=600)
 

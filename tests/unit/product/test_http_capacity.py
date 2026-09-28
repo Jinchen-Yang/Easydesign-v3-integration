@@ -94,7 +94,9 @@ def test_slow_headers_have_bounded_admission_and_an_absolute_deadline(tmp_path):
 
 
 def test_slow_upload_is_bounded_without_blocking_reads_or_leaking_quota(tmp_path):
-    policy = TransportPolicy(max_connections=4, max_uploads=1, body_timeout=3)
+    policy = TransportPolicy(
+        max_connections=4, max_uploads=1, max_pending_uploads=0, body_timeout=3
+    )
     with site(tmp_path, policy=policy) as (server, client, admin, _context):
         login = client.post(
             "/api/v1/accounts/login", json={"username": "admin", "password": PASSWORD}

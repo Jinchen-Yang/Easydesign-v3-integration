@@ -22,8 +22,8 @@ class DeadlineReader(io.RawIOBase):
         self.connection = connection
         self.reset(timeout)
 
-    def reset(self, timeout: float) -> None:
-        self.deadline = time.monotonic() + timeout
+    def reset(self, timeout: float, *, deadline: float | None = None) -> None:
+        self.deadline = time.monotonic() + timeout if deadline is None else deadline
 
     def readable(self) -> bool:
         return True
@@ -42,6 +42,8 @@ class TransportPolicy:
     real_ip_header: str = "X-Real-IP"
     max_connections: int = 384
     max_uploads: int = 4
+    max_pending_uploads: int = 300
+    upload_wait_timeout: float = 10.0
     header_timeout: float = 10.0
     body_timeout: float = 60.0
     _networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = field(
@@ -54,6 +56,11 @@ class TransportPolicy:
         if (
             type(self.max_connections) is not int
             or type(self.max_uploads) is not int
+            or type(self.max_pending_uploads) is not int
+            or not 0 <= self.max_pending_uploads <= 4096
+            or type(self.upload_wait_timeout) not in (int, float)
+            or not math.isfinite(self.upload_wait_timeout)
+            or not 0 <= self.upload_wait_timeout <= 120
             or not 1 <= self.max_uploads < self.max_connections <= 4096
             or any(
                 not math.isfinite(value) or value <= 0
@@ -68,6 +75,16 @@ class TransportPolicy:
             self,
             "_networks",
             tuple(ipaddress.ip_network(value, strict=True) for value in self.trusted_proxies),
+        )
+
+    @property
+    def effective_pending_uploads(self) -> int:
+        # Pending waits do not consume the reserved fifth. An explicit legacy
+        # processing cap may already leave less headroom, so preserve its validity.
+        headroom = (self.max_connections + 4) // 5
+        return min(
+            self.max_pending_uploads,
+            max(0, self.max_connections - self.max_uploads - headroom),
         )
 
     def client_ip(self, peer: str, headers: Message) -> str:

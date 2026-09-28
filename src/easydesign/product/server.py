@@ -172,6 +172,9 @@ class ProductServer(ThreadingHTTPServer):
         self.transport_policy = transport_policy or TransportPolicy()
         self._connection_slots = threading.BoundedSemaphore(self.transport_policy.max_connections)
         self.upload_slots = threading.BoundedSemaphore(self.transport_policy.max_uploads)
+        self.upload_admissions = threading.BoundedSemaphore(
+            self.transport_policy.max_uploads + self.transport_policy.effective_pending_uploads
+        )
         self._service, self.web_root, self.easy_web_root = service, web_root, easy_web_root
         self.service_provider = service_provider
         self.asset_root = service.context.root
@@ -245,10 +248,25 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "EasyDesignProduct/1"
 
     def setup(self) -> None:
+        self._upload_admitted = False
+        self._upload_processing = False
         super().setup()
         self.rfile.close()
         self._reader = DeadlineReader(self.connection, self.server.transport_policy.header_timeout)
         self.rfile = io.BufferedReader(self._reader)
+
+    def finish(self) -> None:
+        try:
+            super().finish()
+        finally:
+            try:
+                if self._upload_processing:
+                    self._upload_processing = False
+                    self.server.upload_slots.release()
+            finally:
+                if self._upload_admitted:
+                    self._upload_admitted = False
+                    self.server.upload_admissions.release()
 
     def client_ip(self) -> str:
         return self.server.transport_policy.client_ip(self.client_address[0], self.headers)
@@ -284,6 +302,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Connection", "close")
         self.close_connection = True
+        if (
+            status == 503
+            and isinstance(data, dict)
+            and isinstance(data.get("error"), dict)
+            and data["error"].get("code") == "upload_busy"
+        ):
+            self.send_header("Retry-After", "2")
         if compressible:
             self.send_header("Vary", "Accept-Encoding")
         if compressed:
@@ -333,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
             )
         return valid
 
-    def body(self, maximum: int = 128 * 1024) -> bytes:
+    def body_size(self, maximum: int = 128 * 1024) -> int:
         if self.headers.get("Transfer-Encoding"):
             raise ProductError("invalid_body", "Chunked input is not accepted")
         lengths = self.headers.get_all("Content-Length", [])
@@ -345,8 +370,14 @@ class Handler(BaseHTTPRequestHandler):
             raise ProductError("invalid_body", "Invalid content length") from error
         if size < 0 or size > maximum:
             raise ProductError("payload_too_large", "Request exceeds the bounded input size", 413)
-        self._reader.reset(self.server.transport_policy.body_timeout)
+        return size
+
+    def body(self, maximum: int = 128 * 1024, *, deadline: float | None = None) -> bytes:
+        size = self.body_size(maximum)
+        self._reader.reset(self.server.transport_policy.body_timeout, deadline=deadline)
         try:
+            if self._reader.deadline <= time.monotonic():
+                raise TimeoutError("HTTP body deadline exceeded")
             body = self.rfile.read(size)
         except TimeoutError as error:
             raise ProductError("body_timeout", "Request body reading timed out", 408) from error
@@ -358,6 +389,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
             raise ProductError("invalid_content_type", "Expected application/json", 415)
         return json.loads(self.body())
+
+    def authorize_upload(self) -> None:
+        if not self.authenticated():
+            raise ProductError("unauthorized", "Open the Workbench access link", 401)
+
+    def receive_upload(
+        self, service: ProductService, filename: str, deadline: float
+    ) -> dict[str, Any]:
+        # Recheck after queueing and after the body read; neither phase grants
+        # lasting permission to persist data. This frame releases the body on return.
+        self.authorize_upload()
+        data = self.body(32 * 1024**2, deadline=deadline)
+        self.authorize_upload()
+        return service.upload(filename, data)
 
     def do_GET(self) -> None:
         self.dispatch()
@@ -481,14 +526,27 @@ class Handler(BaseHTTPRequestHandler):
                     raise ProductError("not_found", "Unknown API resource", 404)
                 self.send(200, result)
             elif tail == ["inputs"]:
-                if not self.server.upload_slots.acquire(blocking=False):
+                self.authorize_upload()
+                self.body_size(32 * 1024**2)
+                policy = self.server.transport_policy
+                deadline = time.monotonic() + policy.body_timeout
+                if not self.server.upload_admissions.acquire(blocking=False):
                     raise ProductError("upload_busy", "上传通道繁忙，请稍后重试", 503)
-                try:
-                    self.send(
-                        201, service.upload(query.get("filename", [""])[0], self.body(32 * 1024**2))
-                    )
-                finally:
-                    self.server.upload_slots.release()
+                self._upload_admitted = True
+                wait = policy.upload_wait_timeout if policy.effective_pending_uploads else 0
+                if not self.server.upload_slots.acquire(
+                    timeout=min(wait, max(0, deadline - time.monotonic()))
+                ):
+                    if time.monotonic() >= deadline:
+                        raise ProductError("body_timeout", "Request body reading timed out", 408)
+                    raise ProductError("upload_busy", "上传通道繁忙，请稍后重试", 503)
+                self._upload_processing = True
+                # Failures keep this slot until finish: exception tracebacks may
+                # retain body bytes while the original error response is sent.
+                result = self.receive_upload(service, query.get("filename", [""])[0], deadline)
+                self._upload_processing = False
+                self.server.upload_slots.release()
+                self.send(201, result)
             elif tail == ["projects"]:
                 self.send(202, service.create(CreateProject.model_validate(self.json_body())))
             elif len(tail) == 3 and tail[0] == "projects" and tail[2] == "title":

@@ -161,6 +161,15 @@ class AccountHandler(Handler):
     def authenticated(self) -> bool:
         return getattr(self, "account_user", None) is not None
 
+    def authorize_upload(self) -> None:
+        current = self._principal()  # Fresh token, password version and CSRF validation.
+        previous, scope = self.account_user, self.current_scope
+        if previous is None or current.id != previous.id or scope is None:
+            raise ProductError("unauthorized", "上传会话权限已变化", 403)
+        if current.must_change_password:
+            raise ProductError("password_change_required", "请先修改临时密码", 403)
+        self.server.accounts.scope(current, scope.id, edit=True)
+
     def _cookie(self, token: str, *, clear: bool = False) -> str:
         secure = "; Secure" if (self.server.public_origin or "").startswith("https:") else ""
         return (

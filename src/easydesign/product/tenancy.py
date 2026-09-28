@@ -16,6 +16,7 @@ from .accounts import AccountStore, AccountUser, ScopeAccess
 from .artifacts import ArtifactCatalog
 from .contracts import ActionRequest, CreateProject, ProductError
 from .domain import NativeGateway
+from .journal import RequestJournal
 from .lab_order import LabOrderCommand
 from .resource_control import Admission, ResourceLedger, contract_digest
 from .service import ProductService, upload_identity
@@ -223,6 +224,10 @@ class ScopedProductService(ProductService):
 
     def request(self, request_id: str) -> dict[str, Any]:
         self.access()
+        return super().request(request_id)
+
+    def _request_with_journal(self, request_id: str, journal: RequestJournal) -> dict[str, Any]:
+        self.access()
         admission = self.resources.latest(self.scope_id, request_id)
         if (
             admission is not None
@@ -236,42 +241,27 @@ class ScopedProductService(ProductService):
             with self._command_lock(request_id):
                 latest = self.resources.latest(self.scope_id, request_id)
                 if latest is not None and latest.id == admission.id:
-                    journal = self.journal()
-                    try:
-                        row = journal.get(request_id)
-                        if row is not None and row["state"] in {"accepted", "running"}:
-                            journal.update(
-                                request_id,
-                                "failed",
-                                {
-                                    "code": admission.reason or "worker_interrupted",
-                                    "message": "该执行尝试已结束；可核对权限后重新恢复",
-                                },
-                            )
-                    finally:
-                        journal.close()
+                    row = journal.get(request_id)
+                    if row is not None and row["state"] in {"accepted", "running"}:
+                        journal.update(
+                            request_id,
+                            "failed",
+                            {
+                                "code": admission.reason or "worker_interrupted",
+                                "message": "该执行尝试已结束；可核对权限后重新恢复",
+                            },
+                        )
                 admission = latest
         if admission is not None and admission.state in {"queued", "starting"}:
-            journal = self.journal()
-            try:
-                row = journal.get(request_id)
-            finally:
-                journal.close()
+            row = journal.get(request_id)
             if row is not None and row["state"] in {"accepted", "running"}:
-                waiting = [
-                    item.id
-                    for item in self.resources.active()
-                    if item.state == "queued" and item.kind == admission.kind
-                ]
                 result = self.public_request(row)
                 result["result"] = {
                     **(row["result"] or {}),
                     "resource_waiting": True,
                     "queue": {
                         "state": admission.state,
-                        "position": waiting.index(admission.id) + 1
-                        if admission.id in waiting
-                        else None,
+                        "position": self.resources.queue_position(admission.id),
                         "reason": "worker_starting"
                         if admission.state == "starting"
                         else "waiting_for_resources",
@@ -281,7 +271,7 @@ class ScopedProductService(ProductService):
                     },
                 }
                 return result
-        return super().request(request_id)
+        return super()._request_with_journal(request_id, journal)
 
     @contextmanager
     def _admit(

@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 import select
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -90,6 +91,208 @@ def test_unavailable_gpu_persists_queue_without_starting_a_process(queue, monkey
     assert row["result"]["queue"]["position"] == 1
     assert snapshot["requests"][0]["result"]["queue"] == row["result"]["queue"]
     assert runtime.resources.get(admission.id).state == "queued"
+
+
+def test_queued_request_reports_global_position_without_loading_all_admissions(queue, monkeypatch):
+    runtime, _control, _accounts, _admin, alice, bob = queue
+    create(runtime, alice)
+    accepted = create(runtime, bob, "durable-request-0002")
+
+    def unexpected_full_projection():
+        pytest.fail("One queue position must not load every active admission")
+
+    monkeypatch.setattr(runtime.resources, "active", unexpected_full_projection)
+    with runtime.bind(bob, bob.id) as service:
+        row = service.request(accepted["id"])
+    assert row["result"]["queue"] == {
+        "state": "queued",
+        "position": 2,
+        "reason": "waiting_for_resources",
+        "cancellable": True,
+    }
+
+
+def test_queue_position_preserves_kind_channel_and_rowid_tie_order(queue, monkeypatch):
+    runtime, _control, accounts, admin, alice, bob = queue
+    for user in (alice, bob):
+        accounts.set_limits(
+            admin, user.id, ResourceLimits(max_active_jobs=8, max_active_chats=8, max_gpu_devices=8)
+        )
+    entries = [
+        (alice, "scientific", "legacy", "queued", 100.0),
+        (bob, "conversation", "legacy", "queued", 100.0),
+        (bob, "scientific", "scoped_worker", "queued", 100.0),
+        (alice, "conversation", "web_stream", "queued", 100.0),
+        (alice, "scientific", "scoped_worker", "queued", 90.0),
+        (bob, "conversation", "scoped_worker", "queued", 90.0),
+        (bob, "scientific", "legacy", "running", 80.0),
+        (alice, "conversation", "web_stream", "running", 80.0),
+    ]
+    grants = []
+    for index, (user, kind, channel, state, created) in enumerate(entries):
+        monkeypatch.setattr(accounts, "clock", lambda now=created: now)
+        grant, _ = runtime.resources.reserve(
+            user,
+            user.id,
+            f"rank-mixed-request-{index:02d}",
+            {},
+            kind=kind,
+            dispatch_channel=channel,
+        )
+        grants.append(runtime.resources.transition(grant.id, state))
+    assert [runtime.resources.queue_position(grant.id) for grant in grants] == [
+        2,
+        2,
+        3,
+        3,
+        1,
+        1,
+        None,
+        None,
+    ]
+    # This is the previous public projection's ordering, including legacy/Web rows.
+    previous = runtime.resources.active()
+    for grant in grants:
+        waiting = [row.id for row in previous if row.state == "queued" and row.kind == grant.kind]
+        expected = waiting.index(grant.id) + 1 if grant.id in waiting else None
+        assert runtime.resources.queue_position(grant.id) == expected
+
+
+def test_queue_position_rechecks_membership_and_returns_no_rank_for_nonqueued_targets(queue):
+    runtime, _control, _accounts, _admin, alice, _bob = queue
+    assert runtime.resources.queue_position("missing-admission") is None
+    for index, terminal in enumerate(("released", "failed", "cancelled")):
+        grant, _ = runtime.resources.reserve(
+            alice, alice.id, f"rank-membership-request-{index:02d}", {}
+        )
+        assert runtime.resources.queue_position(grant.id) is None
+        runtime.resources.transition(grant.id, "queued")
+        assert runtime.resources.queue_position(grant.id) == 1
+        for state in ("starting", "running", "held", terminal):
+            runtime.resources.transition(grant.id, state)
+            assert runtime.resources.queue_position(grant.id) is None
+
+
+def test_queue_position_uses_existing_active_index_with_large_terminal_history(queue, monkeypatch):
+    runtime, _control, accounts, _admin, alice, bob = queue
+    first = create(runtime, alice)
+    second = create(runtime, bob, "rank-index-request-002")
+    first_grant = runtime.resources.latest(alice.id, first["id"])
+    second_grant = runtime.resources.latest(bob.id, second["id"])
+    # Retained terminal history is a valid legacy fixture, not 9,000 native jobs.
+    with accounts.db(write=True) as db:
+        db.executemany(
+            "INSERT INTO compute_commands(scope_id,request_id,actor_id,kind,payload_hash,"
+            "created_at) VALUES(?,?,?,'scientific','fixture',0)",
+            [(alice.id, f"historical-request-{index}", alice.id) for index in range(9000)],
+        )
+        db.executemany(
+            "INSERT INTO admissions(id,scope_id,request_id,actor_id,scientific_actor_id,"
+            "kind,state,gpu_slots,max_candidates,devices_json,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,'scientific','released',1,50,'[]',0,0)",
+            [
+                (
+                    f"historical-grant-{index}",
+                    alice.id,
+                    f"historical-request-{index}",
+                    alice.id,
+                    alice.id,
+                )
+                for index in range(9000)
+            ],
+        )
+    statements = []
+    connect = sqlite3.connect
+
+    def traced_connection(*args, **kwargs):
+        db = connect(*args, **kwargs)
+        db.set_trace_callback(statements.append)
+        return db
+
+    with monkeypatch.context() as capture:
+        capture.setattr(sqlite3, "connect", traced_connection)
+        assert runtime.resources.queue_position(second_grant.id) == 2
+    query = next(statement for statement in statements if statement.startswith("SELECT"))
+    with accounts.db() as db:
+        plan = [str(row[3]) for row in db.execute("EXPLAIN QUERY PLAN " + query)]
+    assert any("waiting USING INDEX one_active_admission" in detail for detail in plan), plan
+    assert runtime.resources.queue_position(first_grant.id) == 1
+    runtime.resources.transition(first_grant.id, "released")
+    assert runtime.resources.queue_position(first_grant.id) is None
+    assert runtime.resources.queue_position(second_grant.id) == 1
+
+
+def test_request_rechecks_authority_before_opening_the_journal(queue, monkeypatch):
+    runtime, _control, accounts, admin, alice, _bob = queue
+    accepted = create(runtime, alice)
+    with runtime.bind(alice, alice.id) as service:
+        accounts.update_user(admin, alice.id, status="suspended")
+
+        def unexpected_journal():
+            pytest.fail("Revoked authority must be rejected before opening the request journal")
+
+        monkeypatch.setattr(service, "journal", unexpected_journal)
+        with pytest.raises(ProductError) as rejected:
+            service.request(accepted["id"])
+    assert rejected.value.code == "unauthorized"
+
+
+def test_request_repair_rechecks_latest_grant_after_waiting_for_command_lock(queue, monkeypatch):
+    runtime, _control, _accounts, _admin, alice, _bob = queue
+    accepted = create(runtime, alice)
+    old = runtime.resources.cancel_queued(alice, alice.id, accepted["id"])
+    waiting = threading.Event()
+    flock = fcntl.flock
+
+    def observed_flock(handle, operation):
+        if (
+            threading.current_thread().name.startswith("request-repair")
+            and operation == fcntl.LOCK_EX
+        ):
+            waiting.set()
+        return flock(handle, operation)
+
+    def read_request():
+        with runtime.bind(alice, alice.id) as reader:
+            return reader.request(accepted["id"])
+
+    monkeypatch.setattr(fcntl, "flock", observed_flock)
+    with runtime.bind(alice, alice.id) as service:
+        journal = service.journal()
+        try:
+            payload = journal.get(accepted["id"])["payload"]
+        finally:
+            journal.close()
+        lock = service.root / "commands" / (accepted["id"] + ".lock")
+        with (
+            lock.open("a") as owner,
+            ThreadPoolExecutor(max_workers=1, thread_name_prefix="request-repair") as pool,
+        ):
+            flock(owner, fcntl.LOCK_EX)
+            pending = pool.submit(read_request)
+            try:
+                assert waiting.wait(10), "Reader did not reach the held command lock"
+                replacement, created = runtime.resources.reserve(
+                    alice,
+                    alice.id,
+                    accepted["id"],
+                    payload,
+                    retry=True,
+                    dispatch_channel="scoped_worker",
+                )
+                assert created and replacement.id != old.id
+                runtime.resources.transition(replacement.id, "queued")
+            finally:
+                flock(owner, fcntl.LOCK_UN)
+            row = pending.result(timeout=10)
+        assert row["state"] == "accepted" and row["result"]["queue"]["state"] == "queued"
+        journal = service.journal()
+        try:
+            assert journal.get(accepted["id"])["state"] == "accepted"
+        finally:
+            journal.close()
+    assert runtime.resources.get(old.id).state == "cancelled"
+    assert runtime.resources.get(replacement.id).state == "queued"
 
 
 @pytest.mark.parametrize("phase", ["reserved", "running"])

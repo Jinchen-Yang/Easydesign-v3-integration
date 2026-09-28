@@ -395,6 +395,22 @@ class ResourceLedger:
                 )
             ]
 
+    def queue_position(self, admission_id: str) -> int | None:
+        """Project only the rank, with membership and ordering from one read snapshot."""
+        with self.accounts.db() as db:
+            row = db.execute(
+                "SELECT (SELECT COUNT(*)+1 FROM admissions AS waiting "
+                "WHERE waiting.state='queued' AND waiting.kind=target.kind "
+                # Match the existing partial-index predicate so retained terminal
+                # history does not participate in the rank scan.
+                "AND waiting.state IN ('reserved','queued','starting','running','held') "
+                "AND (waiting.created_at<target.created_at OR "
+                "(waiting.created_at=target.created_at AND waiting.rowid<target.rowid))) "
+                "FROM admissions AS target WHERE target.id=? AND target.state='queued'",
+                (admission_id,),
+            ).fetchone()
+            return None if row is None else int(row[0])
+
     def transition(
         self,
         grant_id: str,

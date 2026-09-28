@@ -148,13 +148,22 @@ class ProductService:
             for key in [key for key in self._compact_candidate_pages if key[0] == project]:
                 self._compact_candidate_pages.pop(key, None)
 
-    def _remember_project_view(self, project: str, value: dict[str, Any]) -> None:
-        journal = self.journal()
+    def _remember_project_view(
+        self,
+        project: str,
+        value: dict[str, Any],
+        *,
+        journal: RequestJournal | None = None,
+    ) -> None:
+        owns_journal = journal is None
+        if journal is None:
+            journal = self.journal()
         try:
             if journal.project(project) is not None:
                 journal.update_projection(project, value)
         finally:
-            journal.close()
+            if owns_journal:
+                journal.close()
 
     def journal(self) -> RequestJournal:
         return RequestJournal(self.root / "requests.sqlite")
@@ -326,11 +335,15 @@ class ProductService:
         ).fetchone()
         return json.loads(row[0])["title"] if row else None
 
-    def _bootstrap_project_view(self, value: dict[str, Any]) -> ProjectView:
+    def _bootstrap_project_view(
+        self, value: dict[str, Any], *, store: SessionStore | None = None
+    ) -> ProjectView:
         root = self.context.projects_root / value["id"]
         last_activity = 0
-        if (root / "metadata/agent.sqlite").is_file():
-            store = _open_session_store(root)
+        owns_store = store is None
+        if store is not None or (root / "metadata/agent.sqlite").is_file():
+            if store is None:
+                store = _open_session_store(root)
             try:
                 row = store.db.execute(
                     "SELECT COALESCE(MAX(seq),0) FROM events WHERE thread=?",
@@ -338,7 +351,8 @@ class ProductService:
                 ).fetchone()
                 last_activity = int(row[0])
             finally:
-                store.close()
+                if owns_store:
+                    store.close()
         status = {
             "project_created": "running",
             "target_discovery_running": "running",
@@ -468,7 +482,7 @@ class ProductService:
         store = _open_session_store(root)
         try:
             events = activity_rows(store, registered["thread"], limit=100, recent=True)
-            project = self._bootstrap_project_view(registered)
+            project = self._bootstrap_project_view(registered, store=store)
         finally:
             store.close()
         state = registered["state"]
@@ -598,9 +612,15 @@ class ProductService:
             return deepcopy(cached)
         journal = self.journal()
         try:
-            registered = journal.project(project)
+            return self._snapshot_from_journal(project, journal)
         finally:
             journal.close()
+
+    def _snapshot_from_journal(
+        self, project: str, journal: RequestJournal
+    ) -> dict[str, Any]:
+        """Reuse one connection for this read; do not retain it or a read transaction."""
+        registered = journal.project(project)
         if (
             registered is not None
             and not (self.context.projects_root / project / "PROJECT.yaml").is_file()
@@ -618,12 +638,11 @@ class ProductService:
                     value["lifecycle"] = "failed"
                     value["project"]["status"] = "blocked"
                     value["project"]["notice"] = registered["detail"].get("message")
-        journal = self.journal()
-        try:
-            requests = [self.request(r["id"]) for r in journal.for_project(project)]
-            value["conversation"].extend(messages(journal, project))
-        finally:
-            journal.close()
+        requests = [
+            self._request_with_journal(row["id"], journal)
+            for row in journal.for_project(project)
+        ]
+        value["conversation"].extend(messages(journal, project))
         value["requests"] = requests
         value["capabilities"]["message"] = value["capabilities"]["message"] and not any(
             r["kind"] == "conversation" and r["state"] in {"accepted", "running"} for r in requests
@@ -651,7 +670,7 @@ class ProductService:
             value["lab_order"] = None
         value["capabilities"]["lab_order"] = value["lab_order"] is not None
         value["connection"] = "connected"
-        self._remember_project_view(project, value["project"])
+        self._remember_project_view(project, value["project"], journal=journal)
         active_request = any(
             request["state"] in {"accepted", "running"} for request in value["requests"]
         )
@@ -886,32 +905,40 @@ class ProductService:
             raise ProductError("not_found", "Unknown request", 404)
         journal = self.journal()
         try:
-            row = journal.get(request_id)
-            if row is None:
-                raise ProductError("not_found", "Unknown request", 404)
-            if row["state"] in {"accepted", "running"} and time.time() - row["updated"] > 10:
-                lock = self.root / "workers" / (request_id + ".lock")
-                lock.parent.mkdir(exist_ok=True)
-                with lock.open("a") as handle:
-                    try:
-                        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    except BlockingIOError:
-                        pass
-                    else:
-                        journal.update(
-                            request_id,
-                            "interrupted",
-                            {
-                                "code": "worker_interrupted",
-                                "message": "Transport worker stopped; resume this request "
-                                "to reconcile native state.",
-                            },
-                        )
-                        row = journal.get(request_id)
-                        assert row is not None
-            return self.public_request(row)
+            return self._request_with_journal(request_id, journal)
         finally:
             journal.close()
+
+    def _request_with_journal(
+        self, request_id: str, journal: RequestJournal
+    ) -> dict[str, Any]:
+        """Projection hook: scoped services must retain their live permission/queue checks."""
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{16,96}", request_id):
+            raise ProductError("not_found", "Unknown request", 404)
+        row = journal.get(request_id)
+        if row is None:
+            raise ProductError("not_found", "Unknown request", 404)
+        if row["state"] in {"accepted", "running"} and time.time() - row["updated"] > 10:
+            lock = self.root / "workers" / (request_id + ".lock")
+            lock.parent.mkdir(exist_ok=True)
+            with lock.open("a") as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    pass
+                else:
+                    journal.update(
+                        request_id,
+                        "interrupted",
+                        {
+                            "code": "worker_interrupted",
+                            "message": "Transport worker stopped; resume this request "
+                            "to reconcile native state.",
+                        },
+                    )
+                    row = journal.get(request_id)
+                    assert row is not None
+        return self.public_request(row)
 
     def retry(self, request_id: str) -> dict[str, Any]:
         row = self.request(request_id)

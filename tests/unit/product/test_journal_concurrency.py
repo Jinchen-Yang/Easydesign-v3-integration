@@ -17,6 +17,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from easydesign.product.journal import RequestJournal
 
 LEGACY_REQUEST = "legacy-create-000001"
@@ -51,10 +53,10 @@ try:
     print(
         json.dumps(
             {
-                "legacy_title": legacy["title"],
-                "legacy_detail": legacy["detail"],
-                "legacy_surface": legacy["surface"],
-                "legacy_projection": legacy["projection"],
+                "legacy_title": legacy["title"] if legacy else None,
+                "legacy_detail": legacy["detail"] if legacy else None,
+                "legacy_surface": legacy["surface"] if legacy else None,
+                "legacy_projection": legacy["projection"] if legacy else None,
                 "reserved": reserved,
                 "registered": registered,
             }
@@ -141,6 +143,59 @@ def preserved_legacy_project(value: dict | None) -> dict:
     return value
 
 
+def test_current_journal_opens_for_reading_while_another_connection_is_writing(tmp_path):
+    path = tmp_path / "requests.sqlite"
+    journal = RequestJournal(path)
+    try:
+        journal.register_project(
+            "readable-project",
+            request_id="readable-create-000001",
+            title="Committed title",
+            goal="Synthetic reader isolation goal.",
+            thread="thread-readable",
+            input_id=None,
+            surface="easy",
+        )
+        journal.update_projection("readable-project", {"title": "Committed title"})
+    finally:
+        journal.close()
+
+    writer = sqlite3.connect(path)
+    writer.execute("BEGIN IMMEDIATE")
+    writer.execute("UPDATE product_projects SET title='Uncommitted title'")
+    finished = threading.Event()
+    failures: list[BaseException] = []
+    observed: list[dict | None] = []
+
+    def read_committed_project() -> None:
+        try:
+            reader = RequestJournal(path)
+            try:
+                observed.append(reader.project("readable-project"))
+            finally:
+                reader.close()
+        except BaseException as error:  # pragma: no cover - only on regression
+            failures.append(error)
+        finally:
+            finished.set()
+
+    thread = threading.Thread(target=read_committed_project)
+    try:
+        thread.start()
+        # The reader must finish before the writer releases its lock. This is
+        # WAL reader/writer isolation, not a query-speed benchmark.
+        read_without_waiting_for_writer = finished.wait(timeout=2)
+    finally:
+        writer.rollback()
+        writer.close()
+        thread.join(timeout=20)
+    assert read_without_waiting_for_writer, "Opening a current journal waited for a write lock"
+    assert failures == []
+    assert observed[0] is not None
+    assert observed[0]["title"] == "Committed title"
+    assert observed[0]["projection"] == {"title": "Committed title"}
+
+
 def test_concurrent_thread_opens_upgrade_legacy_database_preserving_records(tmp_path):
     path = tmp_path / "state" / "product" / "requests.sqlite"
     legacy_database(path)
@@ -198,9 +253,11 @@ def test_concurrent_thread_opens_upgrade_legacy_database_preserving_records(tmp_
         journal.close()
 
 
-def test_concurrent_process_opens_upgrade_legacy_database_preserving_records(tmp_path):
+@pytest.mark.parametrize("legacy", [False, True], ids=["fresh", "legacy"])
+def test_concurrent_process_opens_preserve_records_and_request_identity(tmp_path, legacy):
     path = tmp_path / "state" / "product" / "requests.sqlite"
-    legacy_database(path)
+    if legacy:
+        legacy_database(path)
     start = time.time() + 1.5
     children = [
         subprocess.Popen(
@@ -216,8 +273,10 @@ def test_concurrent_process_opens_upgrade_legacy_database_preserving_records(tmp
         stdout, stderr = child.communicate(timeout=120)
         assert child.returncode == 0, stderr
         reports.append(json.loads(stdout))
-    assert all(report["legacy_title"] == "Legacy program" for report in reports)
-    assert all(report["legacy_detail"] == {"kept": True} for report in reports)
+    expected_title = "Legacy program" if legacy else None
+    expected_detail = {"kept": True} if legacy else None
+    assert all(report["legacy_title"] == expected_title for report in reports)
+    assert all(report["legacy_detail"] == expected_detail for report in reports)
     assert all(report["legacy_surface"] is None for report in reports)
     assert all(report["legacy_projection"] is None for report in reports)
     # Exactly one process created the shared identity; the rest replayed it.
@@ -228,8 +287,9 @@ def test_concurrent_process_opens_upgrade_legacy_database_preserving_records(tmp
 
     journal = RequestJournal(path)
     try:
-        preserved_legacy_project(journal.project(LEGACY_PROJECT))
-        assert journal.get(LEGACY_REQUEST) is not None
+        if legacy:
+            preserved_legacy_project(journal.project(LEGACY_PROJECT))
+            assert journal.get(LEGACY_REQUEST) is not None
         shared = journal.project("proc-shared-project")
         assert shared is not None
         assert shared["title"] == "Process acceptance"
@@ -283,7 +343,28 @@ def test_concurrent_fresh_database_opens_stay_idempotent(tmp_path):
         assert fresh is not None
         assert fresh["projection"] is None
         assert journal.db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert journal.db.execute("PRAGMA synchronous").fetchone()[0] == 2
     finally:
         journal.close()
     assert product_columns(path).count("surface") == 1
     assert product_columns(path).count("projection") == 1
+
+
+def test_reopening_a_replaced_database_checks_its_own_schema(tmp_path):
+    path = tmp_path / "requests.sqlite"
+    journal = RequestJournal(path)
+    journal.close()
+    # Both files are synthetic fixtures with no live connections. Reusing a
+    # pathname must not skip migrations for the different database now there.
+    path.rename(tmp_path / "previous.sqlite")
+    legacy_database(path)
+
+    replacement = RequestJournal(path)
+    try:
+        preserved_legacy_project(replacement.project(LEGACY_PROJECT))
+        replacement.update_projection(LEGACY_PROJECT, {"title": "Replacement projection"})
+        project = replacement.project(LEGACY_PROJECT)
+        assert project is not None
+        assert project["projection"] == {"title": "Replacement projection"}
+    finally:
+        replacement.close()

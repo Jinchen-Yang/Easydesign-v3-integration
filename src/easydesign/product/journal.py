@@ -36,6 +36,21 @@ def _enable_wal(db: sqlite3.Connection) -> None:
     raise AssertionError("unreachable WAL bootstrap retry loop")
 
 
+def _schema_is_current(db: sqlite3.Connection) -> bool:
+    """Inspect this connection's database without taking SQLite's writer lock."""
+    tables = {
+        str(row[0])
+        for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('requests','project_labels','product_projects')"
+        )
+    }
+    if tables != {"requests", "project_labels", "product_projects"}:
+        return False
+    columns = {str(row["name"]) for row in db.execute("PRAGMA table_info(product_projects)")}
+    return {"surface", "projection"} <= columns
+
+
 class RequestJournal:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,6 +59,11 @@ class RequestJournal:
             self.db.row_factory = sqlite3.Row
             _enable_wal(self.db)
             self.db.execute("PRAGMA synchronous=FULL")
+            # Reading an initialized journal must not contend with its writer.
+            # Check the opened database, not a path cache: a replaced database
+            # can still require bootstrap or a legacy schema upgrade.
+            if _schema_is_current(self.db):
+                return
             # CREATE + the check-then-ALTER upgrade share one write transaction:
             # BEGIN IMMEDIATE serializes concurrent opens across threads and
             # processes (the busy timeout waits for a peer migration to commit,

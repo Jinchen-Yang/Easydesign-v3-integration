@@ -2953,6 +2953,121 @@ async def test_final_site_citation_failure_is_safely_demoted_not_target_fatal(
 
 
 @pytest.mark.asyncio
+async def test_resumed_site_handoff_demotes_exhausted_invalid_citation(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.site_dossier import DecisionEvidenceQuestion
+    from tests.unit.agent.test_site_dossier import handoff
+
+    bridge = site_bridge
+    execution_id = bridge.store.begin_execution(
+        bridge.thread, "Resume exhausted Site citation repair"
+    )["execution_id"]
+    guard = RoleBoundary(
+        bridge,
+        "site",
+        scripted_config(),
+        "Synthetic Site research",
+        execution_id=execution_id,
+        site_stage="research",
+        domain_skills=False,
+    )
+    submitted = handoff().model_copy(
+        update={
+            "decision_questions": [
+                DecisionEvidenceQuestion.model_validate(
+                    {
+                        "query_ids": ["query-owned"],
+                        "question": "Does the focused passage support this mechanism?",
+                        "status": "VERIFIED",
+                        "evidence": [
+                            {
+                                "card_id": "passage-current",
+                                "excerpt": "This submitted excerpt is not verbatim.",
+                                "claim": "The mechanism is supported.",
+                                "relation": "supports",
+                                "strength": "E1",
+                                "transfer_limit": "Synthetic unit-test scope only.",
+                            }
+                        ],
+                        "limitations": ["No functional assay was performed."],
+                        "decision_impact": "Prefer candidate A.",
+                    }
+                )
+            ]
+        }
+    )
+    contract = "SiteResearchHandoff:evidence-citation"
+    for number, card_id in enumerate(("passage-old-a", "passage-old-b"), start=1):
+        assert bridge.store.reserve_keyed_contract_repair(
+            bridge.thread,
+            "site",
+            execution_id,
+            f"prior citation repair {number}",
+            contract=contract,
+            repair_keys=(f"known-source:{card_id}",),
+            submission_attempt_id=f"prior-{number}",
+        ) == number
+    bridge.store.event(
+        bridge.thread,
+        "rejected-submission",
+        {
+            "role": "site",
+            "execution_id": execution_id,
+            "repair_contracts": [contract],
+            "submission_attempt_id": "resumed-submission",
+            "submitted_opinion": submitted.model_dump(mode="json"),
+            "repair_findings": {
+                "citation": [
+                    {
+                        "question_index": 0,
+                        "card_id": "passage-current",
+                        "source_kind": "focused-passage",
+                    }
+                ]
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_dossier",
+        lambda _bridge, candidate: {
+            "status": candidate.decision_questions[0].status,
+            "evidence": candidate.decision_questions[0].evidence,
+        },
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def no_model_call(_request: Any) -> Any:
+        pytest.fail("Exhausted citation repair must not spend another provider call")
+
+    result = await guard.awrap_model_call(
+        Request(
+            tools=phase2_tools(bridge, "site"),
+            messages=[],
+            model_settings={},
+            system_message=SystemMessage(content="Recover Site research"),
+        ),
+        no_model_call,
+    )
+    recovered = result.structured_response
+    assert recovered is not None
+    assert recovered.decision_questions[0].status == "UNRESOLVED"
+    assert recovered.decision_questions[0].evidence == []
+    assert guard._recover_exhausted_site_citations() is None
+    demotions = [
+        event for event in bridge.store.events(bridge.thread)
+        if event["kind"] == "site-research-citation-demotion"
+    ]
+    assert len(demotions) == 1
+    assert demotions[0]["payload"]["recovery"] == "exhausted-citation-repair-resume"
+
+
+@pytest.mark.asyncio
 async def test_site_shape_and_acquisition_citation_repairs_use_independent_slots(
     site_bridge: Any, monkeypatch: Any
 ) -> None:

@@ -138,7 +138,22 @@ class SessionStore:
         revision: DecisionOutcome | None = None,
         steering_resume: bool = False,
         steering_card_id: str | None = None,
+        continuation_id: str | None = None,
     ) -> dict[str, Any]:
+        if continuation_id is not None:
+            prior = self.db.execute(
+                "SELECT payload FROM events WHERE thread=? AND kind='agent-execution' "
+                "AND json_extract(payload,'$.continuation_id')=? ORDER BY seq DESC LIMIT 1",
+                (thread, continuation_id),
+            ).fetchone()
+            if prior:
+                prior_execution: dict[str, Any] = json.loads(prior[0])
+                current = self.latest_execution(thread)
+                if current is None or current["execution_id"] != prior_execution["execution_id"]:
+                    raise AgentBoundaryError(
+                        "An old continuation cannot renew a later execution budget"
+                    )
+                return prior_execution
         execution: dict[str, Any] = {
             "execution_id": f"turn-{uuid4().hex}",
             "current_user_message": message,
@@ -146,6 +161,8 @@ class SessionStore:
         }
         if steering_card_id is not None:
             execution["steering_card_id"] = steering_card_id
+        if continuation_id is not None:
+            execution["continuation_id"] = continuation_id
         if revision is not None:
             execution["revision"] = revision.model_dump(mode="json")
         with self.db:

@@ -362,6 +362,112 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             "available within the original execution budget. Do not restart completed work.",
         }
 
+    def _recover_exhausted_site_citations(self) -> SiteResearchHandoff | None:
+        """Demote only invalid citations when a resumed correction cannot be reserved."""
+        if (
+            self.role != "site"
+            or self.site_stage != "research"
+            or self.execution_id is None
+            or self.output_schema is not SiteResearchHandoff
+        ):
+            return None
+        row = self.bridge.store.db.execute(
+            "SELECT kind,payload FROM events WHERE thread=? "
+            "AND kind IN ('rejected-submission','submission-preflight-passed') "
+            "AND json_extract(payload,'$.role')='site' "
+            "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 1",
+            (self.bridge.thread, self.execution_id),
+        ).fetchone()
+        if row is None or row[0] != "rejected-submission":
+            return None
+        rejected = json.loads(row[1])
+        contract = "SiteResearchHandoff:evidence-citation"
+        if rejected.get("repair_contracts") != [contract]:
+            return None
+        submitted = rejected.get("submitted_opinion")
+        findings = rejected.get("repair_findings")
+        citations = findings.get("citation") if isinstance(findings, dict) else None
+        if not isinstance(submitted, dict) or not isinstance(citations, list):
+            return None
+        submission_attempt_id = rejected.get("submission_attempt_id")
+        repair_rows = self.bridge.store.db.execute(
+            "SELECT payload FROM events WHERE thread=? AND kind='contract-repair' "
+            "AND json_extract(payload,'$.role')='site' "
+            "AND json_extract(payload,'$.execution_id')=? "
+            "AND json_extract(payload,'$.contract')=? ORDER BY seq",
+            (self.bridge.thread, self.execution_id, contract),
+        ).fetchall()
+        repairs = [json.loads(item[0]) for item in repair_rows]
+        if isinstance(submission_attempt_id, str) and any(
+            item.get("submission_attempt_id") == submission_attempt_id for item in repairs
+        ):
+            return None
+        exhausted = (
+            len(repairs) >= 2
+            or any(item.get("citation_contract_exhausted") for item in repairs)
+            or any(item.get("citation_unkeyed") for item in repairs)
+        )
+        if not exhausted:
+            return None
+        typed_findings: list[tuple[int, str, bool]] = []
+        for finding in citations:
+            if not isinstance(finding, dict):
+                return None
+            index, card_id, source_kind = (
+                finding.get("question_index"),
+                finding.get("card_id"),
+                finding.get("source_kind"),
+            )
+            if (
+                not isinstance(index, int)
+                or isinstance(index, bool)
+                or not isinstance(card_id, str)
+                or source_kind not in {"focused-passage", "acquisition-receipt"}
+            ):
+                return None
+            typed_findings.append((index, card_id, source_kind == "acquisition-receipt"))
+        source = SiteResearchHandoff.model_validate(submitted)
+        normalized = demote_invalid_question_citations(source, typed_findings)
+        assert isinstance(self.bridge, Phase2Bridge)
+        overview = self.bridge.read_site_evidence()
+        binding = EvidenceBinding.model_validate(
+            {key: overview[key] for key in EvidenceBinding.model_fields}
+        )
+        token = SITE_EVIDENCE.set(binding)
+        try:
+            site_dossier(self.bridge, normalized)
+        finally:
+            SITE_EVIDENCE.reset(token)
+        self.bridge.store.event(
+            self.bridge.thread,
+            "site-research-citation-demotion",
+            {
+                "role": self.role,
+                "execution_id": self.execution_id,
+                "submission_attempt_id": submission_attempt_id,
+                "citation_findings": citations,
+                "submitted_handoff_sha256": identity(submitted),
+                "normalized_handoff_sha256": identity(normalized.model_dump(mode="json")),
+                "recovery": "exhausted-citation-repair-resume",
+                "authority": (
+                    "Runtime removed invalid citation use and demoted only the affected "
+                    "question to UNRESOLVED; it did not infer a quotation, scientific "
+                    "conclusion or approval."
+                ),
+            },
+        )
+        self.bridge.store.event(
+            self.bridge.thread,
+            "submission-preflight-passed",
+            {
+                "role": self.role,
+                "execution_id": self.execution_id,
+                "submission_attempt_id": submission_attempt_id,
+                "recovery": "exhausted-citation-repair-resume",
+            },
+        )
+        return normalized
+
     def _pending_citation_evidence_message(self) -> HumanMessage | None:
         """Deliver exact validator text as untrusted data, never escaped System prose."""
         if self.execution_id is None or not self.structured_output:
@@ -810,6 +916,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
         )
         max_submission_attempts = 4 if self.role == "site" and self.site_stage == "research" else 3
+        recovered_handoff = self._recover_exhausted_site_citations()
+        if recovered_handoff is not None:
+            from langchain.agents.middleware.types import ModelResponse
+
+            return ModelResponse(
+                result=[AIMessage(content="")], structured_response=recovered_handoff
+            )
         for attempt in range(max_submission_attempts):
             used = self.bridge.store.db.execute(
                 "SELECT COUNT(*) FROM events WHERE thread=? AND kind='model-call' "
@@ -2230,6 +2343,36 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
 class RuntimeCoordinator(RoleBoundary):
     """Dispatch trusted actions through the existing graph, without model selection."""
 
+    def _product_phase_boundary(self, action: Any) -> bool:
+        """Keep Target and Site in separate bounded product turns when requested."""
+        from .phase34_runtime import Phase34Runtime
+
+        if (
+            not isinstance(self.bridge, Phase34Runtime)
+            or self.bridge.product_auto_continue
+            or self.execution_id is None
+            or action.tool != "task"
+            or action.arguments.get("subagent_type") != "site-mechanism"
+        ):
+            return False
+        events = self.bridge.store.events(self.bridge.thread)
+        if not any(event["kind"] == "product-title" for event in events):
+            return False
+        target_completed = any(
+            event["kind"] == "runtime-action-timing"
+            and event["payload"].get("execution_id") == self.execution_id
+            and event["payload"].get("specialist") == "target-intelligence"
+            and event["payload"].get("status") == "completed"
+            for event in events
+        )
+        site_started = any(
+            event["kind"] == "runtime-dispatch"
+            and event["payload"].get("execution_id") == self.execution_id
+            and event["payload"].get("specialist") == "site-mechanism"
+            for event in events
+        )
+        return target_completed and not site_started
+
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         from langchain.agents.middleware.types import ModelResponse
 
@@ -2254,6 +2397,17 @@ class RuntimeCoordinator(RoleBoundary):
         if action.tool in {"get_job_status", "observe_downstream"}:
             completed = getattr(self, "observed_worker", False)
             self.observed_worker = True
+        if self._product_phase_boundary(action):
+            return ModelResponse(
+                result=[
+                    AIMessage(
+                        content=(
+                            "Target preparation completed. Site research is available as a "
+                            "separate bounded continuation."
+                        )
+                    )
+                ]
+            )
         if action.tool is None or completed:
             message = action.message or (
                 "Scientific work remains incomplete. The previous action has not produced "

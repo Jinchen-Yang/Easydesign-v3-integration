@@ -129,8 +129,14 @@ def test_explicit_run_resolves_directly_without_listing_history(
 ) -> None:
     project, _runtime_root, runs_root = _patch_project(monkeypatch, tmp_path)
     expected = _summary(runs_root, "project-a", "run-selected")
+    selectors: list[str] = []
+
+    def direct_show(root: Path, selector: str) -> RunSummary:
+        selectors.append(selector)
+        return expected
+
     monkeypatch.setattr(
-        "easydesign.orchestration.local_project.show_run", lambda root, selector: expected
+        "easydesign.orchestration.local_project.show_run", direct_show
     )
     monkeypatch.setattr(
         "easydesign.orchestration.local_project.list_runs",
@@ -138,6 +144,7 @@ def test_explicit_run_resolves_directly_without_listing_history(
     )
 
     assert resolve_project_run(project, run_id="run-selected") == expected
+    assert selectors == ["project-a/run-selected"]
 
 
 def test_missing_explicit_run_preserves_project_api_error(

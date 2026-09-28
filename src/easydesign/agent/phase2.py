@@ -575,7 +575,9 @@ class Phase2Bridge(TargetBridge):
                 runtime_eligibility = dossier_eligibility.get(entry.candidate_id, {})
                 if runtime_eligibility.get("status") == "BLOCKED":
                     conflict = runtime_eligibility.get("cause") or "verified-compartment-conflict"
-                if set(entry.site.hotspot_label_seq_ids) & set(intent.avoid_label_seq_ids):
+                if conflict is None and set(entry.site.hotspot_label_seq_ids) & set(
+                    intent.avoid_label_seq_ids
+                ):
                     conflict = "explicit-avoid-residue-constraint"
                 if entry.hard_block != conflict or entry.selectable != (conflict is None):
                     raise AgentBoundaryError(

@@ -122,6 +122,7 @@ async def run_session(
     technical_details: bool = False,
     emit: Callable[[dict[str, Any]], None] | None = None,
     harness_variant: Literal["full", "no-domain-skill"] = "full",
+    continuation_id: str | None = None,
 ) -> dict[str, Any]:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
     from langgraph.types import Command
@@ -351,7 +352,17 @@ async def run_session(
             bridge.failpoint("after_execution_intent")
             inputs = execution_input()
         elif state.next:
-            inputs = None  # Recover interrupted execution with the same saver/thread.
+            if continuation_id is not None:
+                # A distinct explicit Resume gets one new bounded execution while
+                # replaying the exact interrupted checkpoint. Its request identity
+                # makes retries idempotent; ordinary crash recovery stays unchanged.
+                execution = store.begin_execution(
+                    thread,
+                    execution["current_user_message"] if execution else goal,
+                    continuation_id=continuation_id,
+                )
+                bridge.failpoint("after_execution_intent")
+            inputs = None
         elif pending_input:
             inputs = execution_input()
         elif state.values:
@@ -359,9 +370,21 @@ async def run_session(
             from .phase2 import Phase2Bridge
 
             if isinstance(bridge, Phase2Bridge) and next_action(bridge).tool is not None:
-                # Resume unfinished authorized work in the SAME execution, including a
-                # formerly ended graph. No new intent, approval or model budget.
-                inputs = {"messages": []}
+                if continuation_id is not None:
+                    execution = store.begin_execution(
+                        thread,
+                        execution["current_user_message"] if execution else goal,
+                        continuation_id=continuation_id,
+                    )
+                    bridge.failpoint("after_execution_intent")
+                    already_checkpointed = any(
+                        getattr(message, "id", None) == execution["execution_id"]
+                        for message in state.values.get("messages", [])
+                    )
+                    inputs = {"messages": []} if already_checkpointed else execution_input()
+                else:
+                    # Process/checkpoint recovery retains the same execution budget.
+                    inputs = {"messages": []}
             else:
                 messages = state.values.get("messages", [])
                 return bridge.terminal_result(messages[-1].text if messages else "")

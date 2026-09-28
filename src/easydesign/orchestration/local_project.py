@@ -174,7 +174,7 @@ def resolve_project_run(
 
     if run_id is not None:
         try:
-            summary = show_run(context.runs_root, run_id)
+            summary = show_run(context.runs_root, f"{project_id}/{run_id}")
         except ManifestStateError as error:
             # Preserve the public project API's historical "no matching run"
             # contract while allowing genuine manifest-integrity failures to

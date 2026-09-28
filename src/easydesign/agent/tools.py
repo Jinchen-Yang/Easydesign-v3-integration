@@ -977,9 +977,7 @@ class TargetBridge:
             assessment.recommendation is not None
             and assessment.recommendation.status == "DISCOURAGED"
         )
-        if assessment.verdict != "ready-to-ask" and not (
-            assessment.verdict == "reject" and discouraged
-        ):
+        if assessment.verdict != "ready-to-ask" and not discouraged:
             raise AgentBoundaryError(
                 "Judge has not supplied a reviewable question or discouraged proposal"
             )

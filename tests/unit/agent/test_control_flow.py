@@ -39,6 +39,55 @@ class HostileCoordinator(SiteModel):
 
 
 @pytest.mark.asyncio
+async def test_product_target_to_site_boundary_defers_site_to_separate_continuation(
+    site_bridge: Any,
+) -> None:
+    from easydesign.agent.phase34_runtime import Phase34Runtime
+
+    runtime = Phase34Runtime(
+        site_bridge.project,
+        "product-phase-boundary-thread",
+        site_bridge.store,
+        through="handoff",
+        product_auto_continue=False,
+    )
+    runtime.store.event(runtime.thread, "product-title", {"title": "Synthetic product"})
+    execution = runtime.store.begin_execution(runtime.thread, "Prepare an exact PDB target")
+    runtime.store.event(
+        runtime.thread,
+        "runtime-action-timing",
+        {
+            "execution_id": execution["execution_id"],
+            "action_id": "target-action",
+            "stage": "not-prepared",
+            "tool": "task",
+            "specialist": "target-intelligence",
+            "status": "completed",
+        },
+    )
+    boundary = RuntimeCoordinator(
+        runtime,
+        "coordinator",
+        scripted_config(),
+        "Prepare an exact PDB target",
+        execution_id=execution["execution_id"],
+    )
+    request = SimpleNamespace(messages=[], system_message=SystemMessage(content="Runtime"))
+
+    async def forbidden(_: Any) -> Any:
+        pytest.fail("The coordinator model must not run at a product phase boundary")
+
+    result = await boundary.awrap_model_call(request, forbidden)
+    assert result.result[0].tool_calls == []
+    assert "separate bounded continuation" in result.result[0].content
+    assert not any(
+        event["kind"] == "runtime-dispatch"
+        and event["payload"].get("specialist") == "site-mechanism"
+        for event in runtime.store.events(runtime.thread)
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("restart", [False, True])
 async def test_gate1_to_actual_research_without_coordinator(bridge: Any, restart: bool) -> None:
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
@@ -496,6 +545,59 @@ def test_supported_judge_alternative_routes_back_to_target_owner(bridge: Any) ->
     fresh_review = next_action(b)
     assert fresh_review.stage == "judge"
     assert fresh_review.arguments["subagent_type"] == "evidence-judge"
+
+
+def test_insufficient_target_review_routes_discouraged_proposal_to_scientist(bridge: Any) -> None:
+    from easydesign.agent.contracts import (
+        ApplyDecision,
+        EvidenceBinding,
+        JudgeVerdict,
+        TargetInterpretation,
+    )
+    from easydesign.agent.target_assessment import register_target
+    from easydesign.agent.tools import JUDGE_EVIDENCE
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    b.prepare_target()
+    terminal(b)
+    register_target(
+        b,
+        TargetInterpretation(
+            interpretation=["SYNTHETIC owner selected the runtime-eligible target chain."],
+            unresolved_identity=["SYNTHETIC post-approval identity details remain pending."],
+            limitations=["SYNTHETIC fixture has only pre-approval facts."],
+            recommended_action="Select chain A.",
+            recommended_option="chain-a",
+        ),
+        None,
+    )
+    snapshot = b.judge_evidence()
+    token = JUDGE_EVIDENCE.set(
+        EvidenceBinding.model_validate({k: snapshot[k] for k in EvidenceBinding.model_fields})
+    )
+    try:
+        assessment = b.register_judge(
+            JudgeVerdict(
+                verdict="insufficient",
+                reasons=["SYNTHETIC canonical facts are pending until Gate 1 approval."],
+                limitations=["SYNTHETIC absence is not a deterministic chain conflict."],
+                recommendation={
+                    "option_id": "chain-a",
+                    "status": "DISCOURAGED",
+                    "warnings": ["SYNTHETIC review concern must remain visible."],
+                    "alternative": "SYNTHETIC revise the target evidence before approval.",
+                },
+            )
+        )
+    finally:
+        JUDGE_EVIDENCE.reset(token)
+
+    assert next_action(b).stage == "scientist-gate"
+    card = b.decision_card(
+        ApplyDecision(assessment_id=assessment.assessment_id, option_id="chain-a")
+    )
+    assert card.judge_status == "DISCOURAGED"
+    assert "SYNTHETIC review concern" in card.warnings[0]
 
 
 def test_target_judge_revision_is_bounded_across_restartable_state(bridge: Any) -> None:

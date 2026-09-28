@@ -10,6 +10,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import secrets
 import subprocess
 import threading
@@ -41,6 +42,9 @@ from .service import ProductService
 # workspace token is still required for the first login in each browser profile.
 SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 GPU_SAMPLE_TTL_SECONDS = 10.0
+# Vite's content-addressed output is public and immutable across releases. Never
+# infer cacheability for API/artifact URLs or unhashed files from their suffix.
+HASHED_BUILD_ASSET = re.compile(r"assets/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css|woff2?|ttf|otf)")
 
 
 class LocalGpuMonitor:
@@ -189,13 +193,24 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def send(
-        self, status: int, data: Any, mime: str = "application/json", *, cookie: str | None = None
+        self,
+        status: int,
+        data: Any,
+        mime: str = "application/json",
+        *,
+        cookie: str | None = None,
+        immutable: bool = False,
     ) -> None:
         body = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header(
+            "Cache-Control",
+            "public, max-age=31536000, immutable"
+            if immutable and status == 200 and cookie is None
+            else "no-store",
+        )
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
@@ -245,7 +260,10 @@ class Handler(BaseHTTPRequestHandler):
         if size < 0 or size > maximum:
             raise ProductError("payload_too_large", "Request exceeds the bounded input size", 413)
         self.connection.settimeout(20)
-        return self.rfile.read(size)
+        body = self.rfile.read(size)
+        if len(body) != size:
+            raise ProductError("invalid_body", "Request body ended before its declared length")
+        return body
 
     def json_body(self) -> Any:
         if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
@@ -461,7 +479,12 @@ class Handler(BaseHTTPRequestHandler):
         ):
             raise ProductError("not_found", "Unknown Workbench resource", 404)
         data = confined_bytes(root, relative, maximum=32 * 1024**2)
-        self.send(200, data, mimetypes.guess_type(relative)[0] or "application/octet-stream")
+        self.send(
+            200,
+            data,
+            mimetypes.guess_type(relative)[0] or "application/octet-stream",
+            immutable=HASHED_BUILD_ASSET.fullmatch(relative) is not None,
+        )
 
 
 def load_provider_credentials(gateway: NativeGateway, env_file: Path | None) -> None:

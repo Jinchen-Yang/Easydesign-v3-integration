@@ -581,7 +581,13 @@ class AccountHandler(Handler):
         super().static(path)
 
     def send(
-        self, status: int, data: Any, mime: str = "application/json", *, cookie: str | None = None
+        self,
+        status: int,
+        data: Any,
+        mime: str = "application/json",
+        *,
+        cookie: str | None = None,
+        immutable: bool = False,
     ) -> None:
         scope = getattr(self, "current_scope", None)
         if scope is not None:
@@ -605,4 +611,4 @@ class AccountHandler(Handler):
         if mime == "text/html" and isinstance(data, bytes):
             marker = b'<meta name="easydesign-identity-mode" content="accounts" />'
             data = data.replace(b"</head>", marker + b"</head>", 1)
-        super().send(status, data, mime, cookie=cookie)
+        super().send(status, data, mime, cookie=cookie, immutable=immutable and scope is None)

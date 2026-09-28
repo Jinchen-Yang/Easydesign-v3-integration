@@ -87,6 +87,21 @@ def test_account_api_requires_individual_sessions_and_disables_workspace_token(p
         )
 
 
+def test_successful_account_login_and_private_scope_are_not_cacheable(product):
+    server, _accounts, _admin, users, _context = product
+    with client(server) as browser:
+        response = browser.post(
+            "/api/v1/accounts/login", json={"username": "alice", "password": PASSWORD}
+        )
+        assert response.status_code == 200
+        assert "Set-Cookie" in response.headers
+        assert response.headers["Cache-Control"] == "no-store"
+        for path in ("/api/v1/accounts/me", f"/api/v1/scopes/{users[0].id}/usage"):
+            private = browser.get(path)
+            assert private.status_code == 200
+            assert private.headers["Cache-Control"] == "no-store"
+
+
 def test_member_can_leave_team_without_a_post_mutation_read_failure(product):
     server, accounts, _admin, users, _context = product
     alice, bob = users
@@ -173,12 +188,18 @@ def test_artifact_access_is_scope_bound_and_admin_reads_are_audited(product):
         )
     url = f"/api/v1/scopes/{alice.id}/artifacts/{artifact.id}"
     with client(server, "alice") as owner, client(server, "bob") as other:
-        assert owner.get(url).json() == {"private": "alice-only"}
+        private = owner.get(url)
+        assert private.status_code == 200
+        assert private.json() == {"private": "alice-only"}
+        assert private.headers["Cache-Control"] == "no-store"
         assert other.get(url).status_code == 404
         assert other.get(f"/api/v1/scopes/{bob.id}/artifacts/{artifact.id}").status_code == 404
         assert other.get(artifact.url).status_code == 404
     with client(server, "admin") as administrator:
-        assert administrator.get(url).json() == {"private": "alice-only"}
+        private = administrator.get(url)
+        assert private.status_code == 200
+        assert private.json() == {"private": "alice-only"}
+        assert private.headers["Cache-Control"] == "no-store"
         assert (
             administrator.post(
                 f"/api/v1/scopes/{alice.id}/projects/private-project/title",

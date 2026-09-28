@@ -99,6 +99,9 @@ it('shows a recoverable service error instead of a JSON parse crash for proxy HT
 afterEach(() => {
   adapters.forEach((a) => a.dispose());
   adapters.length = 0;
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 function fixture(post: (body: Record<string, unknown>) => Promise<Response>) {
   let current = snapshot();
@@ -121,6 +124,206 @@ function fixture(post: (body: Record<string, unknown>) => Promise<Response>) {
   };
 }
 describe('Live adapter preserves Runtime authority', () => {
+  it('keeps a request started in another tab on the active cadence', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const current = snapshot();
+    current.requests = [
+      {
+        id: 'other-tab',
+        project: project.id,
+        state: 'accepted',
+        result: null,
+        created: 1,
+        updated: 1,
+      },
+    ];
+    let workbenchReads = 0;
+    const adapter = new LiveWorkbenchAdapter(async (url) => {
+      if (String(url).endsWith('/workbench')) {
+        workbenchReads++;
+        return Response.json(current);
+      }
+      return Response.json({ total: 1, offset: 0, limit: 20, items: [project] });
+    });
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    expect(workbenchReads).toBe(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(workbenchReads).toBe(2);
+  });
+  it('reads the result of an explicit action even when an older poll is still in flight', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    let current = snapshot();
+    current.capabilities.message = true;
+    let slow = false;
+    let release: ((response: Response) => void) | undefined;
+    const adapter = new LiveWorkbenchAdapter(async (url, init) => {
+      if (init?.method === 'POST') {
+        current = { ...current, revision: 'b'.repeat(64) };
+        return Response.json({ id: 'message', project: project.id, state: 'succeeded' });
+      }
+      if (String(url).endsWith('/workbench')) {
+        if (slow) {
+          slow = false;
+          return new Promise<Response>((resolve) => {
+            release = resolve;
+          });
+        }
+        return Response.json(current);
+      }
+      return Response.json({ total: 1, offset: 0, limit: 20, items: [project] });
+    });
+    adapters.push(adapter);
+    let observed = await adapter.load();
+    adapter.subscribe((event) => {
+      observed = event.snapshot;
+    });
+    await adapter.selectProject(project.id);
+    const prior = current;
+    slow = true;
+    const poll = adapter.refresh();
+    const action = adapter.sendMessage('Explain the uncertainty', 'site');
+    await vi.advanceTimersByTimeAsync(0);
+    release!(Response.json(prior));
+    await Promise.all([poll, action]);
+    expect(observed.snapshot?.revision).toBe('b'.repeat(64));
+  });
+  it('finishes a slow poll before another refresh and never rearms after disposal', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(new Date('2026-09-29T00:00:00Z'));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const page = Object.assign(new EventTarget(), { hidden: false });
+    vi.stubGlobal('document', page);
+    const current = snapshot();
+    current.project = { ...project, status: 'running' };
+    const fetched: string[] = [];
+    let release: ((response: Response) => void) | undefined;
+    let slow = false;
+    const adapter = new LiveWorkbenchAdapter(async (url) => {
+      fetched.push(String(url));
+      if (slow)
+        return new Promise<Response>((resolve) => {
+          release = resolve;
+        });
+      return Response.json(
+        String(url).endsWith('/workbench')
+          ? current
+          : { total: 1, offset: 0, limit: 20, items: [current.project] },
+      );
+    });
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    slow = true;
+    const initial = fetched.length;
+    await vi.advanceTimersByTimeAsync(2000);
+    const refresh = adapter.refresh();
+    page.hidden = true;
+    page.dispatchEvent(new Event('visibilitychange'));
+    page.hidden = false;
+    page.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetched).toHaveLength(initial + 1);
+    adapter.dispose();
+    release!(Response.json(current));
+    await refresh;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetched).toHaveLength(initial + 1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it.each([
+    ['running', 2000, 0],
+    ['running', 2200, 0.5],
+    ['incomplete', 2000, 0],
+    ['awaiting_scientist', 10000, 0],
+    ['complete', 60000, 0],
+  ])('uses the %s cadence (%i ms) immediately after selection', async (status, delay, random) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(new Date('2026-09-29T00:00:00Z'));
+    vi.spyOn(Math, 'random').mockReturnValue(Number(random));
+    const current = snapshot();
+    current.project = { ...project, status: String(status) };
+    const fetched: string[] = [];
+    const adapter = new LiveWorkbenchAdapter(async (url) => {
+      fetched.push(String(url));
+      return Response.json(
+        String(url).endsWith('/workbench')
+          ? current
+          : { total: 1, offset: 0, limit: 20, items: [current.project] },
+      );
+    });
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    const initial = fetched.length;
+    await vi.advanceTimersByTimeAsync(Number(delay) - 1);
+    expect(fetched).toHaveLength(initial);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetched.at(-1)).toBe('/api/v1/projects/native-project/workbench');
+    expect(fetched.length).toBeGreaterThan(initial);
+  });
+  it('pauses automatic polling while hidden and refreshes immediately on return', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(new Date('2026-09-29T00:00:00Z'));
+    const page = Object.assign(new EventTarget(), { hidden: false });
+    vi.stubGlobal('document', page);
+    const fetched: string[] = [];
+    const adapter = new LiveWorkbenchAdapter(async (url) => {
+      fetched.push(String(url));
+      return Response.json(
+        String(url).endsWith('/workbench')
+          ? snapshot()
+          : { total: 1, offset: 0, limit: 20, items: [project] },
+      );
+    });
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    const initial = fetched.length;
+    page.hidden = true;
+    page.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetched).toHaveLength(initial);
+    page.hidden = false;
+    page.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetched.at(-1)).toBe('/api/v1/projects/native-project/workbench');
+    expect(fetched.length).toBeGreaterThan(initial);
+    adapter.dispose();
+    const disposed = fetched.length;
+    page.dispatchEvent(new Event('visibilitychange'));
+    await adapter.refresh();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetched).toHaveLength(disposed);
+  });
+  it('keeps a completed project current without polling it every two seconds', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(new Date('2026-09-29T00:00:00Z'));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const current = snapshot();
+    current.project = { ...project, status: 'complete' };
+    const fetched: string[] = [];
+    const adapter = new LiveWorkbenchAdapter(async (url) => {
+      fetched.push(String(url));
+      return Response.json(
+        String(url).endsWith('/workbench')
+          ? current
+          : { total: 1, offset: 0, limit: 20, items: [current.project] },
+      );
+    });
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await adapter.refresh();
+    const initial = fetched.length;
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(fetched).toHaveLength(initial);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetched.at(-1)).toBe('/api/v1/projects/native-project/workbench');
+    expect(fetched.length).toBeGreaterThan(initial);
+  });
   it('keeps a Gate question separate from approval and preserves identity on transport retry', async () => {
     const bodies: Record<string, unknown>[] = [];
     const { adapter, setCurrent } = fixture(async (body) => {

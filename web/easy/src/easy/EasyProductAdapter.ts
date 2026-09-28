@@ -70,6 +70,12 @@ export class EasyProductAdapter implements EasyProductPort {
   private listeners = new Set<(event: { type: 'snapshot'; snapshot: LiveState }) => void>();
   private timer?: ReturnType<typeof setTimeout>;
   private stopped = false;
+  private started = false;
+  private readonly page = typeof document === 'undefined' ? undefined : document;
+  private readonly visibilityChanged = () => {
+    clearTimeout(this.timer);
+    if (this.started && !this.stopped && !this.page?.hidden) void this.refresh();
+  };
   private refreshing?: Promise<void>;
   private generation = 0;
   private projectsAt = 0;
@@ -78,12 +84,17 @@ export class EasyProductAdapter implements EasyProductPort {
   constructor(
     private transport: typeof fetch = (input, init) => fetch(input, init),
     private interval = 2000,
-  ) {}
+  ) {
+    this.page?.addEventListener('visibilitychange', this.visibilityChanged);
+  }
   private nextRefreshDelay() {
     if (
       this.state.pending ||
       (this.state.pendingRequest &&
         ['accepted', 'running'].includes(this.state.pendingRequest.state)) ||
+      this.state.snapshot?.requests.some((request) =>
+        ['accepted', 'running'].includes(request.state),
+      ) ||
       ['running', 'incomplete'].includes(this.state.snapshot?.project.status || '')
     )
       return this.interval;
@@ -115,6 +126,7 @@ export class EasyProductAdapter implements EasyProductPort {
   dispose() {
     this.stopped = true;
     clearTimeout(this.timer);
+    this.page?.removeEventListener('visibilitychange', this.visibilityChanged);
     this.listeners.clear();
   }
   private async api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -165,13 +177,22 @@ export class EasyProductAdapter implements EasyProductPort {
   async authenticate(token: string) {
     await this.post('/session', { token });
   }
+  private scheduleRefresh() {
+    clearTimeout(this.timer);
+    if (this.started && !this.stopped && !this.page?.hidden && !this.refreshing) {
+      // Spread simultaneous visitors without polling faster than the base cadence.
+      const delay = this.nextRefreshDelay() * (1 + Math.random() * 0.2);
+      this.timer = setTimeout(() => void this.refresh(), delay);
+    }
+  }
   async refresh(): Promise<void> {
+    if (this.stopped) return;
+    this.started = true;
+    clearTimeout(this.timer);
     if (this.refreshing) return this.refreshing;
     this.refreshing = this.observe().finally(() => {
       this.refreshing = undefined;
-      clearTimeout(this.timer);
-      if (!this.stopped)
-        this.timer = setTimeout(() => void this.refresh(), this.nextRefreshDelay());
+      this.scheduleRefresh();
     });
     return this.refreshing;
   }
@@ -265,6 +286,7 @@ export class EasyProductAdapter implements EasyProductPort {
     if (generation !== this.generation) return;
     this.emit({ snapshot, connection: 'connected', error: null });
     await this.candidatePage(0);
+    this.scheduleRefresh();
   }
   clearProject() {
     this.generation++;
@@ -325,6 +347,8 @@ export class EasyProductAdapter implements EasyProductPort {
       throw error;
     } finally {
       this.emit({ pending: false });
+      // A poll started before the command may contain the old revision.
+      await this.refreshing;
       await this.refresh();
     }
   }
@@ -430,6 +454,7 @@ export class EasyProductAdapter implements EasyProductPort {
       throw reason;
     } finally {
       this.emit({ pending: false });
+      await this.refreshing;
       await this.refresh();
     }
   }

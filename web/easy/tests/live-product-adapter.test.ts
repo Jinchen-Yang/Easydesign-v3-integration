@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EasyProductAdapter } from '../src/easy/EasyProductAdapter';
+import { emptyInput } from '../src/easy/contracts';
 import type { LabOrderView, ProductSnapshot } from '../src/easy/product-contracts';
 
 const project = {
@@ -107,6 +108,41 @@ function fixture(post: (path: string, body: Record<string, unknown>) => Promise<
 }
 
 describe('Easy live adapter preserves Product API authority', () => {
+  it('binds each Easy target kind as typed input, including pasted sequence bytes', async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      calls.push({ path, body: init?.body });
+      if (path.includes('/inputs?')) return Response.json({ id: 'f'.repeat(64) });
+      if (init?.method === 'POST')
+        return Response.json({ id: 'request', project: project.id, state: 'succeeded' });
+      if (path.endsWith('/workbench')) return Response.json(snapshot());
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [project] });
+      return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.createTypedProject('UniProt design', 'Design a VHH.', {
+      ...emptyInput(),
+      type: 'uniprot',
+      text: 'p21452',
+    });
+    await adapter.createTypedProject('Sequence design', 'Design a VHH.', {
+      ...emptyInput(),
+      type: 'sequence',
+      text: 'ACDEFGHIKLMNPQRSTVWY',
+    });
+    const creates = calls
+      .filter((call) => call.path.endsWith('/projects'))
+      .map((call) => JSON.parse(String(call.body)));
+    expect(creates[0].target_input).toEqual({ kind: 'uniprot', accession: 'P21452' });
+    expect(creates[1].target_input).toEqual({ kind: 'sequence', artifact_id: 'f'.repeat(64) });
+    const upload = calls.find((call) => call.path.includes('/inputs?'));
+    expect(upload?.path).toContain('filename=easy-ui-target.fasta');
+    expect(await (upload?.body as Blob).text()).toBe('>easy-ui-target\nACDEFGHIKLMNPQRSTVWY\n');
+  });
   it('refreshes native job progress without requiring a new scientific revision', async () => {
     const current = snapshot();
     current.project = { ...project, phase: 'pilot', status: 'running' };

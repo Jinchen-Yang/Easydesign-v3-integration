@@ -5,7 +5,7 @@ const UNIPROT =
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const fileTypes: Partial<Record<InputType, string>> = {
   structure: '.pdb,.cif,.mmcif',
-  sequence: '.fasta,.fa,.faa,.txt',
+  sequence: '.fasta,.fa,.faa',
   pse: '.pse',
   bundle: '.json',
 };

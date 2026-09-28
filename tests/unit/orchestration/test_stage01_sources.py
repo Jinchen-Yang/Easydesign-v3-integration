@@ -27,6 +27,7 @@ from easydesign.orchestration.stage01_sources import (
     _structure_selection_option,
     _uniprot_identity,
     execute_stage01_source,
+    resolve_unique_reviewed_uniprot_seed,
 )
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.safe_writes import read_last_text_line
@@ -34,6 +35,43 @@ from easydesign.stages.s01_target_preparation import TargetBundle
 from easydesign.stages.s02_hotspot_discovery import load_structure_context
 
 SEQUENCE = "ACDEFGHIKLMNPQRSTVWY"
+
+
+def test_typed_structural_seed_rejects_ambiguous_reviewed_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeClient:
+        records: list[object] = []
+
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    matches = [
+        {
+            "primaryAccession": accession,
+            "uniProtkbId": entry,
+            "entryType": "UniProtKB reviewed (Swiss-Prot)",
+            "genes": [{"geneName": {"value": "TACR2"}}],
+        }
+        for accession, entry in (("P21452", "NK2R_HUMAN"), ("Q00001", "NK2R_TEST"))
+    ]
+    monkeypatch.setattr("easydesign.orchestration.stage01_sources.ScientificHttpClient", FakeClient)
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.uniprot_search",
+        lambda *_args, **_kwargs: SimpleNamespace(json=lambda: {"results": matches}),
+    )
+    with pytest.raises(TargetInputError, match="typed-target-canonical-identity-ambiguous"):
+        resolve_unique_reviewed_uniprot_seed(
+            evidence_dir=tmp_path / "evidence", query="TACR2", taxon_id=9606
+        )
+
+
 RESIDUE_NAMES = (
     "ALA",
     "CYS",
@@ -81,6 +119,86 @@ def _partial_mmcif(path: Path) -> None:
     structure.entities[0].full_sequence = ["ALA", "CYS", "ASP", "GLU"]
     structure.assign_label_seq_id()
     path.write_text(structure.make_mmcif_document().as_string(), encoding="utf-8")
+
+
+def test_explicit_pdb_seed_maps_to_canonical_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    structure = tmp_path / "candidate.cif"
+    _partial_mmcif(structure)
+    initialized = initialize_project(
+        project_root=tmp_path / "pdb-canonical",
+        pdb_id="1abc",
+        chain="X",
+        identity_uniprot="P00001",
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev2",
+        code_commit="abcdef0",
+        run_id="pdb-canonical",
+    )
+
+    class FakeClient:
+        records: list[object] = []
+
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    monkeypatch.setattr("easydesign.orchestration.stage01_sources.ScientificHttpClient", FakeClient)
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_entry",
+        lambda *_: SimpleNamespace(
+            json=lambda: {
+                "rcsb_entry_container_identifiers": {"polymer_entity_ids": ["1"]},
+                "exptl": [{"method": "X-RAY DIFFRACTION"}],
+                "rcsb_entry_info": {"resolution_combined": [2.0]},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_polymer_entity",
+        lambda *_: SimpleNamespace(
+            json=lambda: {
+                "entity_poly": {"pdbx_seq_one_letter_code_can": "ACDE"},
+                "rcsb_polymer_entity_container_identifiers": {
+                    "auth_asym_ids": ["X"],
+                    "uniprot_ids": ["P00001"],
+                },
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_mmcif",
+        lambda *_: SimpleNamespace(artifact_path=structure),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.uniprot_accession",
+        lambda *_: SimpleNamespace(
+            json=lambda: {
+                "primaryAccession": "P00001",
+                "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                "organism": {"taxonId": 9606},
+                "sequence": {"value": "ACDE"},
+                "features": [],
+            }
+        ),
+    )
+    outcome = execute_stage01_source(prepared)
+    assert outcome.status == "succeeded"
+    assert outcome.built_bundle is not None
+    identity = json.loads(
+        outcome.built_bundle.bundle.identity_report.verify(outcome.run_root).read_text()
+    )
+    assert identity["canonical"]["accession"] == "P00001"
+    assert identity["biological_identity_status"] == "resolved"
 
 
 def _protein_with_nonprotein_chain_mmcif(
@@ -254,23 +372,17 @@ def test_rcsb_candidate_keeps_identity_eligible_when_coordinates_are_partial(
     assert candidate["scope_identity"] == 1.0
     assert candidate["scope_coordinate_coverage"] == 0.75
     assert candidate["warnings"] == ["scope-coordinate-coverage-partial"]
-    assert candidate["missing_coordinate_ranges"] == [
-        {"start": 2, "end": 2, "kind": "internal"}
-    ]
+    assert candidate["missing_coordinate_ranges"] == [{"start": 2, "end": 2, "kind": "internal"}]
     assert candidate["deposited_title"] == "Deposited target in a bound active-state complex"
     assert candidate["deposited_keywords"] == "TARGET, ACTIVE STATE"
     assert candidate["entity_description"] == "Deposited target entity"
     assert candidate["uniprot_ids"] == ["P00001"]
-    assert candidate["reference_sequence_identifiers"][0][
-        "reference_sequence_coverage"
-    ] == 1.0
+    assert candidate["reference_sequence_identifiers"][0]["reference_sequence_coverage"] == 1.0
     option = _structure_selection_option(candidate)
     assert "canonical_alignment_coverage=1.0" in option.description
     assert "coordinate_coverage=0.75" in option.description
     assert "deposited_title=Deposited target" in option.description
-    assert option.payload["candidate_summary"]["entity_description"] == (
-        "Deposited target entity"
-    )
+    assert option.payload["candidate_summary"]["entity_description"] == ("Deposited target entity")
     assert option.payload["candidate_summary"]["reference_sequence_identifiers"] == [
         {
             "database_accession": "P00001",
@@ -410,9 +522,7 @@ def test_fasta_uses_rcsb_experimental_first_before_prediction(
     )
     monkeypatch.setattr(
         "easydesign.orchestration.stage01_sources.rcsb_sequence_search",
-        lambda *_: SimpleNamespace(
-            json=lambda: {"result_set": [{"identifier": "TEST_1"}]}
-        ),
+        lambda *_: SimpleNamespace(json=lambda: {"result_set": [{"identifier": "TEST_1"}]}),
     )
     monkeypatch.setattr(
         "easydesign.orchestration.stage01_sources._candidate",
@@ -481,8 +591,7 @@ def test_structural_only_local_range_is_rejected_as_ambiguous(
         Attempt,
     )
     stage = load_model(
-        prepared.workspace.stage_root("01-target-preparation")
-        / "stage-manifest.v0001.json",
+        prepared.workspace.stage_root("01-target-preparation") / "stage-manifest.v0001.json",
         StageManifest,
     )
     latest_name = read_last_text_line(prepared.workspace.latest_manifest_pointer)

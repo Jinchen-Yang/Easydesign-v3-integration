@@ -28,9 +28,21 @@ from easydesign.agent.session_store import SessionStore
 from easydesign.core import ArtifactRef, sha256_file
 from easydesign.core.errors import ContractError
 from easydesign.orchestration.research import initialize_research_project
+from easydesign.orchestration.stage01_sources import resolve_unique_reviewed_uniprot_seed
 
 from .artifacts import ArtifactCatalog, confined_bytes, digest, immutable_bytes, immutable_json
-from .contracts import ActionRequest, CreateProject, ProductError, ProjectView, WorkbenchProjection
+from .contracts import (
+    ActionRequest,
+    ArtifactTargetInput,
+    CreateProject,
+    DescriptionTargetInput,
+    PDBTargetInput,
+    ProductError,
+    ProjectView,
+    ProteinNameTargetInput,
+    UniProtTargetInput,
+    WorkbenchProjection,
+)
 from .conversation import answer, messages
 from .domain import GATES, NativeGateway, decision_view
 from .journal import RequestJournal
@@ -44,7 +56,9 @@ from .projection import (
     workbench,
 )
 
-UPLOAD_SUFFIXES = frozenset({".pdb", ".cif", ".mmcif"})
+STRUCTURE_SUFFIXES = frozenset({".pdb", ".cif", ".mmcif"})
+SEQUENCE_SUFFIXES = frozenset({".fa", ".faa", ".fasta"})
+UPLOAD_SUFFIXES = STRUCTURE_SUFFIXES | SEQUENCE_SUFFIXES
 UPLOAD_MAX_BYTES = 32 * 1024**2
 
 
@@ -59,7 +73,9 @@ def upload_identity(filename: str, data: bytes) -> tuple[str, str]:
 
     suffix = Path(filename).suffix.lower()
     if suffix not in UPLOAD_SUFFIXES or not 1 <= len(data) <= UPLOAD_MAX_BYTES:
-        raise ProductError("invalid_input", "Provide a PDB/mmCIF structure under 32 MiB")
+        raise ProductError(
+            "invalid_input", "Provide a PDB/mmCIF structure or FASTA sequence under 32 MiB"
+        )
     key = digest({"sha256": hashlib.sha256(data).hexdigest(), "format": suffix})
     return key, suffix
 
@@ -640,15 +656,19 @@ class ProductService:
             request["state"] in {"accepted", "running"} for request in value["requests"]
         )
         stable_gate = not (
-            value["project"]["status"] == "awaiting_scientist"
-            and value.get("decision") is None
+            value["project"]["status"] == "awaiting_scientist" and value.get("decision") is None
         )
-        if not active_request and stable_gate and value["project"]["status"] in {
-            "awaiting_scientist",
-            "available",
-            "complete",
-            "blocked",
-        }:
+        if (
+            not active_request
+            and stable_gate
+            and value["project"]["status"]
+            in {
+                "awaiting_scientist",
+                "available",
+                "complete",
+                "blocked",
+            }
+        ):
             with self._cache_lock:
                 self._stable_snapshots[project] = deepcopy(value)
         return value
@@ -705,28 +725,63 @@ class ProductService:
         key, suffix = upload_identity(filename, data)
         directory = self.root / "inputs" / key
         directory.mkdir(parents=True, exist_ok=True)
-        path = directory / ("structure" + suffix)
+        kind = "structure" if suffix in STRUCTURE_SUFFIXES else "sequence"
+        path = directory / (("structure" + suffix) if kind == "structure" else "sequence.fasta")
         immutable_bytes(path, data)
-        # Verify parseability before creating a formal project. No scientific inference.
-        import gemmi
+        if kind == "structure":
+            # Verify parseability before creating a formal project. No scientific inference.
+            import gemmi
 
-        try:
-            structure = gemmi.read_structure(str(path))
-            if len(structure) == 0 or not any(len(chain) for model in structure for chain in model):
-                raise ValueError("No coordinates")
-        except Exception as error:
-            raise ProductError(
-                "invalid_structure", "The supplied file has no readable coordinates"
-            ) from error
+            try:
+                structure = gemmi.read_structure(str(path))
+                if len(structure) == 0 or not any(
+                    len(chain) for model in structure for chain in model
+                ):
+                    raise ValueError("No coordinates")
+            except Exception as error:
+                raise ProductError(
+                    "invalid_structure", "The supplied file has no readable coordinates"
+                ) from error
+            file_format = suffix[1:]
+        else:
+            try:
+                content = data.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise ProductError(
+                    "invalid_sequence", "The FASTA file must be UTF-8 text"
+                ) from error
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
+            headers = [line for line in lines if line.startswith(">")]
+            if len(headers) > 1 or (headers and not lines[0].startswith(">")):
+                raise ProductError("invalid_sequence", "Provide exactly one FASTA sequence")
+            sequence = re.sub(
+                r"\s+", "", "".join(line for line in lines if not line.startswith(">"))
+            ).upper()
+            if (
+                not sequence
+                or len(sequence) > 20_000
+                or re.fullmatch(r"[ACDEFGHIKLMNPQRSTVWY]+", sequence) is None
+            ):
+                raise ProductError(
+                    "invalid_sequence",
+                    "Provide one sequence of at most 20,000 standard amino acids",
+                )
+            file_format = "fasta"
         ref = ArtifactRef.from_file(
             run_root=directory,
             relative_path=path.name,
             artifact_id="uploaded-target",
             role="user-input",
-            file_format=suffix[1:],
+            file_format=file_format,
         )
         immutable_json(directory / "manifest.json", ref.model_dump(mode="json"))
-        return {"id": key, "sha256": ref.sha256, "size_bytes": ref.size_bytes, "format": suffix[1:]}
+        return {
+            "id": key,
+            "sha256": ref.sha256,
+            "size_bytes": ref.size_bytes,
+            "format": file_format,
+            "kind": kind,
+        }
 
     def submit(self, project: str, request: ActionRequest) -> dict[str, Any]:
         self._invalidate_projection_cache(project)
@@ -759,10 +814,27 @@ class ProductService:
         return self.public_request(row)
 
     def create(self, request: CreateProject) -> dict[str, Any]:
-        if request.input_id is not None:
-            path = self.root / "inputs" / request.input_id / "manifest.json"
+        typed = request.target_input
+        artifact_id = (
+            typed.artifact_id if isinstance(typed, ArtifactTargetInput) else request.input_id
+        )
+        if artifact_id is not None:
+            path = self.root / "inputs" / artifact_id / "manifest.json"
             if not path.is_file():
                 raise ProductError("input_missing", "The optional uploaded target is unavailable")
+            ref = ArtifactRef.model_validate_json(confined_bytes(path.parent, path.name))
+            if isinstance(typed, ArtifactTargetInput):
+                formats = STRUCTURE_SUFFIXES if typed.kind == "structure" else SEQUENCE_SUFFIXES
+                if "." + ref.file_format not in formats:
+                    raise ProductError(
+                        "input_kind_mismatch",
+                        "The uploaded target does not match the declared input type",
+                    )
+            elif "." + ref.file_format not in STRUCTURE_SUFFIXES:
+                raise ProductError(
+                    "input_kind_mismatch",
+                    "Legacy input_id requires an uploaded structure",
+                )
         project = "workbench-" + digest(request.request_id)[:24]
         thread = self._thread(request.request_id)
         journal = self.journal()
@@ -780,7 +852,7 @@ class ProductService:
                 title=request.title,
                 goal=request.goal,
                 thread=thread,
-                input_id=request.input_id,
+                input_id=artifact_id,
                 surface=request.surface,
             )
         finally:
@@ -984,9 +1056,7 @@ class ProductService:
                         failed_store = _open_session_store(
                             self.context.projects_root / row["project"]
                         )
-                        failure = self._failure_context(
-                            failed_store, self._thread(request_id)
-                        )
+                        failure = self._failure_context(failed_store, self._thread(request_id))
                     except (OSError, sqlite3.DatabaseError):
                         logging.getLogger(__name__).exception(
                             "Could not inspect product failure context: %s", request_id
@@ -1089,6 +1159,10 @@ class ProductService:
             thread = self._thread(request.request_id)
             _seed_thread(store, thread, fingerprint(config), request.goal)
             models = (self.gateway.model_factory or create_models)(config, downstream=True)
+            typed = request.target_input
+            artifact_id = (
+                typed.artifact_id if isinstance(typed, ArtifactTargetInput) else request.input_id
+            )
             ref: ArtifactRef | None = None
             if not (root / "PROJECT.yaml").is_file():
                 self._activity(
@@ -1103,22 +1177,85 @@ class ProductService:
                     ),
                     specialist="target",
                 )
-                if request.input_id is not None:
-                    directory = self.root / "inputs" / request.input_id
+                if typed is not None and not any(
+                    event["kind"] == "product-target-input" for event in store.events(thread)
+                ):
+                    store.event(
+                        thread,
+                        "product-target-input",
+                        {
+                            "input": typed.model_dump(mode="json"),
+                            "binding_sha256": digest(typed.model_dump(mode="json")),
+                            "authority": "discovery-input-only",
+                        },
+                    )
+                canonical_seed: dict[str, Any] | None = None
+                if isinstance(typed, (ArtifactTargetInput, PDBTargetInput)):
+                    seeds = [
+                        event["payload"].get("seed")
+                        for event in store.events(thread)
+                        if event["kind"] == "product-canonical-target-seed"
+                    ]
+                    canonical_seed = next(
+                        (seed for seed in reversed(seeds) if isinstance(seed, dict)), None
+                    )
+                    if canonical_seed is None:
+                        intent = runner.run(
+                            resolve_goal_target(
+                                store=store,
+                                thread=thread,
+                                goal=request.goal,
+                                model=models["target"],
+                                config=config,
+                            )
+                        )
+                        try:
+                            canonical_seed = resolve_unique_reviewed_uniprot_seed(
+                                evidence_dir=root / "metadata" / "product-target-identity",
+                                query=intent.uniprot_query,
+                                taxon_id=intent.taxon_id,
+                            )
+                        except ContractError as error:
+                            raise ProductError(
+                                "canonical_target_unresolved",
+                                "The submitted target could not be bound to one reviewed "
+                                f"canonical identity: {error}",
+                                422,
+                            ) from error
+                        store.event(
+                            thread,
+                            "product-canonical-target-seed",
+                            {
+                                "seed": canonical_seed,
+                                "intent": intent.model_dump(mode="json"),
+                                "authority": "stage01-input-only",
+                            },
+                        )
+                    if not isinstance(canonical_seed.get("accession"), str):
+                        raise ProductError(
+                            "canonical_target_unresolved",
+                            "The canonical target seed is incomplete",
+                            409,
+                        )
+                if artifact_id is not None:
+                    directory = self.root / "inputs" / artifact_id
                     ref = ArtifactRef.model_validate_json(
                         confined_bytes(directory, "manifest.json")
                     )
                     source = ref.verify(directory)
+                    artifact_kind = (
+                        typed.kind if isinstance(typed, ArtifactTargetInput) else "structure"
+                    )
                     self._activity(
                         store,
                         thread,
                         "evidence.recorded",
                         task_id="target-input-seed",
-                        title="Optional structure seed",
+                        title=f"Typed {artifact_kind} input",
                         status="completed",
                         summary=(
-                            "User PDB/mmCIF was recorded as source evidence; scientific "
-                            "identity and Gate authority remain unresolved."
+                            f"The user {artifact_kind} artifact and checksum were bound to this "
+                            "project; scientific identity and Gate authority remain unresolved."
                         ),
                         specialist="target",
                     )
@@ -1126,10 +1263,16 @@ class ProductService:
                         project_root=root,
                         project_id=project,
                         target=source,
+                        identity_uniprot=canonical_seed["accession"] if canonical_seed else None,
+                        cache_mode="prefer-cache" if typed is not None else "online",
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
-                elif request.pdb_id is not None or request.uniprot is not None:
+                elif (
+                    request.pdb_id is not None
+                    or request.uniprot is not None
+                    or isinstance(typed, (PDBTargetInput, UniProtTargetInput))
+                ):
                     self._activity(
                         store,
                         thread,
@@ -1146,12 +1289,29 @@ class ProductService:
                     initialize_research_project(
                         project_root=root,
                         project_id=project,
-                        pdb_id=request.pdb_id,
-                        uniprot=request.uniprot,
+                        pdb_id=typed.pdb_id.upper()
+                        if isinstance(typed, PDBTargetInput)
+                        else request.pdb_id,
+                        chain=typed.chain if isinstance(typed, PDBTargetInput) else None,
+                        identity_uniprot=canonical_seed["accession"] if canonical_seed else None,
+                        uniprot=typed.accession.upper()
+                        if isinstance(typed, UniProtTargetInput)
+                        else request.uniprot,
+                        cache_mode="prefer-cache" if typed is not None else "online",
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
                 else:
+                    if isinstance(typed, DescriptionTargetInput):
+                        interpretation_goal = typed.description
+                    elif isinstance(typed, ProteinNameTargetInput):
+                        interpretation_goal = (
+                            f"Explicit target name: {typed.name}. "
+                            f"Explicit organism: {typed.organism}. "
+                            f"Design request: {request.goal}"
+                        )
+                    else:
+                        interpretation_goal = request.goal
                     self._activity(
                         store,
                         thread,
@@ -1169,7 +1329,7 @@ class ProductService:
                         resolve_goal_target(
                             store=store,
                             thread=thread,
-                            goal=request.goal,
+                            goal=interpretation_goal,
                             model=models["target"],
                             config=config,
                         )
@@ -1202,8 +1362,11 @@ class ProductService:
                     initialize_research_project(
                         project_root=root,
                         project_id=project,
-                        uniprot_query=intent.uniprot_query,
+                        uniprot_query=typed.name
+                        if isinstance(typed, ProteinNameTargetInput)
+                        else intent.uniprot_query,
                         taxon_id=intent.taxon_id,
+                        cache_mode="prefer-cache" if typed is not None else "online",
                         allow_existing_metadata=True,
                         quarantine_on_error=False,
                     )
@@ -1221,14 +1384,16 @@ class ProductService:
                 product_auto_continue=request.surface == "easy",
             )
             loaded = bridge.validate_project()
-            if request.input_id is not None and ref is None:
-                directory = self.root / "inputs" / request.input_id
+            if artifact_id is not None and ref is None:
+                directory = self.root / "inputs" / artifact_id
                 ref = ArtifactRef.model_validate_json(confined_bytes(directory, "manifest.json"))
             if ref is not None and (
                 loaded.source_path is None or sha256_file(loaded.source_path) != ref.sha256
             ):
                 raise ProductError(
-                    "input_changed", "Project source differs from the submitted structure", 409
+                    "input_changed",
+                    "Project source differs from the submitted target artifact",
+                    409,
                 )
             if not any(e["kind"] == "product-title" for e in store.events(thread)):
                 store.event(thread, "product-title", {"title": request.title})
@@ -1411,8 +1576,6 @@ class ProductService:
                     models,
                     session.goal,
                     user=self.actor,
-                    continuation_id=(
-                        request.request_id if request.action == "resume" else None
-                    ),
+                    continuation_id=(request.request_id if request.action == "resume" else None),
                 )
             )

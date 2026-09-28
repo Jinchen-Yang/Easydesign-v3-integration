@@ -13,7 +13,7 @@ import {
 import { Brand } from '../components/Brand';
 import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
 import { fileTypes, inputLabel, readInputFile } from './inputs';
-import { productGoal, productSource, validateLiveInput } from './live-input';
+import { productGoal, validateLiveInput } from './live-input';
 import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
 import {
@@ -622,12 +622,11 @@ export function EasyLiveApp({
     setError('');
     try {
       const goal = productGoal(input);
-      const source = productSource(input);
-      await adapter.createProject(
+      await adapter.createTypedProject(
         input.name.trim() || inputLabel(input).slice(0, 80),
         goal,
+        input,
         file,
-        source,
       );
       const created = await adapter.load();
       if (created.selectedProject) {
@@ -768,9 +767,8 @@ export function EasyLiveApp({
                 >
                   {INPUT_TYPES.filter((item) => !['pse', 'bundle'].includes(item.id)).map(
                     (item) => (
-                      <option key={item.id} value={item.id} disabled={item.id === 'sequence'}>
+                      <option key={item.id} value={item.id}>
                         {item.label}
-                        {item.id === 'sequence' ? ' · LIVE 暂未接入' : ''}
                       </option>
                     ),
                   )}
@@ -799,12 +797,41 @@ export function EasyLiveApp({
                   />
                 </label>
               ) : input.type === 'description' || input.type === 'sequence' ? (
-                <textarea
-                  rows={3}
-                  value={input.text}
-                  placeholder="例如：请为人源 NK2R 设计一个抑制受体信号的胞外 VHH binder"
-                  onChange={(event) => setInput({ ...input, text: event.target.value })}
-                />
+                <>
+                  <textarea
+                    rows={3}
+                    value={input.text}
+                    placeholder={
+                      input.type === 'sequence'
+                        ? '>target\nACDEFGHIKLMNPQRSTVWY'
+                        : '例如：请为人源 NK2R 设计一个抑制受体信号的胞外 VHH binder'
+                    }
+                    onChange={(event) => {
+                      setFile(null);
+                      setInput({ ...input, text: event.target.value, file: null });
+                    }}
+                  />
+                  {input.type === 'sequence' && (
+                    <label className="easy-live-upload">
+                      <FileUp size={20} />
+                      <span>{file?.name || '或上传 FASTA 文件'}</span>
+                      <input
+                        type="file"
+                        accept={fileTypes.sequence}
+                        onChange={(event) => {
+                          const next = event.target.files?.[0];
+                          if (!next) return;
+                          void readInputFile('sequence', next)
+                            .then((value) => {
+                              setFile(next);
+                              setInput((current) => ({ ...current, ...value }));
+                            })
+                            .catch((reason) => setError((reason as Error).message));
+                        }}
+                      />
+                    </label>
+                  )}
+                </>
               ) : (
                 <>
                   <input

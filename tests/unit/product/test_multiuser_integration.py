@@ -265,6 +265,7 @@ def test_personal_projects_requests_events_and_uploads_are_scope_isolated(multiu
         assert usage["stored_upload_bytes"] == len(structure("A").encode())
         assert len(usage["admissions"]) == 1
 
+
     with client(server, "bob") as bob_client:
         # Unknown scope membership, foreign namespace, and cross-scope reuse all fail.
         assert (
@@ -287,6 +288,29 @@ def test_personal_projects_requests_events_and_uploads_are_scope_isolated(multiu
         assert borrowed.status_code == 400
         assert borrowed.json()["error"]["code"] == "input_missing"
         assert bob_client.get(f"/api/v1/scopes/{other}/projects?surface=easy").json()["total"] == 0
+
+
+def test_scoped_easy_sequence_upload_and_typed_create_preserve_account_ledger(multiuser):
+    server, alice = multiuser.server, multiuser.users["alice"]
+    sequence = b">target\nACDEFGHIKLMNPQRSTVWY\n"
+    with client(server, "alice") as owner:
+        uploaded = owner.post(
+            f"/api/v1/scopes/{alice.id}/inputs?filename=target.fasta", content=sequence
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        artifact = uploaded.json()
+        assert artifact["kind"] == "sequence"
+        created = create_project(
+            owner,
+            alice.id,
+            "typed-sequence-account-0001",
+            target_input={"kind": "sequence", "artifact_id": artifact["id"]},
+        )
+        assert created.status_code == 202, created.text
+        usage = owner.get(f"/api/v1/scopes/{alice.id}/usage").json()
+        assert usage["stored_upload_bytes"] == len(sequence)
+        assert len(usage["admissions"]) == 1
+        assert multiuser.launched[0][1] == alice.id
 
 
 def test_team_draft_collaboration_separates_editing_from_scientific_startup(multiuser):

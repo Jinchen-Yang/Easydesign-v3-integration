@@ -44,7 +44,7 @@ test('logout in one tab evicts the other tab without self-redirect loops', async
   await expect(account.getByRole('heading', {name: 'Bob Member'})).toBeVisible();
 
   await workspace.goto('/easy/?scope=team-1');
-  await expect(workspace.getByText('团队协作成员')).toBeVisible();
+  await expect(workspace.getByText('团队协作成员', { exact: true })).toBeVisible();
   expect(workspace.url()).toContain('/easy/');
 
   // Logging out must evict the workspace tab to the account entry...

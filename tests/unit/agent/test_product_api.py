@@ -396,6 +396,201 @@ def test_explicit_database_source_rejects_conflicting_or_invalid_inputs():
             CreateProject.model_validate({**base, **source})
 
 
+def test_typed_target_contract_keeps_kind_and_rejects_conflicting_artifacts():
+    from pydantic import ValidationError
+
+    base = {
+        "request_id": "typed-target-contract-0001",
+        "title": "Typed target",
+        "goal": "Design a VHH binder against this target.",
+    }
+    request = CreateProject.model_validate(
+        {
+            **base,
+            "target_input": {"kind": "protein-name", "name": "TACR2", "organism": "Homo sapiens"},
+        }
+    )
+    assert request.target_input.kind == "protein-name"
+    assert request.target_input.name == "TACR2"
+    with pytest.raises(ValidationError):
+        CreateProject.model_validate(
+            {
+                **base,
+                "target_input": {"kind": "sequence", "artifact_id": "a" * 64},
+                "input_id": "b" * 64,
+            }
+        )
+
+
+def test_sequence_upload_is_validated_and_kind_bound(bridge, tmp_path):
+    from tests.agent_support import structure
+
+    service = service_for(bridge, tmp_path)
+    sequence = service.upload("target.fasta", b">target\nACDEFGHIKLMNPQRSTVWY\n")
+    assert sequence["kind"] == "sequence"
+    with pytest.raises(ProductError, match="exactly one FASTA"):
+        service.upload("two.fasta", b">a\nACDE\n>b\nACDE\n")
+    with pytest.raises(ProductError, match="standard amino acids"):
+        service.upload("invalid.fasta", b">a\nACDEX\n")
+    structure_input = service.upload("target.pdb", structure("A").encode())
+    with pytest.raises(ProductError, match="does not match"):
+        service.create(
+            CreateProject.model_validate(
+                {
+                    "request_id": "mistyped-sequence-0001",
+                    "title": "Mismatched target",
+                    "goal": "Design a VHH binder.",
+                    "target_input": {"kind": "sequence", "artifact_id": structure_input["id"]},
+                }
+            )
+        )
+
+
+def test_typed_uniprot_is_bound_as_native_source(bridge, tmp_path, monkeypatch):
+    from easydesign.orchestration.config import UniProtSourceConfig, load_run_config
+    from easydesign.orchestration.local_project import project_config_path
+
+    async def stop_after_bootstrap(*_args, **_kwargs):
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_bootstrap)
+    service = service_for(bridge, tmp_path)
+    request = CreateProject.model_validate(
+        {
+            "request_id": "typed-uniprot-source-0001",
+            "title": "Typed UniProt",
+            "goal": "Design a VHH binder against the selected target.",
+            "target_input": {"kind": "uniprot", "accession": "p21452"},
+            "surface": "easy",
+        }
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+    configured = load_run_config(
+        project_config_path(service.context.projects_root / accepted["project"])
+    ).config
+    assert isinstance(configured.target.source, UniProtSourceConfig)
+    assert configured.target.source.accession == "P21452"
+    assert configured.workflow.cache_mode == "prefer-cache"
+
+
+def test_typed_pdb_requires_reviewed_identity_seed_before_native_stage(
+    bridge, tmp_path, monkeypatch
+):
+    from easydesign.agent.bootstrap import GoalTargetIntent
+    from easydesign.orchestration.config import PdbIdSourceConfig, load_run_config
+    from easydesign.orchestration.local_project import project_config_path
+
+    async def stop_after_bootstrap(*_args, **_kwargs):
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    async def resolve_goal(**_kwargs):
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Canonical seed discovery.",
+            limitations=["Stage 1 verifies construct mapping."],
+        )
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_bootstrap)
+    monkeypatch.setattr("easydesign.agent.bootstrap.resolve_goal_target", resolve_goal)
+    monkeypatch.setattr(
+        "easydesign.product.service.resolve_unique_reviewed_uniprot_seed",
+        lambda **_kwargs: {
+            "accession": "P21452",
+            "authority": "stage01-input-only",
+            "reviewed": True,
+        },
+    )
+    service = service_for(bridge, tmp_path)
+    request = CreateProject.model_validate(
+        {
+            "request_id": "typed-pdb-source-0001",
+            "title": "Typed PDB",
+            "goal": "Design an extracellular VHH against NK2R.",
+            "target_input": {"kind": "pdb-id", "pdb_id": "9w1j", "chain": "R"},
+            "surface": "easy",
+        }
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+    configured = load_run_config(
+        project_config_path(service.context.projects_root / accepted["project"])
+    ).config
+    assert isinstance(configured.target.source, PdbIdSourceConfig)
+    assert configured.target.source.pdb_id == "9W1J"
+    assert configured.target.source.identity.uniprot_accession == "P21452"
+    assert configured.workflow.cache_mode == "prefer-cache"
+
+
+def test_typed_sequence_is_bound_to_reviewed_canonical_seed(bridge, tmp_path, monkeypatch):
+    from easydesign.agent.bootstrap import GoalTargetIntent
+    from easydesign.agent.session_store import SessionStore
+    from easydesign.orchestration.config import (
+        LocalFileSourceConfig,
+        TargetInputFormat,
+        load_run_config,
+    )
+    from easydesign.orchestration.local_project import project_config_path
+
+    async def stop_after_bootstrap(*_args, **_kwargs):
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    async def resolve_goal(**_kwargs):
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Identity discovery only.",
+            limitations=["Stage 1 verifies the sequence mapping."],
+        )
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_bootstrap)
+    monkeypatch.setattr("easydesign.agent.bootstrap.resolve_goal_target", resolve_goal)
+    monkeypatch.setattr(
+        "easydesign.product.service.resolve_unique_reviewed_uniprot_seed",
+        lambda **_kwargs: {
+            "accession": "P21452",
+            "authority": "stage01-input-only",
+            "reviewed": True,
+        },
+    )
+    service = service_for(bridge, tmp_path)
+    source = b">NK2R construct\nACDEFGHIKLMNPQRSTVWY\n"
+    uploaded = service.upload("nk2r.fasta", source)
+    request = CreateProject.model_validate(
+        {
+            "request_id": "typed-sequence-source-0001",
+            "title": "Typed sequence",
+            "goal": "Design an inhibitory extracellular VHH binder.",
+            "target_input": {"kind": "sequence", "artifact_id": uploaded["id"]},
+            "surface": "easy",
+        }
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+    root = service.context.projects_root / accepted["project"]
+    assert service.request(request.request_id)["state"] == "succeeded"
+    configured = load_run_config(project_config_path(root))
+    assert isinstance(configured.config.target.source, LocalFileSourceConfig)
+    assert configured.config.target.source.format is TargetInputFormat.FASTA
+    assert configured.config.target.source.identity.uniprot_accession == "P21452"
+    assert configured.source_path is not None and configured.source_path.read_bytes() == source
+    store = SessionStore(root)
+    try:
+        seeds = [
+            event["payload"]["seed"]
+            for event in store.events(service._thread(request.request_id))
+            if event["kind"] == "product-canonical-target-seed"
+        ]
+    finally:
+        store.close()
+    assert seeds[-1]["authority"] == "stage01-input-only"
+
+
 def test_goal_bootstrap_intent_is_structured_non_authority_and_replayed(tmp_path):
     from langchain_core.messages import AIMessage
 
@@ -616,6 +811,7 @@ def test_native_gate_lifecycle_wins_over_legacy_bootstrap_index(
     finally:
         journal.close()
     if not pending_gate:
+
         def resolved_workbench(*args, **kwargs):
             native = workbench(*args, **kwargs).model_dump(mode="json")
             native["decision"] = None
@@ -860,19 +1056,18 @@ def test_product_resume_binds_request_to_bounded_continuation(site_bridge, monke
         return {"status": "incomplete-turn", "scientific_state": "site-not-proposed"}
 
     monkeypatch.setattr("easydesign.agent.cli.run_session", bounded_resume)
-    session = DomainSession(
-        "target-test", site_bridge, "Continue a verified synthetic target."
-    )
+    session = DomainSession("target-test", site_bridge, "Continue a verified synthetic target.")
     revision = session.current()[2]
-    request = ActionRequest(
-        request_id="resume-site-0123456789", revision=revision, action="resume"
+    request = ActionRequest(request_id="resume-site-0123456789", revision=revision, action="resume")
+    assert (
+        session.execute(
+            request,
+            scripted_config(),
+            {role: NoInference(role=role) for role in ROLES},
+            "synthetic-scientist",
+        )["scientific_state"]
+        == "site-not-proposed"
     )
-    assert session.execute(
-        request,
-        scripted_config(),
-        {role: NoInference(role=role) for role in ROLES},
-        "synthetic-scientist",
-    )["scientific_state"] == "site-not-proposed"
     assert captured["continuation_id"] == request.request_id
 
 
@@ -1244,9 +1439,7 @@ def test_stopped_downstream_projection_keeps_the_reviewed_gate_phase(
     monkeypatch.setattr(
         runtime,
         "project_latest",
-        lambda kind: {"card_id": card_id, "route": "STOP"}
-        if kind == transition_kind
-        else None,
+        lambda kind: {"card_id": card_id, "route": "STOP"} if kind == transition_kind else None,
     )
     session = DomainSession("target-test", runtime, "Synthetic stopped campaign")
     monkeypatch.setattr(

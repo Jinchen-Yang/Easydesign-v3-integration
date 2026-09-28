@@ -159,6 +159,7 @@ def initialize_project(
     scope_feature_type: str | None = None,
     scope_feature_name: str | None = None,
     precomputed_msa: Path | None = None,
+    cache_mode: str = "online",
     msa_cache_mode: str = "online",
     stage01_prediction_backend: PredictionBackend | None = None,
     stage05_prediction_backend: PredictionBackend | None = None,
@@ -192,6 +193,8 @@ def initialize_project(
         raise ConfigurationError("--scope-range 与 --scope-feature-type 不能同时提供")
     if scope_feature_name is not None and scope_feature_type is None:
         raise ConfigurationError("--scope-feature-name 必须配合 --scope-feature-type")
+    if cache_mode not in {"online", "prefer-cache", "offline"}:
+        raise ConfigurationError("--cache-mode 必须是 online、prefer-cache 或 offline")
     if msa_cache_mode not in {"online", "prefer-cache", "offline"}:
         raise ConfigurationError("--msa-cache-mode 必须是 online、prefer-cache 或 offline")
     if precomputed_msa is not None and msa_cache_mode != "online":
@@ -220,8 +223,8 @@ def initialize_project(
         )
     if uniprot_query is not None and taxon_id is None:
         raise ConfigurationError("--uniprot-query 必须同时提供 --taxon-id")
-    if identity_uniprot is not None and target is None:
-        raise ConfigurationError("--identity-uniprot 只能配合本地 --target")
+    if identity_uniprot is not None and target is None and pdb_id is None:
+        raise ConfigurationError("--identity-uniprot 只能配合本地 --target 或显式 --pdb-id")
 
     source: Path | None = None
     msa_source: Path | None = None
@@ -310,6 +313,7 @@ def initialize_project(
             "pdb_id": pdb_id.upper(),
             "chain": chain,
             "chain_namespace": chain_namespace,
+            "identity": {"uniprot_accession": identity_uniprot},
         }
     elif uniprot is not None:
         source_payload = {
@@ -355,12 +359,9 @@ def initialize_project(
     if stop_after_stage >= 5 and stage05_prediction_backend is None:
         raise ConfigurationError("Stage 5 必须显式选择预测后端")
     if stop_after_stage >= 7 and (
-        stage07_de_novo_backend is None
-        or stage07_target_conditioned_backend is None
+        stage07_de_novo_backend is None or stage07_target_conditioned_backend is None
     ):
-        raise ConfigurationError(
-            "Stage 7 必须分别显式选择 de-novo 和 target-conditioned 后端"
-        )
+        raise ConfigurationError("Stage 7 必须分别显式选择 de-novo 和 target-conditioned 后端")
     if (
         detected is TargetInputFormat.PSE
         and stop_after_stage >= 2
@@ -382,7 +383,7 @@ def initialize_project(
         "workflow": {
             "execution_mode": execution_mode,
             "stop_after_stage": stop_after_stage,
-            "cache_mode": "online",
+            "cache_mode": cache_mode,
             "max_strategy_rounds": 1,
         },
         "stage01": {

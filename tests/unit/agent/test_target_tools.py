@@ -38,6 +38,37 @@ def test_real_gate_then_old_bundle_and_mapping(bridge: Any) -> None:
     assert not (root / "02-hotspot-discovery").exists()
 
 
+def test_pending_sequence_gate_does_not_parse_fasta_as_structure(
+    bridge: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from easydesign.orchestration.config import (
+        LoadedSequenceRunConfig,
+        TargetInputFormat,
+        normalize_fasta,
+    )
+
+    bridge.prepare_target()
+    terminal(bridge)
+    loaded = bridge.validate_project()
+    sequence_loaded = LoadedSequenceRunConfig(
+        config_path=loaded.config_path,
+        config=loaded.config,
+        source_path=loaded.source_path,
+        detected_format=TargetInputFormat.FASTA,
+        target=normalize_fasta(">target\nACDEFGHIKLMNPQRSTVWY\n", target_id="target"),
+        prediction_request=None,
+        msa_execution_plan=(),
+    )
+    monkeypatch.setattr(bridge, "validate_project", lambda: sequence_loaded)
+    monkeypatch.setattr(
+        "easydesign.agent.tools.inventory_structure",
+        lambda _source: pytest.fail("sequence input must not be parsed as a coordinate file"),
+    )
+    evidence = bridge.read_evidence()
+    assert evidence["status"] == "awaiting-human-approval"
+    assert evidence["chains"] == []
+
+
 def test_tampered_frozen_evidence_is_rejected(bridge: Any) -> None:
     bridge.prepare_target()
     terminal(bridge)

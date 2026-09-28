@@ -33,6 +33,7 @@ from easydesign.orchestration.config import (
     EasyDesignRunConfig,
     LoadedRemoteRunConfig,
     LoadedRunConfig,
+    LoadedSequenceRunConfig,
     LoadedStructureRunConfig,
     LocalFileSourceConfig,
     load_run_config,
@@ -117,9 +118,11 @@ class TargetBridge:
         path = project_config_path(self.project)
         confined(self.project, path)
         loaded = load_run_config(path, source_base_dir=self.project)
-        if not isinstance(loaded, (LoadedStructureRunConfig, LoadedRemoteRunConfig)):
+        if not isinstance(
+            loaded, (LoadedStructureRunConfig, LoadedSequenceRunConfig, LoadedRemoteRunConfig)
+        ):
             raise AgentBoundaryError(
-                "Phase 1 supports local structures or the canonical remote target sources"
+                "Phase 1 supports local structures, local sequences or canonical remote sources"
             )
         config = loaded.config
         source = config.target.source
@@ -306,10 +309,7 @@ class TargetBridge:
         for row in commands:
             command = self.store.command(row[0])
             assert command is not None
-            if (
-                command["operation"] in {"prepare", "decision"}
-                and command["payload"].get("job_id")
-            ):
+            if command["operation"] in {"prepare", "decision"} and command["payload"].get("job_id"):
                 return TargetBridge._receipt(
                     self, self.controller.load(command["payload"]["job_id"])
                 )
@@ -466,9 +466,7 @@ class TargetBridge:
                 manifest_status=str(manifest.status),
             )
         return {
-            "terminal_state": "recovery-required"
-            if failed_attempt.error.retryable
-            else "failed",
+            "terminal_state": "recovery-required" if failed_attempt.error.retryable else "failed",
             "code": failed_attempt.error.code,
             "message": failed_attempt.error.message,
             "retryable": failed_attempt.error.retryable,
@@ -702,7 +700,11 @@ class TargetBridge:
                 )
             request_hash = canonical_model_sha256(request)
             refs.append(f"{path.relative_to(root).as_posix()}#sha256={sha256_file(path)}")
-            inventory = inventory_structure(source) if current.source_path is not None else None
+            inventory = (
+                inventory_structure(source)
+                if isinstance(current, LoadedStructureRunConfig)
+                else None
+            )
             if inventory is not None and len(inventory.chains) > 32:
                 raise AgentBoundaryError(
                     "Too many chains for this slice; provide a narrower explicit input"
@@ -957,9 +959,7 @@ class TargetBridge:
             and "fact_references" not in current
             and verdict.verdict in {"ready-to-ask", "assessed"}
         ):
-            check_fact_claims(
-                verdict.model_dump(mode="json"), {**current, "hard_facts": facts}
-            )
+            check_fact_claims(verdict.model_dump(mode="json"), {**current, "hard_facts": facts})
         assessment = EvidenceAssessment(
             **verdict.model_dump(),
             **binding.model_dump(),
@@ -1351,8 +1351,7 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
         if superseded is not None:
             previous = bridge.store.card(bridge.thread, superseded["payload"]["card_id"])
             if previous.option_id != option_id or (
-                previous.assessment_id is not None
-                and previous.assessment_id != assessment_id
+                previous.assessment_id is not None and previous.assessment_id != assessment_id
             ):
                 raise AgentBoundaryError(
                     "Checkpoint retirement does not match the interrupted scientific card"

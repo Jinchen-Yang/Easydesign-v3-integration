@@ -98,6 +98,8 @@ function installResumableRoutes(page: Page, username: string, compute = true, st
       return reply({items: [snapshot().project], total: 1, offset: 0, limit: 5});
     if (path.endsWith('/workbench') && request.method() === 'GET') return reply(snapshot());
     if (path.endsWith('/candidates') && request.method() === 'GET') return reply(emptyPage);
+    if (path.endsWith('/inputs') && request.method() === 'POST')
+      return reply({id: 'f'.repeat(64), kind: 'sequence'}, 201);
     if (path.endsWith('/projects') && request.method() === 'POST') {
       actions.push({body: request.postDataJSON() as Record<string, unknown>, csrf: request.headers()['x-csrf-token']});
       return reply({kind:'action', id:'req-create-1', project:'proj-1', state:'succeeded', result:null, created:1, updated:1});
@@ -269,23 +271,27 @@ test.describe('account-mode automatic continuation', () => {
     await page.getByPlaceholder('目标名称或数据库 ID').fill('1UBQ');
     await page.getByRole('button', {name:/开始设计/}).click();
     await expect.poll(()=>actions.length).toBe(1);
-    expect(actions[0]!.body).toMatchObject({pdb_id:'1UBQ',surface:'easy'});
+    expect(actions[0]!.body).toMatchObject({target_input:{kind:'pdb-id',pdb_id:'1UBQ'},surface:'easy'});
     expect(actions[0]!.csrf).toBe('csrf-alice-synthetic');
     await page.getByRole('button', {name:/开始设计/}).waitFor();
     await page.getByRole('combobox', {name:'输入类型'}).selectOption('uniprot');
     await page.getByPlaceholder('目标名称或数据库 ID').fill('p00698');
     await page.getByRole('button', {name:/开始设计/}).click();
     await expect.poll(()=>actions.length).toBe(2);
-    expect(actions[1]!.body).toMatchObject({uniprot:'P00698',surface:'easy'});
+    expect(actions[1]!.body).toMatchObject({target_input:{kind:'uniprot',accession:'P00698'},surface:'easy'});
   });
 
-  test('unsupported live sequences are explicit and cannot be submitted', async ({page}) => {
+  test('live sequence paste binds an uploaded artifact without flattening residues into the goal', async ({page}) => {
     const actions = installResumableRoutes(page, 'alice', true, 'blocked');
     await page.goto('/easy/?scope=team-1&project=proj-1');
     const choice = page.getByRole('combobox', {name:'输入类型'}).locator('option[value="sequence"]');
-    await expect(choice).toHaveAttribute('disabled','');
-    await expect(choice).toHaveText('Sequence / FASTA · LIVE 暂未接入');
-    expect(actions).toHaveLength(0);
+    await expect(choice).toBeEnabled();
+    await page.getByRole('combobox', {name:'输入类型'}).selectOption('sequence');
+    await page.getByPlaceholder('>target\nACDEFGHIKLMNPQRSTVWY').fill('ACDEFGHIKLMNPQRSTVWY');
+    await page.getByRole('button', {name:/开始设计/}).click();
+    await expect.poll(()=>actions.length).toBe(1);
+    expect(actions[0]!.body).toMatchObject({target_input:{kind:'sequence',artifact_id:'f'.repeat(64)},surface:'easy'});
+    expect(String(actions[0]!.body.goal)).not.toContain('ACDEFGHIKLMNPQRSTVWY');
   });
   test('a blocked execution reports its state and requires an explicit recovery action', async ({page}) => {
     const actions = installResumableRoutes(page, 'alice', true, 'blocked');

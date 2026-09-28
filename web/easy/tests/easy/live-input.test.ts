@@ -11,14 +11,15 @@ describe('live input retains scientific intent within the Product API bound', ()
       '扩展 PDB ID',
     );
   });
-  it('accepts the exact description bound but blocks a longer description before dispatch', () => {
-    expect(validateLiveInput({ ...emptyInput(), text: 'x'.repeat(1500) })).toBeNull();
-    expect(validateLiveInput({ ...emptyInput(), text: 'x'.repeat(1501) })).toContain('1,500');
+  it('accepts the typed description bound but blocks a longer description before dispatch', () => {
+    expect(validateLiveInput({ ...emptyInput(), text: 'x'.repeat(4000) })).toBeNull();
+    expect(validateLiveInput({ ...emptyInput(), text: 'x'.repeat(4001) })).toContain('4,000');
   });
-  it('never truncates sequence input, including its final residues', () => {
+  it('keeps sequence bytes in the typed artifact, not the goal summary', () => {
     const input = { ...emptyInput(), type: 'sequence' as const, text: 'A'.repeat(19999) + 'W' };
-    expect(productGoal(input)).toContain(input.text);
-    expect(validateLiveInput(input)).toContain('尚未接入');
+    expect(productGoal(input)).toContain('20000 residues');
+    expect(productGoal(input)).not.toContain(input.text);
+    expect(validateLiveInput(input)).toBeNull();
   });
   it('normalizes an uploaded FASTA into the same explicit sequence source', () => {
     const input = {
@@ -28,7 +29,7 @@ describe('live input retains scientific intent within the Product API bound', ()
       file: { name: 'target.fasta', size: 20 },
     };
     expect(productSource(input)).toBeUndefined();
-    expect(validateLiveInput(input)).toContain('尚未接入');
+    expect(validateLiveInput(input)).toBeNull();
   });
   it('includes the entire identifier and organism in the request limit', () => {
     const input = {
@@ -37,7 +38,7 @@ describe('live input retains scientific intent within the Product API bound', ()
       text: '1UBQ',
       goal: 'x'.repeat(1500),
     };
-    expect(validateLiveInput(input)).toContain('1,500');
+    expect(validateLiveInput(input)).toBeNull();
     expect(productGoal(input)).toContain('Input pdb-id: 1UBQ.');
   });
 });

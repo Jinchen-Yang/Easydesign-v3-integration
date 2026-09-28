@@ -4,7 +4,7 @@ import hashlib
 import os
 import subprocess
 import sys
-import threading
+import textwrap
 import time
 
 import httpx
@@ -13,31 +13,53 @@ from scripts import capacity_smoke
 
 
 def test_resource_sample_counts_child_spawned_by_a_live_http_worker_thread():
-    baseline = capacity_smoke.process_sample(os.getpid())["direct_child_processes"]
-    ready, release = threading.Event(), threading.Event()
+    # Other tests may leave a short-lived child in pytest's process. A separate
+    # probe owns exactly one child, so an unrelated exit cannot cancel its count.
+    code = textwrap.dedent("""
+        import os
+        import subprocess
+        import sys
+        import threading
+        from scripts import capacity_smoke
 
-    def http_worker():
-        child = subprocess.Popen(
-            [sys.executable, "-c", "import time; time.sleep(10)"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        ready, release = threading.Event(), threading.Event()
+        children = []
+
+        def http_worker():
+            child = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(10)"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            children.append(child)
+            try:
+                ready.set()
+                release.wait(5)
+            finally:
+                child.terminate()
+                child.wait(timeout=3)
+
+        thread = threading.Thread(target=http_worker)
+        thread.start()
         try:
-            ready.set()
-            release.wait(5)
+            assert ready.wait(3)
+            assert children[0].poll() is None
+            assert capacity_smoke.process_sample(os.getpid())["direct_child_processes"] == 1
         finally:
-            child.terminate()
-            child.wait(timeout=3)
-
-    thread = threading.Thread(target=http_worker)
-    thread.start()
-    try:
-        assert ready.wait(3)
-        assert capacity_smoke.process_sample(os.getpid())["direct_child_processes"] >= baseline + 1
-    finally:
-        release.set()
-        thread.join(timeout=5)
-        assert not thread.is_alive()
+            release.set()
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+    """)
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=capacity_smoke.ROOT,
+        env={"PATH": os.defpath, "PYTHONPATH": str(capacity_smoke.ROOT / "src")},
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_refusals_remain_flow_failures_and_latency_does_not_hide_them():

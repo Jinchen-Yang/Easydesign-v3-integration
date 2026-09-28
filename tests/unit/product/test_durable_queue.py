@@ -93,6 +93,174 @@ def test_unavailable_gpu_persists_queue_without_starting_a_process(queue, monkey
     assert runtime.resources.get(admission.id).state == "queued"
 
 
+def test_tick_reuses_one_scoped_service_but_rechecks_authority_on_the_next_tick(queue, monkeypatch):
+    runtime, control, accounts, admin, alice, _bob = queue
+    accepted = create(runtime, alice)
+    grant = runtime.resources.latest(alice.id, accepted["id"])
+    constructions = []
+    make_service = control._service
+
+    def observed_service(admission):
+        constructions.append(admission.id)
+        return make_service(admission)
+
+    monkeypatch.setattr(control, "_service", observed_service)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("Scientific spawn"))
+    control.tick()
+    assert constructions == [grant.id]
+    assert runtime.resources.get(grant.id).state == "queued"
+    accounts.update_user(admin, alice.id, status="suspended")
+    control.tick()
+    assert constructions == [grant.id, grant.id]
+    assert runtime.resources.get(grant.id).state == "cancelled"
+    assert runtime.resources.get(grant.id).reason == "authorization_revoked"
+
+
+def test_another_admission_can_finish_enqueue_between_tick_items(queue, monkeypatch):
+    runtime, control, accounts, admin, alice, bob = queue
+    accounts.set_limits(admin, alice.id, ResourceLimits(max_active_jobs=2, max_gpu_devices=2))
+    create(runtime, alice)
+    create(runtime, alice, "alice-second-request-01")
+    active = runtime.resources.active
+    between, finish_tick = threading.Event(), threading.Event()
+    observed = []
+    initial = [admission.id for admission in active()]
+
+    class BetweenItems(list):
+        def __iter__(self):
+            for index, admission in enumerate(super().__iter__()):
+                if index == 1:
+                    between.set()
+                    assert finish_tick.wait(10), "Fixture tick was not released"
+                observed.append(admission.id)
+                yield admission
+
+    class EmptyProbe:
+        calls = 0
+
+        def snapshots(self):
+            self.calls += 1
+            return ()
+
+    probe = EmptyProbe()
+    control.probe = probe
+    monkeypatch.setattr(runtime.resources, "active", lambda: BetweenItems(active()))
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("Scientific spawn"))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        ticking = pool.submit(control.tick)
+        try:
+            assert between.wait(10), "Tick did not reach the between-admission boundary"
+            enqueue = pool.submit(create, runtime, bob, "bob-interleaved-request")
+            accepted = enqueue.result(timeout=3)
+            assert accepted["state"] == "accepted"
+            assert not ticking.done()
+        finally:
+            finish_tick.set()
+        ticking.result(timeout=10)
+    assert observed == initial  # A new admission joins the next ordered snapshot.
+    assert probe.calls == 1
+    control.tick()
+    assert probe.calls == 2  # Observations must not survive into another tick.
+    assert runtime.resources.latest(bob.id, accepted["id"]).state == "queued"
+
+
+def test_tick_keeps_same_instance_and_other_controller_exclusion_between_items(queue, monkeypatch):
+    runtime, control, accounts, admin, alice, _bob = queue
+    accounts.set_limits(admin, alice.id, ResourceLimits(max_active_jobs=2, max_gpu_devices=2))
+    create(runtime, alice)
+    create(runtime, alice, "alice-second-request-01")
+    between, finish_tick = threading.Event(), threading.Event()
+    manual_started, manual_entered = threading.Event(), threading.Event()
+    active = runtime.resources.active
+
+    class PausedBackground(list):
+        def __iter__(self):
+            for index, admission in enumerate(super().__iter__()):
+                if index == 1:
+                    between.set()
+                    assert finish_tick.wait(10), "Fixture background tick was not released"
+                yield admission
+
+    def observed_active():
+        name = threading.current_thread().name
+        if name == "account-resource-admission":
+            return PausedBackground(active())
+        if name.startswith("manual-tick"):
+            manual_entered.set()
+        return active()
+
+    def manual_tick():
+        manual_started.set()
+        control.tick()
+
+    monkeypatch.setattr(runtime.resources, "active", observed_active)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("Scientific spawn"))
+    control.poll_seconds = 60
+    other = ResourceSupervisor(runtime, probe=control.probe)
+    control.start()
+    try:
+        assert between.wait(10), "Background tick did not reach the between-admission boundary"
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="manual-tick") as pool:
+            pending = pool.submit(manual_tick)
+            try:
+                assert manual_started.wait(10)
+                assert not manual_entered.wait(0.2), "Same-instance tick rounds overlapped"
+                assert not pending.done()
+                with pytest.raises(ProductError) as busy:
+                    other.tick()
+                assert busy.value.code == "controller_busy"
+            finally:
+                finish_tick.set()
+            pending.result(timeout=10)
+        assert manual_entered.is_set()
+    finally:
+        finish_tick.set()
+        control.close()
+    other.tick()  # Whole-controller ownership is released only after clean shutdown.
+
+
+@pytest.mark.parametrize("change", ["cancel", "revoke"])
+def test_tick_rechecks_cancel_and_revocation_after_its_admission_snapshot(
+    queue, monkeypatch, change
+):
+    runtime, control, accounts, admin, alice, bob = queue
+    first = create(runtime, alice)
+    second = create(runtime, bob, "bob-snapshot-race-001")
+    between, finish_tick = threading.Event(), threading.Event()
+    active = runtime.resources.active
+
+    class BetweenItems(list):
+        def __iter__(self):
+            for index, admission in enumerate(super().__iter__()):
+                if index == 1:
+                    between.set()
+                    assert finish_tick.wait(10), "Fixture tick was not released"
+                yield admission
+
+    monkeypatch.setattr(runtime.resources, "active", lambda: BetweenItems(active()))
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("Scientific spawn"))
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        ticking = pool.submit(control.tick)
+        try:
+            assert between.wait(10), "Tick did not reach the between-admission boundary"
+            if change == "cancel":
+                with runtime.bind(bob, bob.id) as service:
+                    service.cancel_queued(second["id"])
+            else:
+                accounts.update_user(admin, bob.id, status="suspended")
+        finally:
+            finish_tick.set()
+        ticking.result(timeout=10)
+    assert runtime.resources.latest(alice.id, first["id"]).state == "queued"
+    cancelled = runtime.resources.latest(bob.id, second["id"])
+    assert cancelled.state == "cancelled" and cancelled.worker_pid is None
+    expected = "queue_cancelled" if change == "cancel" else "authorization_revoked"
+    assert cancelled.reason == expected
+    with runtime.bind(admin, bob.id) as observer:
+        row = observer.request(second["id"])
+    assert row["state"] == "failed" and row["result"]["code"] == expected
+
+
 def test_queued_request_reports_global_position_without_loading_all_admissions(queue, monkeypatch):
     runtime, _control, _accounts, _admin, alice, bob = queue
     create(runtime, alice)

@@ -166,6 +166,7 @@ class ResourceSupervisor:
         self.max_conversation_workers = max_conversation_workers
         self.startup_timeout_seconds = startup_timeout_seconds
         self._stop = threading.Event()
+        self._tick_lock = threading.Lock()
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         self._controller_lock: Any = None
@@ -312,23 +313,27 @@ class ResourceSupervisor:
         return context, ProductService(gateway, actor="account:" + admission.scientific_actor_id)
 
     def tick(self) -> None:
-        with self._lock, self._dispatch_lock():
+        # The process/file ownership and a single poll's memo span the whole
+        # tick. HTTP enqueue may interleave only between reconciled admissions.
+        with self._tick_lock, self._dispatch_lock():
             # One GPU observation per poll is shared by every queued admission.
             memo: list[Any] = []
             for admission in self.ledger.active():
-                try:
-                    self._tick_one(admission, memo)
-                except ProductError as error:
-                    if error.code == "allocation_conflict":
-                        # A corrupt device/assignment identity must quarantine only
-                        # its own admission; raising would starve every other queued
-                        # request on this poll and on all later polls.
-                        self.ledger.transition(
-                            admission.id, "held", reason="allocation_identity_mismatch"
-                        )
-                    else:
-                        raise
-            self._reconcile_final_designs()
+                with self._lock:
+                    try:
+                        self._tick_one(admission, memo)
+                    except ProductError as error:
+                        if error.code == "allocation_conflict":
+                            # A corrupt device/assignment identity must quarantine only
+                            # its own admission; raising would starve every other queued
+                            # request on this poll and on all later polls.
+                            self.ledger.transition(
+                                admission.id, "held", reason="allocation_identity_mismatch"
+                            )
+                        else:
+                            raise
+            with self._lock:
+                self._reconcile_final_designs()
 
     @contextmanager
     def _dispatch_lock(self) -> Iterator[None]:
@@ -574,7 +579,7 @@ class ResourceSupervisor:
         if admission.dispatch_channel == "web_stream":
             self.ledger.reconcile_web_stream_owner(admission.id)
             return  # Only quota recovery; Web streaming still owns execution.
-        _, service = self._service(admission)
+        context, service = self._service(admission)
         # Serialize cross-store preparation/cancellation/retry with dispatch.
         # A still-running HTTP prepare is never mistaken for an abandoned intent.
         path = service.root / "commands" / (admission.request_id + ".lock")
@@ -587,9 +592,15 @@ class ResourceSupervisor:
             admission = self.ledger.get(admission.id)
             if admission.state in {"failed", "cancelled", "released"}:
                 return
-            self._reconcile_one(admission, memo)
+            self._reconcile_one(admission, memo, context, service)
 
-    def _reconcile_one(self, admission: Admission, memo: list[Any]) -> None:
+    def _reconcile_one(
+        self,
+        admission: Admission,
+        memo: list[Any],
+        context: WorkspaceContext,
+        service: ProductService,
+    ) -> None:
         if admission.dispatch_channel == "scoped_worker" and admission.state == "reserved":
             config_path = self._config_path(admission)
             if config_path.is_file():
@@ -603,14 +614,13 @@ class ResourceSupervisor:
                     or config.get("dispatch_protocol") != "durable-v1"
                 ):
                     raise ProductError("allocation_conflict", "执行配置身份不匹配", 409)
-                _, service = self._service(admission)
                 journal = service.journal()
                 try:
                     record = journal.get(admission.request_id)
                 finally:
                     journal.close()
                 if record is None or record["state"] != "accepted":
-                    self._finish_unstarted(admission, "request_not_ready")
+                    self._finish_unstarted(admission, "request_not_ready", service)
                     return
                 admission = self.ledger.transition(
                     admission.id, "queued", reason="waiting_for_resources"
@@ -620,10 +630,9 @@ class ResourceSupervisor:
                     self.runtime.accounts.clock() - admission.created_at
                     > self.startup_timeout_seconds
                 ):
-                    self._finish_unstarted(admission, "submission_incomplete")
+                    self._finish_unstarted(admission, "submission_incomplete", service)
                 return
         if admission.state == "starting" and admission.worker_pid is None:
-            _, service = self._service(admission)
             receipt_path = service.root / "workers" / (admission.id + ".started.json")
             if receipt_path.is_file():
                 receipt = json.loads(receipt_path.read_text())
@@ -661,14 +670,13 @@ class ResourceSupervisor:
                     self.runtime.accounts.clock() - admission.updated_at
                     > self.startup_timeout_seconds
                 ):
-                    self._finish_unstarted(admission, "worker_start_timeout")
+                    self._finish_unstarted(admission, "worker_start_timeout", service)
                 return
         pending = admission.worker_pid is None and admission.state == "queued"
         if pending and self._config_path(admission).is_file():
             if not self._authorized(admission):
-                self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
+                self._finish_unstarted(admission, "authorization_revoked", service, cancelled=True)
                 return
-            _, service = self._service(admission)
             request_lock = service.root / "workers" / (admission.request_id + ".lock")
             request_lock.parent.mkdir(parents=True, exist_ok=True)
             with request_lock.open("a") as handle:
@@ -699,7 +707,7 @@ class ResourceSupervisor:
                     admission.id, max_conversation_workers=self.max_conversation_workers
                 )
             except ProductError:
-                self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
+                self._finish_unstarted(admission, "authorization_revoked", service, cancelled=True)
                 return
             if claimed is None:
                 self.pool.release(admission.id)
@@ -730,7 +738,6 @@ class ResourceSupervisor:
             and process_identity(admission.worker_pid) == admission.worker_start
         )
         if not alive:
-            context, service = self._service(admission)
             try:
                 with context.activate():
                     active = native_active(service, admission.request_id)
@@ -780,7 +787,7 @@ class ResourceSupervisor:
                     self.ledger.transition(admission.id, "running", devices=scope.devices)
             return
         if not self._authorized(admission):
-            self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
+            self._finish_unstarted(admission, "authorization_revoked", service, cancelled=True)
             return
         devices: tuple[int, ...] = ()
         if admission.kind == "scientific":
@@ -817,7 +824,7 @@ class ResourceSupervisor:
                     lambda: immutable_json(self.pool.assignment_path(admission.id), assignment),
                 )
             except ProductError:
-                self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
+                self._finish_unstarted(admission, "authorization_revoked", service, cancelled=True)
         else:
             immutable_json(self.pool.assignment_path(admission.id), assignment)
             self.ledger.transition(admission.id, "running", devices=devices)
@@ -830,7 +837,12 @@ class ResourceSupervisor:
         return True
 
     def _finish_unstarted(
-        self, admission: Admission, reason: str, *, cancelled: bool = False
+        self,
+        admission: Admission,
+        reason: str,
+        service: ProductService,
+        *,
+        cancelled: bool = False,
     ) -> None:
         """Fence this attempt before freeing capacity; no execution assignment may exist."""
         assignment = self.pool.assignment_path(admission.id)
@@ -842,7 +854,6 @@ class ResourceSupervisor:
         self.ledger.transition(admission.id, "cancelled" if cancelled else "failed", reason=reason)
         immutable_json(assignment, {"grant_id": admission.id, "cancelled": True, "code": reason})
         self.pool.release(admission.id)
-        _, service = self._service(admission)
         journal = service.journal()
         try:
             row = journal.get(admission.request_id)

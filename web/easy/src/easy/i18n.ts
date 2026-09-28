@@ -21,6 +21,7 @@ const zh: Record<string, string> = {
   'Send message': '发送消息',
   'Stop reply': '停止回复',
   'Sends chat & page summary to DeepSeek': '消息与页面摘要发送至 DeepSeek',
+  'Uses chat & page summary to prepare this reply': '消息与页面摘要仅用于生成本次回复',
   'Reply stopped.': '已停止回复。',
   'Reply paused when the panel closed. Retry when ready.': '面板关闭时已暂停回复，可随时重试。',
   'Retry reply': '重试回复',

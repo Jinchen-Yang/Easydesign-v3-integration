@@ -10,9 +10,11 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import re
 import secrets
 import sqlite3
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -152,8 +154,32 @@ class AccountStore:
     """Thread-safe identity authority with per-operation transactions and revocation."""
 
     def __init__(
-        self, path: Path, *, clock: Callable[[], float] = time.time, read_only: bool = False
+        self,
+        path: Path,
+        *,
+        clock: Callable[[], float] = time.time,
+        read_only: bool = False,
+        login_max_concurrency: int = 8,
+        login_max_pending: int = 300,
+        login_wait_timeout: float = 10.0,
     ) -> None:
+        if (
+            type(login_max_concurrency) is not int
+            or login_max_concurrency < 1
+            or type(login_max_pending) is not int
+            or login_max_pending < 0
+            or not math.isfinite(login_wait_timeout)
+            or login_wait_timeout < 0
+        ):
+            raise ValueError("Login concurrency, pending limit and wait timeout must be bounded")
+        # The HTTP server shares this identity store across all users/scopes.
+        # Bound both CPU work and the waiting room; never hold a SQLite
+        # transaction while waiting for a password-check slot.
+        self._login_slots = threading.BoundedSemaphore(login_max_concurrency)
+        self._login_admissions = threading.BoundedSemaphore(
+            login_max_concurrency + login_max_pending
+        )
+        self._login_wait_timeout = login_wait_timeout
         self.path, self.clock, self.read_only = Path(path).absolute(), clock, read_only
         if self.path.is_symlink():
             raise ProductError("invalid_account_state", "账户数据库不能是符号链接", 503)
@@ -406,23 +432,55 @@ class AccountStore:
     def csrf_token(token: str) -> str:
         return hmac.new(token.encode(), b"easydesign-account-csrf-v1", hashlib.sha256).hexdigest()
 
+    @contextmanager
+    def _login_capacity(self) -> Iterator[None]:
+        if not self._login_admissions.acquire(blocking=False):
+            raise ProductError("login_busy", "登录请求较多，请稍后重试", 503)
+        try:
+            if not self._login_slots.acquire(timeout=self._login_wait_timeout):
+                raise ProductError("login_busy", "登录等待超时，请稍后重试", 503)
+            try:
+                yield
+            finally:
+                self._login_slots.release()
+        finally:
+            self._login_admissions.release()
+
     def login(self, username: str, password: str, *, peer: str) -> LoginSession:
         if not isinstance(username, str) or len(username) > 64:
             raise ProductError("invalid_credentials", "用户名或密码错误", 401)
         bucket = self._bucket("login", username.casefold(), peer)
-        peer_bucket = self._bucket("login-peer", peer)
-        with self.db(write=True) as db:
-            self._check_rate(db, peer_bucket, maximum=120, window=60)
-            self._record_attempt(db, peer_bucket, window=60)
+        # Shared conference/campus networks must not spend a common allowance
+        # merely by authenticating successfully. Keep the peer cap for failures.
+        peer_bucket = self._bucket("login-peer-failures", peer)
+        with self._login_capacity():
+            with self.db() as db:
+                self._check_rate(db, peer_bucket, maximum=120, window=60)
+                self._check_rate(db, bucket, maximum=5, window=15 * 60)
+                row = db.execute(
+                    "SELECT * FROM users WHERE username_key=?", (username.casefold(),)
+                ).fetchone()
+            matches = _password_matches(password, row["password_hash"] if row else self._dummy_hash)
         failure: ProductError | None = None
         session: LoginSession | None = None
         with self.db(write=True) as db:
+            self._check_rate(db, peer_bucket, maximum=120, window=60)
             self._check_rate(db, bucket, maximum=5, window=15 * 60)
+            checked = row
             row = db.execute(
                 "SELECT * FROM users WHERE username_key=?", (username.casefold(),)
             ).fetchone()
-            matches = _password_matches(password, row["password_hash"] if row else self._dummy_hash)
+            # Password derivation runs without a database writer lock. Bind its
+            # result to the identity and credentials we actually checked; an
+            # intervening reset, suspension or role change must revoke it too.
+            matches = (
+                matches
+                and checked is not None
+                and row is not None
+                and all(checked[key] == row[key] for key in ("id", "password_hash", "auth_version"))
+            )
             if row is None or not matches:
+                self._record_attempt(db, peer_bucket, window=60)
                 self._record_attempt(db, bucket, window=15 * 60)
                 self.audit_record(
                     db, None, "session.rejected", details={"reason": "invalid_credentials"}
@@ -554,12 +612,24 @@ class AccountStore:
             self.audit_record(db, admin.id, "account.password_reset", target=user_id)
 
     def change_password(self, actor: AccountUser, current: str, password: str) -> None:
-        hashed = _password_hash(password)
-        with self.db(write=True) as db:
-            user = self.live_user(db, actor, password_change=True)
-            row = db.execute("SELECT password_hash FROM users WHERE id=?", (user.id,)).fetchone()
+        with self._login_capacity():
+            hashed = _password_hash(password)
+            with self.db() as db:
+                user = self.live_user(db, actor, password_change=True)
+                row = db.execute(
+                    "SELECT password_hash,auth_version FROM users WHERE id=?", (user.id,)
+                ).fetchone()
             if row is None or not _password_matches(current, row["password_hash"]):
                 raise ProductError("invalid_credentials", "当前密码不正确", 403)
+        with self.db(write=True) as db:
+            user = self.live_user(db, actor, password_change=True)
+            latest = db.execute(
+                "SELECT password_hash,auth_version FROM users WHERE id=?", (user.id,)
+            ).fetchone()
+            if latest is None or any(
+                latest[key] != row[key] for key in ("password_hash", "auth_version")
+            ):
+                raise ProductError("invalid_credentials", "账户凭据已变化，请重新登录后重试", 403)
             db.execute(
                 "UPDATE users SET password_hash=?,must_change_password=0,"
                 "auth_version=auth_version+1,updated_at=? WHERE id=?",

@@ -37,6 +37,7 @@ import { scopeDecisionLinks, surfaceRights } from '../../../shared/account-clien
 import type { GateInput, LiveState, ProductSnapshot } from './contracts';
 import { LiveContext } from './LiveContext';
 import { GateReview } from './GateReview';
+import { latestQueueCancellation } from './queue-presentation';
 import './live.css';
 const phaseOf = (phase: string): WorkflowPhase =>
   phase === 'handoff' ? 'candidates' : (phase as WorkflowPhase);
@@ -66,7 +67,7 @@ const stepTitles: Record<string, string> = {
   candidates: 'Review your candidate panel',
   handoff: 'Your panel is finalized',
 };
-function dialogue(v: ProductSnapshot): ConversationItem[] {
+function dialogue(v: ProductSnapshot, queueCancelled = false): ConversationItem[] {
   const phase = phaseOf(v.project.phase);
   const recommendedTarget =
     v.decision?.gate === 1
@@ -102,8 +103,14 @@ function dialogue(v: ProductSnapshot): ConversationItem[] {
       id: 'current',
       phase,
       kind: 'summary',
-      title: stepTitles[v.project.phase] || 'Your research is in progress',
-      text: currentDecisionText,
+      title:
+        queueCancelled && !v.decision
+          ? 'Request cancelled before execution'
+          : stepTitles[v.project.phase] || 'Your research is in progress',
+      text:
+        queueCancelled && !v.decision
+          ? 'This request did not start computation. Scientific evidence is retained; it will not restart automatically.'
+          : currentDecisionText,
       focus: phase,
     });
   // Keep one current card per bounded task. Completion receipts replace their
@@ -217,6 +224,16 @@ export function LiveWorkbench({
       : state.snapshot
     : undefined;
   const phase = phaseOf(v?.project.phase || 'goal');
+  const queueCancelled = latestQueueCancellation(v?.project.id, [
+    state?.pendingRequest,
+    ...(v?.requests || []),
+  ]);
+  const queuedRequest = [state?.pendingRequest, ...(v?.requests || [])].find(
+    (request) =>
+      request?.project === v?.project.id &&
+      ['accepted', 'running'].includes(request?.state || '') &&
+      request?.result?.queue,
+  );
   useEffect(() => {
     setViewedPhase(phase);
     setLabOrderOpen(false);
@@ -293,7 +310,7 @@ export function LiveWorkbench({
     title: p.title,
     goal: p.goal,
     phase: phaseOf(p.phase),
-    status: statusOf(p.status),
+    status: queueCancelled && p.id === v?.project.id ? 'paused' : statusOf(p.status),
   }));
   const tasks: WorkflowTask[] = (v?.workflow || [])
     .filter((s) => s.id !== 'handoff')
@@ -516,6 +533,7 @@ export function LiveWorkbench({
           newDesign={newDesign}
           focusInput={newDesign}
           onStart={create}
+          canStart={canExecute && !state?.pending}
           onResume={() => setNewDesign(false)}
           attachment={
             <label className="attach-target" title="Optionally attach a target structure seed">
@@ -624,10 +642,10 @@ export function LiveWorkbench({
                   key={v.project.id}
                   mode="live"
                   snapshot={{
-                    messages: dialogue(v),
+                    messages: dialogue(v, queueCancelled),
                     completed: completed || stopped,
                     phase,
-                    busy: v.project.status === 'running',
+                    busy: !queueCancelled && v.project.status === 'running',
                   }}
                   viewedPhase={viewedPhase}
                   onFocus={focus}
@@ -635,6 +653,7 @@ export function LiveWorkbench({
                   onRetry={(id) => run(() => adapter.retryRequest(id))}
                   disabled={state?.connection !== 'connected' || !canDiscuss}
                   sending={answering}
+                  awaitingReview={!queueCancelled || Boolean(v.decision)}
                   error={error}
                   onSend={async (text) => {
                     setError('');
@@ -657,6 +676,31 @@ export function LiveWorkbench({
                   onClose={closeContext}
                   revealRequest={reveal}
                 />
+                {queuedRequest?.result?.queue && (
+                  <section role="status" className="decision-bar">
+                    <div className="decision-copy">
+                      <strong>
+                        {queuedRequest.result.queue.state === 'starting'
+                          ? 'Starting executor'
+                          : 'Waiting for execution resources'}
+                      </strong>
+                      <p>
+                        {queuedRequest.result.queue.position != null
+                          ? `Queue position: ${queuedRequest.result.queue.position}. `
+                          : ''}
+                        Request saved; do not submit again.
+                      </p>
+                    </div>
+                    {queuedRequest.result.queue.cancellable && (
+                      <button
+                        disabled={busy || !canEdit}
+                        onClick={() => run(() => adapter.cancelRequest(queuedRequest.id))}
+                      >
+                        Cancel queued request
+                      </button>
+                    )}
+                  </section>
+                )}
                 <footer
                   className={`decision-bar ${completed ? 'completed' : ''}`}
                   role="region"
@@ -673,28 +717,32 @@ export function LiveWorkbench({
                           ? 'Panel finalized'
                           : stopped
                             ? 'Campaign stopped'
-                            : v.lifecycle === 'failed'
-                              ? 'Target research needs a retry'
-                              : decision?.gate === 1
-                                ? 'Approve the automatically selected target?'
-                                : decision?.gate === 3
-                                  ? 'Ready to start the pilot?'
-                                  : decision
-                                    ? 'Ready for your review'
-                                    : stepTitles[v.project.phase] || 'Research in progress'}
+                            : queueCancelled && !decision
+                              ? 'Queue cancelled'
+                              : v.lifecycle === 'failed'
+                                ? 'Target research needs a retry'
+                                : decision?.gate === 1
+                                  ? 'Approve the automatically selected target?'
+                                  : decision?.gate === 3
+                                    ? 'Ready to start the pilot?'
+                                    : decision
+                                      ? 'Ready for your review'
+                                      : stepTitles[v.project.phase] || 'Research in progress'}
                     </strong>
                     <span>
-                      {v.project.validation_only
-                        ? 'Validation only · not authorized for experiment'
-                        : stopped
-                          ? 'Scientific evidence is retained; no further computation is scheduled.'
-                          : v.lifecycle === 'failed'
-                            ? 'Verified evidence and recovery state were retained.'
-                            : decision?.gate === 1
-                              ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
-                              : decision
-                                ? 'Review the scientific context before continuing.'
-                                : 'Your conversations, decisions and results stay with this project.'}
+                      {queueCancelled && !decision
+                        ? 'This request did not start computation; scientific evidence is retained.'
+                        : v.project.validation_only
+                          ? 'Validation only · not authorized for experiment'
+                          : stopped
+                            ? 'Scientific evidence is retained; no further computation is scheduled.'
+                            : v.lifecycle === 'failed'
+                              ? 'Verified evidence and recovery state were retained.'
+                              : decision?.gate === 1
+                                ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
+                                : decision
+                                  ? 'Review the scientific context before continuing.'
+                                  : 'Your conversations, decisions and results stay with this project.'}
                     </span>
                   </div>
                   {decision ? (

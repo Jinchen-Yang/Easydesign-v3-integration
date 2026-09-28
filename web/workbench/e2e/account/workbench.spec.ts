@@ -79,6 +79,51 @@ function install(page: import('@playwright/test').Page, username: 'bob' | 'root'
 }
 
 test.describe('professional mode under accounts', () => {
+  test('capacity: empty workspace cannot start without an executor', async ({page}) => {
+    install(page, 'bob', false);
+    let posts = 0;
+    await page.route('**/api/v1/scopes/user-b/projects*', route => {
+      if (route.request().method() === 'POST') posts++;
+      return route.fulfill({json: {items: [], total: 0, offset: 0, limit: 20}});
+    });
+    await page.goto('/?scope=user-b#workspace');
+    await page.getByRole('textbox', {name: 'Research goal'}).fill('Synthetic design');
+    await expect(page.getByRole('button', {name: 'Start design', exact: true})).toBeDisabled();
+    await page.getByRole('textbox', {name: 'Research goal'}).press('Enter');
+    expect(posts).toBe(0);
+  });
+  test('capacity: resource wait position and cancellation stay scoped', async ({page}) => {
+    install(page, 'bob', true);
+    let cancelled = false;
+    await page.route('**/workbench', route => {
+      const value = snapshot();
+      return route.fulfill({json: {...value, project: {...value.project, status: 'running'}, decision: null, requests: cancelled ? [{id: 'queue-1', project: 'proj-1', state: 'failed', result: {code: 'queue_cancelled'}, created: 1, updated: 2}] : [{id: 'queue-1', project: 'proj-1', state: 'accepted', result: {resource_waiting: true, queue: {state: 'queued', reason: 'waiting_for_resources', position: 2, cancellable: true}}, created: 1, updated: 1}]}});
+    });
+    await page.route('**/scopes/user-b/requests/queue-1/cancel', route => {
+      expect(route.request().headers()['x-csrf-token']).toBe('csrf-bob-synthetic');
+      expect(route.request().method()).toBe('POST');
+      cancelled = true;
+      return route.fulfill({json: {id: 'queue-1', project: 'proj-1', state: 'failed', result: {code: 'queue_cancelled'}, created: 1, updated: 2}});
+    });
+    await page.goto('/?scope=user-b&project=proj-1');
+    await expect(page.getByText(/Queue position: 2/)).toBeVisible();
+    await page.getByRole('button', {name: 'Cancel queued request', exact: true}).click();
+    await expect(page.getByRole('button', {name: 'Cancel queued request', exact: true})).toHaveCount(0);
+    expect(cancelled).toBe(true);
+    await expect(page.getByText('Queue cancelled', {exact: true})).toBeVisible();
+    await expect(page.getByText('Ready for your review below', {exact: true})).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText('Queue cancelled', {exact: true})).toBeVisible();
+    await page.route('**/workbench', route => {
+      const value = snapshot();
+      return route.fulfill({json: {...value, decision: null, project: {...value.project, status: 'running'}, requests: [
+        {id: 'queue-1', project: 'proj-1', state: 'failed', result: {code: 'queue_cancelled'}, created: 1, updated: 2},
+        {id: 'new-request', project: 'proj-1', state: 'running', result: null, created: 3, updated: 3},
+      ]}});
+    });
+    await page.reload();
+    await expect(page.getByText('Queue cancelled', {exact: true})).toHaveCount(0);
+  });
   const incompleteTurn = 'Scientific work remains incomplete. The previous action has not produced the required verified result; inspect its status before continuing.';
   for (const [routeId, label] of [['REVISE_DESIGN', 'Revise design'], ['STOP', 'Stop campaign']]) {
     test(`Gate 4 ${routeId} labels the actual route and supersedes the old asynchronous wait`, async ({page}) => {

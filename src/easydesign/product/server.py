@@ -12,6 +12,7 @@ import mimetypes
 import os
 import re
 import secrets
+import socket
 import subprocess
 import threading
 import time
@@ -30,12 +31,15 @@ from easydesign.agent.session_store import confined
 from easydesign.orchestration.runtime_setup import initialize_workspace_metadata
 from easydesign.workspace_context import WorkspaceContext
 
-from .artifacts import confined_bytes
+from .capacity_config import load_capacity_config
 from .contracts import ActionRequest, CreateProject, ProductError, RenameProject
 from .domain import NativeGateway
 from .lab_order import LabOrderCommand
+from .rabbit_capacity import RabbitCapacityLimits
 from .rabbit_chat import RabbitChatService, SubprocessChatProvider
 from .service import ProductService
+from .static_assets import HASHED_BUILD_ASSET, GzipCache, StaticAssets, accepts_gzip
+from .transport_policy import DeadlineReader, TransportPolicy
 
 # Keep an authenticated local browser usable across ordinary browser restarts.
 # The cookie remains origin-bound, HttpOnly and strict same-site; the durable
@@ -44,7 +48,6 @@ SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 GPU_SAMPLE_TTL_SECONDS = 10.0
 # Vite's content-addressed output is public and immutable across releases. Never
 # infer cacheability for API/artifact URLs or unhashed files from their suffix.
-HASHED_BUILD_ASSET = re.compile(r"assets/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css|woff2?|ttf|otf)")
 
 
 class LocalGpuMonitor:
@@ -149,6 +152,7 @@ class LocalGpuMonitor:
 
 class ProductServer(ThreadingHTTPServer):
     daemon_threads = True
+    request_queue_size = 512
 
     def __init__(
         self,
@@ -161,10 +165,19 @@ class ProductServer(ThreadingHTTPServer):
         service_provider: Callable[[], ProductService] | None = None,
         handler_type: type[BaseHTTPRequestHandler] | None = None,
         rabbit_chat: RabbitChatService | None = None,
+        transport_policy: TransportPolicy | None = None,
+        web_history: tuple[Path, ...] = (),
+        easy_web_history: tuple[Path, ...] = (),
     ) -> None:
+        self.transport_policy = transport_policy or TransportPolicy()
+        self._connection_slots = threading.BoundedSemaphore(self.transport_policy.max_connections)
+        self.upload_slots = threading.BoundedSemaphore(self.transport_policy.max_uploads)
         self._service, self.web_root, self.easy_web_root = service, web_root, easy_web_root
         self.service_provider = service_provider
         self.asset_root = service.context.root
+        self.web_assets = StaticAssets(self.asset_root, web_root, web_history)
+        self.easy_assets = StaticAssets(self.asset_root, easy_web_root, easy_web_history)
+        self.gzip_cache = GzipCache()
         self.rabbit_chat = rabbit_chat or RabbitChatService()
         self.compute_monitor = LocalGpuMonitor()
         token_path = service.root / "access-token"
@@ -179,14 +192,66 @@ class ProductServer(ThreadingHTTPServer):
         self.token = token
         super().__init__(("127.0.0.1", port), handler_type or Handler)
 
+    def process_request(
+        self, request: socket.socket | tuple[bytes, socket.socket], client_address: Any
+    ) -> None:
+        assert isinstance(request, socket.socket)  # This server is TCP-only.
+        if not self._connection_slots.acquire(blocking=False):
+            body = b'{"error":{"code":"http_busy","message":"Please retry later"}}'
+            try:
+                request.settimeout(0.1)
+                request.sendall(
+                    b"HTTP/1.0 503 Service Unavailable\r\nConnection: close\r\n"
+                    b"Content-Type: application/json\r\nCache-Control: no-store\r\n"
+                    b"Retry-After: 2\r\nContent-Length: "
+                    + str(len(body)).encode()
+                    + b"\r\n\r\n"
+                    + body
+                )
+            except OSError:
+                pass
+            finally:
+                self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._connection_slots.release()
+            raise
+
+    def process_request_thread(
+        self, request: socket.socket | tuple[bytes, socket.socket], client_address: Any
+    ) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._connection_slots.release()
+
     @property
     def service(self) -> ProductService:
         return self.service_provider() if self.service_provider is not None else self._service
+
+    def server_close(self) -> None:
+        try:
+            super().server_close()
+        finally:
+            close = getattr(self.rabbit_chat, "close", None)
+            if close is not None:
+                close()
 
 
 class Handler(BaseHTTPRequestHandler):
     server: ProductServer
     server_version = "EasyDesignProduct/1"
+
+    def setup(self) -> None:
+        super().setup()
+        self.rfile.close()
+        self._reader = DeadlineReader(self.connection, self.server.transport_policy.header_timeout)
+        self.rfile = io.BufferedReader(self._reader)
+
+    def client_ip(self) -> str:
+        return self.server.transport_policy.client_ip(self.client_address[0], self.headers)
 
     def log_message(self, format: str, *args: Any) -> None:
         # Never log access tokens or user-supplied URLs/structure data.
@@ -202,9 +267,27 @@ class Handler(BaseHTTPRequestHandler):
         immutable: bool = False,
     ) -> None:
         body = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
+        compressible = (
+            immutable
+            and status == 200
+            and cookie is None
+            and mime in {"text/javascript", "application/javascript", "text/css"}
+            and 1024 <= len(body) <= 8 * 1024 * 1024
+        )
+        compressed = compressible and accepts_gzip(
+            ",".join(self.headers.get_all("Accept-Encoding", []))
+        )
+        if compressed:
+            body = self.server.gzip_cache.encode(body)
         self.send_response(status)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.close_connection = True
+        if compressible:
+            self.send_header("Vary", "Accept-Encoding")
+        if compressed:
+            self.send_header("Content-Encoding", "gzip")
         self.send_header(
             "Cache-Control",
             "public, max-age=31536000, immutable"
@@ -253,14 +336,20 @@ class Handler(BaseHTTPRequestHandler):
     def body(self, maximum: int = 128 * 1024) -> bytes:
         if self.headers.get("Transfer-Encoding"):
             raise ProductError("invalid_body", "Chunked input is not accepted")
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) > 1 or (lengths and not re.fullmatch(r"0|[1-9][0-9]*", lengths[0])):
+            raise ProductError("invalid_body", "Ambiguous content length")
         try:
             size = int(self.headers.get("Content-Length", "0"))
         except ValueError as error:
             raise ProductError("invalid_body", "Invalid content length") from error
         if size < 0 or size > maximum:
             raise ProductError("payload_too_large", "Request exceeds the bounded input size", 413)
-        self.connection.settimeout(20)
-        body = self.rfile.read(size)
+        self._reader.reset(self.server.transport_policy.body_timeout)
+        try:
+            body = self.rfile.read(size)
+        except TimeoutError as error:
+            raise ProductError("body_timeout", "Request body reading timed out", 408) from error
         if len(body) != size:
             raise ProductError("invalid_body", "Request body ended before its declared length")
         return body
@@ -392,9 +481,14 @@ class Handler(BaseHTTPRequestHandler):
                     raise ProductError("not_found", "Unknown API resource", 404)
                 self.send(200, result)
             elif tail == ["inputs"]:
-                self.send(
-                    201, service.upload(query.get("filename", [""])[0], self.body(32 * 1024**2))
-                )
+                if not self.server.upload_slots.acquire(blocking=False):
+                    raise ProductError("upload_busy", "上传通道繁忙，请稍后重试", 503)
+                try:
+                    self.send(
+                        201, service.upload(query.get("filename", [""])[0], self.body(32 * 1024**2))
+                    )
+                finally:
+                    self.server.upload_slots.release()
             elif tail == ["projects"]:
                 self.send(202, service.create(CreateProject.model_validate(self.json_body())))
             elif len(tail) == 3 and tail[0] == "projects" and tail[2] == "title":
@@ -414,6 +508,14 @@ class Handler(BaseHTTPRequestHandler):
             elif len(tail) == 3 and tail[0] == "requests" and tail[2] == "resume":
                 self.json_body()
                 self.send(202, service.retry(tail[1]))
+            elif len(tail) == 3 and tail[0] == "requests" and tail[2] == "cancel":
+                self.json_body()
+                cancel = getattr(service, "cancel_queued", None)
+                if cancel is None:
+                    raise ProductError(
+                        "queue_not_cancellable", "This request cannot be cancelled", 409
+                    )
+                self.send(200, cancel(tail[1]))
             else:
                 raise ProductError("not_found", "Unknown API action", 404)
         except ProductError as error:
@@ -478,7 +580,7 @@ class Handler(BaseHTTPRequestHandler):
             or relative in {"favicon.svg"}
         ):
             raise ProductError("not_found", "Unknown Workbench resource", 404)
-        data = confined_bytes(root, relative, maximum=32 * 1024**2)
+        data = (self.server.easy_assets if easy else self.server.web_assets).read(relative)
         self.send(
             200,
             data,
@@ -523,6 +625,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--public-origin", help="Explicit trusted HTTPS origin for a reverse proxy")
     parser.add_argument(
+        "--capacity-config",
+        type=Path,
+        help="Explicit workspace-local JSON for HTTP, login, AI and queue limits",
+    )
+    parser.add_argument(
         "--gpu-devices",
         help="Optional comma-separated physical GPU indices available to this product",
     )
@@ -559,8 +666,10 @@ def main(argv: list[str] | None = None) -> int:
             public_origin=args.public_origin,
             accounts_only=args.accounts_only,
             gpu_devices=args.gpu_devices,
+            capacity_config=args.capacity_config,
         )
     context = WorkspaceContext.discover()
+    capacity = load_capacity_config(context.root, args.capacity_config)
     # A product launch owns its workspace-local writable metadata.  This creates
     # only the empty default profile/registries when no explicit runtime link has
     # been activated; backend availability and all scientific checks still fail closed.
@@ -592,13 +701,18 @@ def main(argv: list[str] | None = None) -> int:
         port=args.port,
         web_root=web_root,
         easy_web_root=easy_web_root,
+        transport_policy=capacity.http.policy(),
+        web_history=tuple(context.root / path for path in capacity.web_history),
+        easy_web_history=tuple(context.root / path for path in capacity.easy_web_history),
         rabbit_chat=RabbitChatService(
             SubprocessChatProvider(
                 rabbit_script,
                 confined(context.root, context.root / (args.env_file or Path(".env.local"))),
             )
             if os.environ.get("DEEPSEEK_API_KEY") and rabbit_script.is_file()
-            else None
+            else None,
+            limits=RabbitCapacityLimits(**capacity.ai),
+            ledger_path=context.runtime_root / "state/product/rabbit-chat.sqlite",
         ),
     )
     # The token is written to the owner-only state file.  Never duplicate it in

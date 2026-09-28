@@ -104,7 +104,18 @@ export interface RequestState {
   id: string;
   project: string;
   state: string;
-  result: { message?: string; code?: string; status?: string } | null;
+  result: {
+    message?: string;
+    code?: string;
+    status?: string;
+    resource_waiting?: boolean;
+    queue?: {
+      state: 'queued' | 'starting';
+      position: number | null;
+      reason: string;
+      cancellable: boolean;
+    };
+  } | null;
   created: number;
   updated: number;
 }

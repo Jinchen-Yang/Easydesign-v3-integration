@@ -124,6 +124,28 @@ function fixture(post: (body: Record<string, unknown>) => Promise<Response>) {
   };
 }
 describe('Live adapter preserves Runtime authority', () => {
+  it('cancels only the selected queued request and refreshes its authoritative snapshot', async () => {
+    const calls: string[] = [];
+    const adapter = new LiveWorkbenchAdapter(async (url, init) => {
+      calls.push(String(url));
+      if (init?.method === 'POST') {
+        expect(String(url)).toBe('/api/v1/requests/queued-id/cancel');
+        expect(JSON.parse(String(init.body))).toEqual({});
+        return Response.json({id: 'queued-id', project: 'native-project', state: 'failed', result: {code: 'queue_cancelled'}, created: 1, updated: 2});
+      }
+      if (String(url).endsWith('/workbench')) return Response.json(snapshot());
+      return Response.json({items: [snapshot().project], total: 1, offset: 0, limit: 20});
+    }, 1_000_000);
+    adapters.push(adapter);
+    let observed = await adapter.load();
+    adapter.subscribe(event => { observed = event.snapshot; });
+    await adapter.selectProject(snapshot().project.id);
+    const before = calls.length;
+    await adapter.cancelRequest('queued-id');
+    expect(observed.pendingRequest?.result?.code).toBe('queue_cancelled');
+    expect(observed.pending).toBe(false);
+    expect(calls.slice(before).some(url => url.endsWith('/workbench'))).toBe(true);
+  });
   it('keeps a request started in another tab on the active cadence', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     vi.spyOn(Math, 'random').mockReturnValue(0);

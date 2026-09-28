@@ -87,18 +87,20 @@ test('Doudou offers fresh clickable follow-ups every turn, keeps history and swi
   await expect(page.getByRole('button', { name: 'Pause animation' })).toBeVisible();
 });
 
-test('unexpected failures retry once while explicit stops remain explicit and retryable', async ({
+test('failures never automatically retry; explicit retry retains the same request identity', async ({
   page,
 }) => {
   let calls = 0;
+  const identities: string[] = [];
   await page.route('**/api/rabbit/chat', async (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { configured: true } });
     calls++;
+    identities.push(route.request().headers()['x-request-id']);
     if (calls === 1) return route.fulfill({ status: 503, json: { error: 'unavailable' } });
     if (calls === 2)
       return route.fulfill({
         contentType: 'application/x-ndjson',
-        body: '{"type":"delta","text":"自动重试成功"}\n{"type":"done"}\n',
+        body: '{"type":"delta","text":"手动重试成功"}\n{"type":"done"}\n',
       });
     if (calls === 3) {
       await new Promise((r) => setTimeout(r, 2000));
@@ -119,7 +121,12 @@ test('unexpected failures retry once while explicit stops remain explicit and re
     await panel.getByRole('button', { name: '发送消息' }).click();
   }
   await send();
-  await expect(panel.locator('.rabbit-message.assistant').last()).toContainText('自动重试成功');
+  await expect(panel.getByRole('button', { name: '重试回复' })).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(calls).toBe(1);
+  await panel.getByRole('button', { name: '重试回复' }).click();
+  await expect(panel.locator('.rabbit-message.assistant').last()).toContainText('手动重试成功');
+  expect(identities[1]).toBe(identities[0]);
   await expect(panel.getByRole('group', { name: '接着聊' })).toHaveCount(0);
   expect(calls).toBe(2);
   await send();

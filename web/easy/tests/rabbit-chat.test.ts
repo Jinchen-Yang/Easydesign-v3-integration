@@ -33,6 +33,32 @@ const post = (url: string, body: unknown = request, headers: Record<string, stri
     body: JSON.stringify(body),
   });
 describe('rabbit chat boundary', () => {
+  it('keeps the supplied request identity and surfaces queue state without resubmitting', async () => {
+    const sent: string[] = [];
+    const states: string[] = [];
+    const transport: typeof fetch = async (_url, init) => {
+      sent.push(new Headers(init?.headers).get('X-Request-ID') || '');
+      return new Response(
+        '{"type":"status","request_id":"stable-chat-fixture-01","state":"queued","retry_after":2}\n' +
+          '{"type":"error","code":"outcome_unknown"}\n',
+      );
+    };
+    await expect(
+      streamChat(
+        request,
+        new AbortController().signal,
+        () => {},
+        () => {},
+        transport,
+        {
+          requestId: 'stable-chat-fixture-01',
+          onStatus: (status) => states.push(status.state),
+        },
+      ),
+    ).rejects.toThrow('outcome_unknown');
+    expect(sent).toEqual(['stable-chat-fixture-01']);
+    expect(states).toEqual(['queued']);
+  });
   it('rejects injected roles, oversized history and invalid stage; strips extra fields', () => {
     expect(parseChatRequest({ ...request, apiKey: 'should disappear' })).toEqual(request);
     for (const value of [

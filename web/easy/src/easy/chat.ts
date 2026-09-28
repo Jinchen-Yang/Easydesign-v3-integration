@@ -13,10 +13,18 @@ export interface ChatRequest {
   messages: ChatMessage[];
   context: ChatContext;
 }
+export interface ChatStatus {
+  request_id: string;
+  state: string;
+  dispatched?: boolean;
+  retry_after?: number;
+  code?: string;
+}
 export type ChatEvent =
   | { type: 'delta'; text: string }
   | { type: 'suggestions'; questions: string[] }
   | { type: 'done' }
+  | ({ type: 'status' } & ChatStatus)
   | { type: 'error'; code: string };
 
 export function validQuestions(value: unknown): string[] {
@@ -79,10 +87,13 @@ export async function streamChat(
   delta: (text: string) => void,
   suggestions: (questions: string[]) => void = () => {},
   transport: typeof fetch = fetch,
+  options: { requestId?: string; onStatus?: (status: ChatStatus) => void } = {},
 ) {
+  const requestId = options.requestId || crypto.randomUUID();
+  signal.throwIfAborted();
   const response = await transport(CHAT_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Request-ID': crypto.randomUUID() },
+    headers: { 'Content-Type': 'application/json', 'X-Request-ID': requestId },
     body: JSON.stringify(request),
     signal,
   });
@@ -111,6 +122,7 @@ export async function streamChat(
         const event = JSON.parse(line) as ChatEvent;
         if (event.type === 'error') throw new Error(event.code);
         if (event.type === 'done') return;
+        if (event.type === 'status' && event.request_id === requestId) options.onStatus?.(event);
         if (event.type === 'delta') delta(event.text);
         if (event.type === 'suggestions') suggestions(validQuestions(event.questions));
       }
@@ -120,4 +132,26 @@ export async function streamChat(
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+export async function chatRequestStatus(requestId: string, transport: typeof fetch = fetch) {
+  const response = await transport('/api/v1/rabbit/requests/' + encodeURIComponent(requestId));
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.error?.code || 'unavailable');
+  return value as ChatStatus;
+}
+
+export async function cancelChatRequest(requestId: string, transport: typeof fetch = fetch) {
+  const response = await transport(
+    '/api/v1/rabbit/requests/' + encodeURIComponent(requestId) + '/cancel',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      keepalive: true,
+    },
+  );
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.error?.code || 'unavailable');
+  return value as ChatStatus;
 }

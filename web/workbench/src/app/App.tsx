@@ -100,12 +100,14 @@ export function Landing({
   focusInput,
   mode = 'demo',
   attachment,
+  canStart = true,
 }: {
   snapshot: Pick<WorkbenchSnapshot, 'started' | 'completed' | 'phase'> & {
     project: Pick<WorkbenchSnapshot['project'], 'exampleGoal' | 'title'>;
   };
   mode?: 'demo' | 'live';
   attachment?: React.ReactNode;
+  canStart?: boolean;
   onStart: (goal: string) => void;
   onResume: () => void;
   newDesign: boolean;
@@ -128,7 +130,7 @@ export function Landing({
           className="goal-composer"
           onSubmit={(e) => {
             e.preventDefault();
-            if (goal.trim()) onStart(goal);
+            if (canStart && goal.trim()) onStart(goal);
           }}
         >
           <label htmlFor="research-goal" className="sr-only">
@@ -144,7 +146,7 @@ export function Landing({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (goal.trim()) onStart(goal);
+                if (canStart && goal.trim()) onStart(goal);
               }
             }}
             placeholder="Describe the target, binder and outcome you have in mind…"
@@ -154,7 +156,11 @@ export function Landing({
               <Atom size={15} /> Protein design
             </span>
             {attachment}
-            <button className="landing-submit" aria-label="Start design" disabled={!goal.trim()}>
+            <button
+              className="landing-submit"
+              aria-label="Start design"
+              disabled={!canStart || !goal.trim()}
+            >
               <ArrowUp size={21} />
             </button>
           </div>

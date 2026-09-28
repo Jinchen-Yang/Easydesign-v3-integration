@@ -14,6 +14,7 @@ import { Brand } from '../components/Brand';
 import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
 import { fileTypes, inputLabel, readInputFile } from './inputs';
 import { productGoal, validateLiveInput } from './live-input';
+import { latestQueueCancellation } from './queue-presentation';
 import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
 import {
@@ -553,6 +554,16 @@ export function EasyLiveApp({
     };
   }, [adapter]);
   const snapshot = state?.snapshot || null;
+  const queueCancelled = latestQueueCancellation(snapshot?.project.id, [
+    state?.pendingRequest,
+    ...(snapshot?.requests || []),
+  ]);
+  const queuedRequest = [state?.pendingRequest, ...(snapshot?.requests || [])].find(
+    (request) =>
+      request?.project === snapshot?.project.id &&
+      ['accepted', 'running'].includes(request?.state || '') &&
+      request?.result?.queue,
+  );
   const currentProject =
     snapshot?.project.id || new URLSearchParams(location.search).get('project');
   const professionalQuery = new URLSearchParams({
@@ -560,7 +571,8 @@ export function EasyLiveApp({
     ...(currentProject ? { project: currentProject } : {}),
   });
   const professionalUrl = `/${professionalQuery.size ? `?${professionalQuery}` : ''}`;
-  const autoContinuationEligible = canExecute && canAutoContinue(snapshot, false);
+  const autoContinuationEligible =
+    !queueCancelled && canExecute && canAutoContinue(snapshot, false);
   const executionBlocked =
     snapshot !== null && ['blocked', 'incomplete'].includes(snapshot.project.status);
   const failedCreate = !snapshot?.capabilities.resume
@@ -595,8 +607,8 @@ export function EasyLiveApp({
   const shownIndex = viewedIndex ?? index;
   const active = Boolean(
     state?.pending ||
-      snapshot?.project.status === 'running' ||
-      snapshot?.project.status === 'incomplete',
+      (!queueCancelled &&
+        (snapshot?.project.status === 'running' || snapshot?.project.status === 'incomplete')),
   );
   const candidateArtifact = state?.selectedCandidate?.artifacts.find((item) =>
     ['pdb', 'cif', 'mmcif'].includes(item.format),
@@ -608,7 +620,19 @@ export function EasyLiveApp({
     .filter((item) => item.visible !== false && !(completed && item.type === 'gate.awaiting'))
     .slice(-8)
     .reverse();
-  const activity = snapshot ? summarizeEasyActivity(snapshot) : [];
+  const activity =
+    queueCancelled && !snapshot?.decision
+      ? [
+          {
+            id: 'queue-cancelled',
+            title: '本次请求未执行',
+            summary: '排队已取消，已有科学证据保留。',
+            status: 'waiting',
+          },
+        ]
+      : snapshot
+        ? summarizeEasyActivity(snapshot)
+        : [];
   const projects = state?.projects.items || [];
   const gateOption = snapshot?.decision?.options.find((item) => item.option_id === selectedSite);
   const visibleSite = gateOption?.rank
@@ -893,7 +917,7 @@ export function EasyLiveApp({
                 ) : (
                   <Check size={12} />
                 )}
-                {snapshot.project.status}
+                {queueCancelled && !snapshot.decision ? '排队已取消' : snapshot.project.status}
               </span>
             </div>
             <div className="easy-steps">
@@ -939,6 +963,57 @@ export function EasyLiveApp({
                       <h3>设计闭环已完成</h3>
                       <p>Gate 5 已记录；实验与真实下单仍未授权。</p>
                     </div>
+                  </section>
+                ) : queuedRequest?.result?.queue ? (
+                  <section className="easy-live-progress-card" role="status">
+                    <LoaderCircle className="easy-spin" size={22} />
+                    <div>
+                      <h3>
+                        {queuedRequest.result.queue.state === 'starting'
+                          ? '正在启动执行器'
+                          : '等待执行资源'}
+                      </h3>
+                      <p>
+                        {queuedRequest.result.queue.position != null
+                          ? `排队位置：${queuedRequest.result.queue.position}。`
+                          : ''}
+                        任务已保存，不需要重复提交。
+                      </p>
+                    </div>
+                    {queuedRequest.result.queue.cancellable && (
+                      <button
+                        className="easy-primary"
+                        disabled={state.pending || (access !== undefined && !access.can_edit)}
+                        onClick={() =>
+                          void adapter
+                            .cancelRequest(queuedRequest.id)
+                            .catch((reason) => setError((reason as Error).message))
+                        }
+                      >
+                        取消排队
+                      </button>
+                    )}
+                  </section>
+                ) : queueCancelled && !snapshot.decision ? (
+                  <section className="easy-live-progress-card" role="status">
+                    <ShieldCheck size={22} />
+                    <div>
+                      <h3>排队已取消</h3>
+                      <p>本次请求未启动计算，已有科学证据保留；不会自动重新排队。</p>
+                    </div>
+                    {(failedCreate || snapshot.capabilities.resume) && (
+                      <button
+                        className="easy-primary"
+                        disabled={state.pending || !canExecute}
+                        onClick={() =>
+                          void (
+                            failedCreate ? adapter.retryRequest(failedCreate.id) : adapter.resume()
+                          ).catch((reason) => setError((reason as Error).message))
+                        }
+                      >
+                        重新排队
+                      </button>
+                    )}
                   </section>
                 ) : snapshot.decision ? (
                   <GatePanel
@@ -1041,7 +1116,9 @@ export function EasyLiveApp({
                     </div>
                   </section>
                 )}
-                {shownIndex === index && <ExecutionProgress snapshot={snapshot} />}
+                {shownIndex === index && !queueCancelled && (
+                  <ExecutionProgress snapshot={snapshot} />
+                )}
                 {shownIndex === index && (
                   <section className="easy-live-activity">
                     <h3>实时过程</h3>

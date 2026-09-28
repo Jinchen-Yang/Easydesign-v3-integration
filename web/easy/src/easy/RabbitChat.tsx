@@ -1,10 +1,19 @@
 import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowUp, RotateCcw, Settings2, Square, X } from 'lucide-react';
-import { CHAT_ENDPOINT, streamChat, type ChatContext, type ChatMessage } from './chat';
+import {
+  CHAT_ENDPOINT,
+  streamChat,
+  chatRequestStatus,
+  cancelChatRequest,
+  type ChatContext,
+  type ChatMessage,
+  type ChatRequest,
+  type ChatStatus,
+} from './chat';
 import { translate, type Locale } from './i18n';
 import { parseRabbitInlineMarkdown } from './rabbitMarkdown';
 import './rabbit-chat.css';
-import {AccountTransportContext} from '../accounts/AccountTransportContext';
+import { AccountTransportContext } from '../accounts/AccountTransportContext';
 
 type Message = ChatMessage & { complete: boolean };
 export function RabbitChat({
@@ -35,6 +44,8 @@ export function RabbitChat({
   const [error, setError] = useState('');
   const [retryText, setRetryText] = useState('');
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [requestStatus, setRequestStatus] = useState<ChatStatus | null>(null);
+  const lastRequest = useRef<{ id: string; payload: ChatRequest } | null>(null);
   const controller = useRef<AbortController | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -71,6 +82,8 @@ export function RabbitChat({
       setError('');
       setRetryText('');
       setBusy(false);
+      setRequestStatus(null);
+      lastRequest.current = null;
     },
     [transport],
   );
@@ -110,48 +123,41 @@ export function RabbitChat({
     onActivity('waiting');
     const abort = new AbortController();
     controller.current = abort;
+    const submitted =
+      retrying && lastRequest.current
+        ? lastRequest.current
+        : { id: crypto.randomUUID(), payload: { locale, context, messages: history } };
+    lastRequest.current = submitted;
+    setRequestStatus({ request_id: submitted.id, state: 'submitting' });
+    const cancel = () => {
+      if (account) void cancelChatRequest(submitted.id, transport).catch(() => {});
+    };
+    abort.signal.addEventListener('abort', cancel, { once: true });
     try {
       let nextQuestions: string[] = [];
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          await streamChat(
-            { locale, context, messages: history },
-            abort.signal,
-            (delta) => {
-              if (sequence.current !== id) return;
-              onActivity('replying');
-              setMessages((previous) =>
-                previous.map((m, i) =>
-                  i === previous.length - 1 ? { ...m, content: m.content + delta } : m,
-                ),
-              );
-            },
-            (questions) => {
-              nextQuestions = questions;
-            },
-            transport,
+      await streamChat(
+        submitted.payload,
+        abort.signal,
+        (delta) => {
+          if (sequence.current !== id) return;
+          onActivity('replying');
+          setMessages((previous) =>
+            previous.map((m, i) =>
+              i === previous.length - 1 ? { ...m, content: m.content + delta } : m,
+            ),
           );
-          break;
-        } catch (failure) {
-          const code = failure instanceof Error ? failure.message : 'unavailable';
-          if (
-            attempt === 0 &&
-            !abort.signal.aborted &&
-            ['timeout', 'interrupted', 'unavailable'].includes(code)
-          ) {
-            setMessages((previous) =>
-              previous.map((message, index) =>
-                index === previous.length - 1 ? { ...message, content: '' } : message,
-              ),
-            );
-            onActivity('waiting');
-            await new Promise((resolve) => setTimeout(resolve, 800));
-            if (sequence.current !== id || abort.signal.aborted) return;
-            continue;
-          }
-          throw failure;
-        }
-      }
+        },
+        (questions) => {
+          nextQuestions = questions;
+        },
+        transport,
+        {
+          requestId: submitted.id,
+          onStatus: (status) => {
+            if (sequence.current === id) setRequestStatus(status);
+          },
+        },
+      );
       if (sequence.current !== id || abort.signal.aborted) return;
       setMessages((previous) =>
         previous.map((m, i) => (i === previous.length - 1 ? { ...m, complete: true } : m)),
@@ -160,13 +166,15 @@ export function RabbitChat({
     } catch (failure) {
       if (sequence.current !== id) return;
       const reason = abort.signal.reason;
-      const code = abort.signal.aborted
+      let code = abort.signal.aborted
         ? reason === 'user-stop'
           ? 'stopped'
           : 'paused'
         : failure instanceof Error
           ? failure.message
           : 'unavailable';
+      if (account && ['timeout', 'interrupted', 'unavailable'].includes(code))
+        code = 'outcome_unknown';
       setMessages((previous) => {
         const last = previous.at(-1);
         if (last?.role !== 'assistant' || last.complete) return previous;
@@ -185,11 +193,20 @@ export function RabbitChat({
           'credentials',
           'timeout',
           'interrupted',
+          'outcome_unknown',
+          'request_already_processed',
+          'queue_full',
+          'user_limit',
+          'queue_timeout',
+          'cancelled',
+          'budget_exhausted',
+          'authorization_revoked',
         ].includes(code)
           ? code
           : 'unavailable',
       );
     } finally {
+      abort.signal.removeEventListener('abort', cancel);
       if (sequence.current === id) {
         controller.current = null;
         setBusy(false);
@@ -206,18 +223,36 @@ export function RabbitChat({
     setError('');
     setRetryText('');
     setBusy(false);
+    setRequestStatus(null);
+    lastRequest.current = null;
     onActivity('idle');
     field.current?.focus();
   }
   const errors: Record<string, string> = {
-    stopped: 'Reply stopped.',
-    paused: 'Reply paused when the panel closed. Retry when ready.',
+    stopped: account
+      ? locale === 'zh'
+        ? '已申请停止，请查看请求状态确认；不会自动重新调用。'
+        : 'Stop requested. Check request status to confirm; no automatic retry.'
+      : 'Reply stopped.',
+    paused: account
+      ? locale === 'zh'
+        ? '面板关闭时已申请停止，请先查看请求状态。'
+        : 'Stop requested when the panel closed. Check request status first.'
+      : 'Reply paused when the panel closed. Retry when ready.',
     not_configured: 'Chat is not connected yet.',
     credentials: 'The model key is unavailable. Please check the server configuration.',
     rate_limit: 'A little busy. Please try again shortly.',
     timeout: 'The reply timed out. Please try again.',
     interrupted: 'The reply was interrupted. You can ask me to continue.',
     unavailable: 'Could not connect. Please try again.',
+    outcome_unknown: '结果未确认，不会自动重新调用。请先查看状态；重新提问可能再次计费。',
+    request_already_processed: '该请求已受理或已处理，不会重复调用。请查看请求状态。',
+    queue_full: '对话队列已满，请稍后重试。',
+    user_limit: '你已有对话正在处理或等待，请先完成或取消它。',
+    queue_timeout: '等待超时；本次未派发模型请求。',
+    cancelled: '对话请求已取消。',
+    budget_exhausted: '本次活动的对话调用额度已用完。',
+    authorization_revoked: '会话或工作区权限已变化，本次没有调用模型。请重新登录并确认权限。',
   };
   if (!open) return null;
   return (
@@ -284,12 +319,12 @@ export function RabbitChat({
                 m.content
               )
             ) : busy && i === messages.length - 1 ? (
-                <span className="rabbit-chat-dots" aria-label={t('Preparing a reply')}>
-                  ···
-                </span>
-              ) : (
-                t('No reply')
-              )}
+              <span className="rabbit-chat-dots" aria-label={t('Preparing a reply')}>
+                ···
+              </span>
+            ) : (
+              t('No reply')
+            )}
           </div>
         ))}
         {!busy && suggestions.length > 0 && (
@@ -304,12 +339,52 @@ export function RabbitChat({
         {configured === false && !error && (
           <p className="rabbit-chat-error">{t(errors.not_configured)}</p>
         )}
-        {readOnly && <p className="rabbit-chat-error">当前是只读访问，请切换到自己的工作区后使用豆豆。</p>}
+        {busy && requestStatus && (
+          <p role="status" className="rabbit-chat-error">
+            {requestStatus.state === 'queued'
+              ? '正在排队，轮到后自动开始；等待期间不重复提交。'
+              : requestStatus.state === 'cancelling'
+                ? '正在确认停止…'
+                : '正在准备回复…'}
+          </p>
+        )}
+        {readOnly && (
+          <p className="rabbit-chat-error">当前是只读访问，请切换到自己的工作区后使用豆豆。</p>
+        )}
         {error && (
           <div className="rabbit-chat-error" role="status">
             <p>{t(errors[error])}</p>
-            {retryText && error !== 'not_configured' && (
-              <button onClick={() => void send(retryText, true)}>{t('Retry reply')}</button>
+            {retryText &&
+              !(account && ['stopped', 'paused'].includes(error)) &&
+              ![
+                'not_configured',
+                'outcome_unknown',
+                'request_already_processed',
+                'cancelled',
+                'authorization_revoked',
+              ].includes(error) && (
+                <button onClick={() => void send(retryText, true)}>{t('Retry reply')}</button>
+              )}
+            {account && lastRequest.current && (
+              <button
+                onClick={() => {
+                  const identity = lastRequest.current?.id;
+                  if (!identity) return;
+                  void chatRequestStatus(identity, transport)
+                    .then((status) => {
+                      if (lastRequest.current?.id !== identity) return;
+                      setRequestStatus(status);
+                    })
+                    .catch(() => setError('outcome_unknown'));
+                }}
+              >
+                查看请求状态
+              </button>
+            )}
+            {requestStatus && !busy && (
+              <p>
+                请求状态：{requestStatus.state} · {requestStatus.request_id}
+              </p>
             )}
           </div>
         )}

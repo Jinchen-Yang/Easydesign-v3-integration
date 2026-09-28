@@ -571,7 +571,7 @@ class StubChatService:
     def status(self) -> dict:
         return {"configured": True, "model": "fixture"}
 
-    def events(self, payload: dict):
+    def events(self, payload: dict, **_identity):
         return self.events_factory()
 
 

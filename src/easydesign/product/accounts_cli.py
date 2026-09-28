@@ -16,18 +16,26 @@ from easydesign.workspace_context import WorkspaceContext
 
 from .account_server import MultiUserServer
 from .accounts import AccountStore
+from .capacity_config import LoginSettings, load_capacity_config
 from .contracts import ProductError
 from .domain import NativeGateway
+from .rabbit_capacity import RabbitCapacityLimits
 from .rabbit_chat import RabbitChatService, SubprocessChatProvider
 from .resource_supervisor import ResourceSupervisor
 from .server import load_provider_credentials
 from .tenancy import MultiUserRuntime
 
 
-def store_for(context: WorkspaceContext) -> AccountStore:
+def store_for(context: WorkspaceContext, *, login: LoginSettings | None = None) -> AccountStore:
     if context.execution_scope is not None:
         raise ProductError("controller_required", "账户管理必须从工作区控制端执行", 403)
-    return AccountStore(context.runtime_root / "state/accounts/accounts.sqlite")
+    limits = login or LoginSettings()
+    return AccountStore(
+        context.runtime_root / "state/accounts/accounts.sqlite",
+        login_max_concurrency=limits.max_concurrency,
+        login_max_pending=limits.max_pending,
+        login_wait_timeout=limits.wait_timeout,
+    )
 
 
 def serve_accounts(
@@ -41,9 +49,11 @@ def serve_accounts(
     public_origin: str | None,
     accounts_only: bool,
     gpu_devices: str | None,
+    capacity_config: Path | None = None,
 ) -> int:
     context = WorkspaceContext.discover()
-    accounts = store_for(context)
+    capacity = load_capacity_config(context.root, capacity_config)
+    accounts = store_for(context, login=capacity.login)
     initialize_workspace_metadata(context)
     model_path = confined(context.root, context.root / models)
     gateway = NativeGateway(context, model_path, prediction_backend=prediction_backend)
@@ -59,6 +69,7 @@ def serve_accounts(
         context,
         accounts,
         lambda scoped: NativeGateway(scoped, model_path, prediction_backend=prediction_backend),
+        max_active_admissions=capacity.queue.max_active_admissions,
     )
     allowed = None
     if gpu_devices is not None:
@@ -72,7 +83,16 @@ def serve_accounts(
             or len(allowed) != len(set(allowed))
         ):
             raise ProductError("invalid_gpu_devices", "显卡编号必须非负且不能重复", 400)
-    supervisor = None if accounts_only else ResourceSupervisor(runtime, allowed_devices=allowed)
+    supervisor = (
+        None
+        if accounts_only
+        else ResourceSupervisor(
+            runtime,
+            allowed_devices=allowed,
+            max_conversation_workers=capacity.queue.max_conversation_workers,
+            startup_timeout_seconds=capacity.queue.startup_timeout_seconds,
+        )
+    )
     rabbit_script = Path(__file__).resolve().parents[3] / "web/easy/server/rabbit_chat.py"
     rabbit = RabbitChatService(
         SubprocessChatProvider(
@@ -81,7 +101,9 @@ def serve_accounts(
             environment=lambda: WorkspaceContext.discover().subprocess_environment(),
         )
         if os.environ.get("DEEPSEEK_API_KEY") and rabbit_script.is_file() and not accounts_only
-        else None
+        else None,
+        limits=RabbitCapacityLimits(**capacity.ai),
+        ledger_path=context.runtime_root / "state/accounts/rabbit-chat.sqlite",
     )
     server = MultiUserServer(
         runtime,
@@ -90,6 +112,9 @@ def serve_accounts(
         easy_web_root=easy_root,
         public_origin=public_origin,
         rabbit_chat=rabbit,
+        transport_policy=capacity.http.policy(),
+        web_history=tuple(context.root / path for path in capacity.web_history),
+        easy_web_history=tuple(context.root / path for path in capacity.easy_web_history),
     )
     if supervisor is not None:
         supervisor.start()
@@ -104,6 +129,7 @@ def serve_accounts(
         pass
     finally:
         server.server_close()
+        rabbit.close()
         if supervisor is not None:
             supervisor.close()
     return 0

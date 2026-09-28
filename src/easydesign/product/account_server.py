@@ -25,6 +25,7 @@ from .resource_supervisor import process_identity
 from .server import Handler, ProductServer
 from .service import ProductService
 from .tenancy import MultiUserRuntime, ScopedProductService
+from .transport_policy import TransportPolicy
 
 SESSION_COOKIE = "easydesign_identity"
 _SERVICE: ContextVar[ScopedProductService | None] = ContextVar(
@@ -73,6 +74,9 @@ class MultiUserServer(ProductServer):
         easy_web_root: Path | None = None,
         public_origin: str | None = None,
         rabbit_chat: RabbitChatService | None = None,
+        transport_policy: TransportPolicy | None = None,
+        web_history: tuple[Path, ...] = (),
+        easy_web_history: tuple[Path, ...] = (),
     ) -> None:
         self.runtime = runtime
         self.accounts = runtime.accounts
@@ -104,6 +108,9 @@ class MultiUserServer(ProductServer):
             service_provider=_bound_service,
             handler_type=AccountHandler,
             rabbit_chat=rabbit_chat,
+            transport_policy=transport_policy,
+            web_history=web_history,
+            easy_web_history=easy_web_history,
         )
 
     @staticmethod
@@ -189,13 +196,11 @@ class AccountHandler(Handler):
                     fields["username"],
                     fields["password"],
                     fields.get("display_name") or fields["username"],
-                    peer=self.client_address[0],
+                    peer=self.client_ip(),
                 )
                 self.send(201, {"user": user.model_dump(), "status": "pending-review"})
             else:
-                session = store.login(
-                    fields["username"], fields["password"], peer=self.client_address[0]
-                )
+                session = store.login(fields["username"], fields["password"], peer=self.client_ip())
                 previous = self._token()
                 if previous:
                     store.logout(previous)
@@ -347,25 +352,51 @@ class AccountHandler(Handler):
             return
         self.server.accounts.scope(user, scope_id, edit=True)
         payload = validate_chat_request(self.json_body())
-        request_id = self.headers.get("X-Request-ID") or uuid4().hex
+        identities = self.headers.get_all("X-Request-ID", [])
+        if len(identities) != 1:
+            raise ProductError("invalid_request_id", "对话必须使用稳定的请求编号", 400)
+        request_id = identities[0]
         resources = self.server.runtime.resources
         command = resources.command(scope_id, request_id)
         if command is not None and command["actor_id"] != user.id:
             raise ProductError("idempotency_conflict", "请求编号属于其他成员", 409)
         latest = resources.latest(scope_id, request_id)
-        # A chat that was not cleanly delivered must stay retryable under the
-        # same request identity; only a delivered chat is a duplicate.
+        # Failed pre-admission attempts can retry this stable identity. The
+        # durable AI ledger remains authoritative: an already dispatched ID
+        # never starts another paid invocation, even after an unknown outcome.
         retry = latest is None or latest.state not in ("released",)
         admission, created = resources.reserve(
-            user, scope_id, request_id, payload, kind="conversation", retry=retry
+            user,
+            scope_id,
+            request_id,
+            payload,
+            kind="conversation",
+            retry=retry,
+            dispatch_channel="web_stream",
         )
         if not created:
             raise ProductError("request_already_processed", "该对话请求已处理或正在处理中", 409)
         events = None
         streaming = False
         delivered = False  # a public terminal done event reached the client
+        token = self._token()
+
+        def authorize() -> None:
+            # Queue time may outlive a session, password version or team grant.
+            # Resolve all three again immediately before model dispatch.
+            current = self.server.accounts.authenticate(token)
+            if current.id != user.id or current.must_change_password:
+                raise ProductError("unauthorized", "会话权限已变化", 403)
+            self.server.accounts.scope(current, scope_id, edit=True)
+
         try:
-            events = self.server.rabbit_chat.events(payload)
+            events = self.server.rabbit_chat.events(
+                payload,
+                actor_id=user.id,
+                scope_id=scope_id,
+                request_id=request_id,
+                authorize=authorize,
+            )
             self.server.runtime.resources.transition(
                 admission.id,
                 "running",
@@ -407,7 +438,7 @@ class AccountHandler(Handler):
                 elif streaming:
                     # Headers were sent: the failure is already framed as NDJSON
                     # events (the provider appends a terminal error event); the
-                    # admission records it and the same request stays retryable.
+                    # admission records it; the AI ledger prevents redispatch.
                     self.server.runtime.resources.transition(
                         admission.id, "failed", reason="chat_failed"
                     )
@@ -527,7 +558,12 @@ class AccountHandler(Handler):
                     or (
                         len(product_tail) == 3
                         and product_tail[0] == "requests"
-                        and product_tail[2] == "resume"
+                        and product_tail[2] in {"resume", "cancel"}
+                    )
+                    or (
+                        len(product_tail) == 4
+                        and product_tail[:2] == ["rabbit", "requests"]
+                        and product_tail[3] == "cancel"
                     )
                 )
                 if not allowed:
@@ -551,6 +587,23 @@ class AccountHandler(Handler):
                 if product_tail == ["rabbit", "chat"]:
                     self._rabbit(user, scope_id)
                     return
+                if product_tail[:2] == ["rabbit", "requests"]:
+                    if len(product_tail) < 3:
+                        raise ProductError("not_found", "对话请求接口不存在", 404)
+                    identity = dict(actor_id=user.id, scope_id=scope_id, request_id=product_tail[2])
+                    if len(product_tail) == 3 and self.command == "GET":
+                        self.send(200, self.server.rabbit_chat.request_status(**identity))
+                        return
+                    if (
+                        len(product_tail) == 4
+                        and product_tail[3] == "cancel"
+                        and self.command == "POST"
+                    ):
+                        self.server.accounts.scope(user, scope_id, edit=True)
+                        self._fields(set())
+                        self.send(200, self.server.rabbit_chat.cancel(**identity))
+                        return
+                    raise ProductError("not_found", "对话请求接口不存在", 404)
                 token = _SERVICE.set(service)
                 original_path = self.path
                 try:

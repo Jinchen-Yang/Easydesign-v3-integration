@@ -107,6 +107,7 @@ export function Conversation({
   mode = 'demo',
   disabled = false,
   sending = false,
+  awaitingReview = true,
   error,
   viewedPhase,
   onFocus,
@@ -117,6 +118,7 @@ export function Conversation({
   mode?: 'demo' | 'live';
   disabled?: boolean;
   sending?: boolean;
+  awaitingReview?: boolean;
   error?: string;
   snapshot: Pick<WorkbenchSnapshot, 'messages' | 'phase' | 'busy' | 'completed'>;
   viewedPhase: WorkflowPhase;
@@ -229,7 +231,8 @@ export function Conversation({
               )}
             </div>
           )}
-          {!snapshot.busy &&
+          {awaitingReview &&
+            !snapshot.busy &&
             !sending &&
             !submitting &&
             !snapshot.completed &&

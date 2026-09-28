@@ -111,6 +111,21 @@ function fixture(post: (path: string, body: Record<string, unknown>) => Promise<
 }
 
 describe('Easy live adapter preserves Product API authority', () => {
+  it('cancels only the selected queued request and reads the authoritative result', async () => {
+    const { adapter, fetcher } = fixture(async (path, body) => {
+      expect(path).toBe('/api/v1/requests/queued-id/cancel');
+      expect(body).toEqual({});
+      return Response.json({ id: 'queued-id', project: project.id, state: 'failed', result: { code: 'queue_cancelled' }, created: 1, updated: 2 });
+    });
+    let observed = await adapter.load();
+    adapter.subscribe(event => { observed = event.snapshot; });
+    await adapter.selectProject(project.id);
+    const before = fetcher.mock.calls.length;
+    await adapter.cancelRequest('queued-id');
+    expect(observed.pendingRequest?.result?.code).toBe('queue_cancelled');
+    expect(observed.pending).toBe(false);
+    expect(fetcher.mock.calls.slice(before).some(([url]) => String(url).endsWith('/workbench'))).toBe(true);
+  });
   it('keeps a request started in another tab on the active cadence', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     vi.spyOn(Math, 'random').mockReturnValue(0);

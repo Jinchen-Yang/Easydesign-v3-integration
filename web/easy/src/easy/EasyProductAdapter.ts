@@ -48,6 +48,7 @@ export interface EasyProductPort {
   resume(): Promise<void>;
   sendMessage(text: string, phase?: string): Promise<void>;
   retryRequest(id: string): Promise<void>;
+  cancelRequest(id: string): Promise<void>;
   labOrder(): Promise<LabOrderView>;
   saveLabOrder(draft: LabOrderDraftInput): Promise<LabOrderView>;
   quoteLabOrder(): Promise<LabOrderView>;
@@ -442,6 +443,21 @@ export class EasyProductAdapter implements EasyProductPort {
       instruction: text,
       ...(phase ? { viewed_phase: phase } : {}),
     });
+  }
+  async cancelRequest(id: string) {
+    if (this.state.pending) return;
+    this.emit({ pending: true, error: null });
+    try {
+      const request = await this.post<RequestState>('/requests/' + id + '/cancel', {});
+      this.observeRequest(request);
+    } catch (error) {
+      this.emit({ error: (error as Error).message });
+      throw error;
+    } finally {
+      this.emit({ pending: false });
+      await this.refreshing;
+      await this.refresh();
+    }
   }
   async retryRequest(id: string) {
     if (this.state.pending) return;

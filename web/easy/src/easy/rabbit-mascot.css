@@ -219,16 +219,6 @@
   overflow: visible;
   pointer-events: none;
 }
-.rabbit-stage-art {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border: 1px solid rgba(113, 93, 164, 0.14);
-  border-radius: 28%;
-  box-shadow: 0 12px 32px rgba(65, 52, 94, 0.14);
-  user-select: none;
-}
 .rabbit-scene * {
   transform-box: view-box;
 }

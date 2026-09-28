@@ -297,6 +297,14 @@ function asReadableText(value: unknown): string {
   return '';
 }
 
+export function gateLocalizationText(
+  localized: Record<string, string>,
+  id: string,
+  source: string,
+) {
+  return normalizeLiveScientificChinese(localized[id] || source);
+}
+
 function AcademicChineseDetails({
   summary,
   passages,
@@ -579,11 +587,13 @@ function HistoricalStagePanel({
 function GatePanel({
   snapshot,
   busy,
+  connection,
   onDecide,
   adapter,
 }: {
   snapshot: ProductSnapshot;
   busy: boolean;
+  connection: LiveState['connection'];
   onDecide: (input: GateInput) => Promise<void>;
   adapter: EasyProductPort;
 }) {
@@ -615,8 +625,10 @@ function GatePanel({
   ].filter((item) => item.text.trim());
   const [gateChinese, setGateChinese] = useState<Record<string, string>>({});
   const [gateLanguageError, setGateLanguageError] = useState(false);
+  const [gateLocalizationAttempt, setGateLocalizationAttempt] = useState(0);
   const gateSourceKey = JSON.stringify(gatePassages);
   useEffect(() => {
+    if (connection !== 'connected' || gatePassages.length === 0) return;
     let current = true;
     setGateChinese({});
     setGateLanguageError(false);
@@ -634,7 +646,14 @@ function GatePanel({
     return () => {
       current = false;
     };
-  }, [adapter, decision.id, gateSourceKey, snapshot.project.goal]);
+  }, [
+    adapter,
+    connection,
+    decision.id,
+    gateLocalizationAttempt,
+    gateSourceKey,
+    snapshot.project.goal,
+  ]);
   const approveAction = option?.actions.includes('approve')
     ? 'approve'
     : option?.actions.includes('override')
@@ -690,12 +709,20 @@ function GatePanel({
           <ul>
             {decision.warnings.map((_, index) => (
               <li key={`warning-${index}`}>
-                {normalizeLiveScientificChinese(gateChinese[`gate.warning.${index}`] || '…')}
+                {gateLocalizationText(
+                  gateChinese,
+                  `gate.warning.${index}`,
+                  decision.warnings[index],
+                )}
               </li>
             ))}
             {decision.limitations.map((_, index) => (
               <li key={`limitation-${index}`}>
-                {normalizeLiveScientificChinese(gateChinese[`gate.limitation.${index}`] || '…')}
+                {gateLocalizationText(
+                  gateChinese,
+                  `gate.limitation.${index}`,
+                  decision.limitations[index],
+                )}
               </li>
             ))}
           </ul>
@@ -703,7 +730,14 @@ function GatePanel({
       )}
       {gateLanguageError && (
         <p className="easy-error">
-          学术中文暂不可用；审批前请刷新重试，英文原文仍保留在审计记录中。
+          学术中文暂未生成；当前显示英文原文。
+          <button
+            type="button"
+            disabled={connection !== 'connected'}
+            onClick={() => setGateLocalizationAttempt((attempt) => attempt + 1)}
+          >
+            重试
+          </button>
         </p>
       )}
       {showRevise && (
@@ -1302,6 +1336,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     key={snapshot.decision.id}
                     snapshot={snapshot}
                     busy={state.pending}
+                    connection={state.connection}
                     adapter={adapter}
                     onDecide={async (value) => {
                       if (value.selected_option_id) setSelectedSite(value.selected_option_id);

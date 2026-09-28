@@ -104,6 +104,32 @@ def test_gpu_allocation_cannot_exceed_approved_slots(resource_fixture):
         ledger.transition(admission.id, "running")
 
 
+def test_legacy_admission_schema_migrates_concurrently_without_changing_records(resource_fixture):
+    store, ledger, _admin, alice, _bob, _team = resource_fixture
+    admission, _ = ledger.reserve(
+        alice,
+        alice.id,
+        "legacy-schema-request",
+        {"action": "create"},
+        stage_budgets={"pilot": 17, "scale": 29},
+    )
+    # Reconstruct the pre-dispatch-channel schema in this disposable database.
+    with store.db(write=True) as db:
+        db.execute("ALTER TABLE admissions DROP COLUMN dispatch_channel")
+        db.execute("ALTER TABLE admissions DROP COLUMN auth_version")
+        audit_before = [tuple(row) for row in db.execute("SELECT * FROM audit_events")]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        ledgers = list(pool.map(lambda _: ResourceLedger(store), range(8)))
+    for migrated in ledgers:
+        assert migrated.get(admission.id) == admission.model_copy(update={"auth_version": None})
+        assert migrated.command_budgets(alice.id, admission.request_id) == {
+            "pilot": 17,
+            "scale": 29,
+        }
+    with store.db() as db:
+        assert [tuple(row) for row in db.execute("SELECT * FROM audit_events")] == audit_before
+
+
 def test_uploads_are_charged_once_and_team_data_is_shared_only_inside_the_scope(resource_fixture):
     store, ledger, admin, alice, bob, team = resource_fixture
     store.set_limits(admin, team, ResourceLimits(max_stored_upload_bytes=2048))

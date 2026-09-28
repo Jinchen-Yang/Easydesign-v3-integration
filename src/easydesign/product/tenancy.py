@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import re
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -187,6 +188,102 @@ class ScopedProductService(ProductService):
         self.admission_launcher(admission, self)
 
     @contextmanager
+    def _command_lock(self, request_id: str) -> Iterator[None]:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{16,96}", request_id):
+            raise ProductError("not_found", "请求不存在", 404)
+        path = self.root / "commands" / (request_id + ".lock")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            yield
+
+    def cancel_queued(self, request_id: str) -> dict[str, Any]:
+        self.access(edit=True)
+        with self._command_lock(request_id):
+            self.resources.cancel_queued(self.user, self.scope_id, request_id)
+            journal = self.journal()
+            try:
+                row = journal.get(request_id)
+                if row is None:
+                    raise ProductError("not_found", "请求尚未准备完成", 404)
+                if row["state"] in {"accepted", "running"}:
+                    journal.update(
+                        request_id,
+                        "failed",
+                        {
+                            "code": "queue_cancelled",
+                            "message": "已取消等待，未启动科学计算",
+                        },
+                    )
+                row = journal.get(request_id)
+                assert row is not None
+                return self.public_request(row)
+            finally:
+                journal.close()
+
+    def request(self, request_id: str) -> dict[str, Any]:
+        self.access()
+        admission = self.resources.latest(self.scope_id, request_id)
+        if (
+            admission is not None
+            and admission.dispatch_channel == "scoped_worker"
+            and admission.state in {"failed", "cancelled"}
+            and self._current_admission is None
+        ):
+            # The account transaction may have committed just before a crash
+            # updating the scoped journal. Serialize repair with a new retry so
+            # the old attempt cannot overwrite its successor's accepted state.
+            with self._command_lock(request_id):
+                latest = self.resources.latest(self.scope_id, request_id)
+                if latest is not None and latest.id == admission.id:
+                    journal = self.journal()
+                    try:
+                        row = journal.get(request_id)
+                        if row is not None and row["state"] in {"accepted", "running"}:
+                            journal.update(
+                                request_id,
+                                "failed",
+                                {
+                                    "code": admission.reason or "worker_interrupted",
+                                    "message": "该执行尝试已结束；可核对权限后重新恢复",
+                                },
+                            )
+                    finally:
+                        journal.close()
+                admission = latest
+        if admission is not None and admission.state in {"queued", "starting"}:
+            journal = self.journal()
+            try:
+                row = journal.get(request_id)
+            finally:
+                journal.close()
+            if row is not None and row["state"] in {"accepted", "running"}:
+                waiting = [
+                    item.id
+                    for item in self.resources.active()
+                    if item.state == "queued" and item.kind == admission.kind
+                ]
+                result = self.public_request(row)
+                result["result"] = {
+                    **(row["result"] or {}),
+                    "resource_waiting": True,
+                    "queue": {
+                        "state": admission.state,
+                        "position": waiting.index(admission.id) + 1
+                        if admission.id in waiting
+                        else None,
+                        "reason": "worker_starting"
+                        if admission.state == "starting"
+                        else "waiting_for_resources",
+                        "cancellable": admission.state == "queued"
+                        and admission.worker_pid is None
+                        and admission.actor_id == self.user.id,
+                    },
+                }
+                return result
+        return super().request(request_id)
+
+    @contextmanager
     def _admit(
         self,
         request_id: str,
@@ -199,24 +296,28 @@ class ScopedProductService(ProductService):
         self.access(edit=True, execute=not conversation)
         if self.admission_launcher is None:
             raise ProductError("compute_unavailable", "计算服务尚未配置，请联系管理员", 503)
-        admission, created = self.resources.reserve(
-            self.user,
-            self.scope_id,
-            request_id,
-            payload,
-            kind="conversation" if conversation else "scientific",
-            retry=retry,
-            stage_budgets=stage_budgets,
-        )
-        self._current_admission = admission
-        try:
-            yield admission
-        except BaseException:
-            if created and self.resources.get(admission.id).state == "reserved":
-                self.resources.transition(admission.id, "failed", reason="native_request_rejected")
-            raise
-        finally:
-            self._current_admission = None
+        with self._command_lock(request_id):
+            admission, created = self.resources.reserve(
+                self.user,
+                self.scope_id,
+                request_id,
+                payload,
+                kind="conversation" if conversation else "scientific",
+                retry=retry,
+                stage_budgets=stage_budgets,
+                dispatch_channel="scoped_worker",
+            )
+            self._current_admission = admission
+            try:
+                yield admission
+            except BaseException:
+                if created and self.resources.get(admission.id).state == "reserved":
+                    self.resources.transition(
+                        admission.id, "failed", reason="native_request_rejected"
+                    )
+                raise
+            finally:
+                self._current_admission = None
 
     def _authorize_final_designs(
         self, project: str, request: ActionRequest, admission: Admission
@@ -372,11 +473,12 @@ class MultiUserRuntime:
         gateway_factory: Callable[[WorkspaceContext], NativeGateway],
         *,
         launcher: Callable[[Admission, ScopedProductService], None] | None = None,
+        max_active_admissions: int = 300,
     ) -> None:
         if context.execution_scope is not None:
             raise ValueError("The product controller requires an unscoped workspace")
         self.context, self.accounts, self.gateway_factory = context, accounts, gateway_factory
-        self.resources = ResourceLedger(accounts)
+        self.resources = ResourceLedger(accounts, max_active_admissions=max_active_admissions)
         self.launcher = launcher
 
     @contextmanager

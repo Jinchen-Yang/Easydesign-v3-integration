@@ -18,9 +18,29 @@ from easydesign.execution_scope import EXECUTION_SCOPE_ENV
 from easydesign.runtime_guard import LOCAL_WRITE_ROOTS_ENV, apply_local_write_sandbox
 from easydesign.workspace_context import WorkspaceContext
 
+from .accounts import AccountStore, AccountUser
+from .artifacts import immutable_json
+from .contracts import ProductError
 from .domain import NativeGateway
 from .resource_control import ACTIVE_ADMISSIONS
 from .service import ProductService
+
+
+def open_authority_connection(path: Path) -> tuple[sqlite3.Connection, tuple[int, int]]:
+    """Pre-open a live WAL reader, never a writable account database handle."""
+    info = path.stat()
+    identity = (info.st_dev, info.st_ino)
+    db = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5, isolation_level=None)
+    try:
+        db.row_factory = sqlite3.Row
+        db.execute("SELECT id FROM admissions LIMIT 1").fetchall()
+        current = path.stat()
+        if (current.st_dev, current.st_ino) != identity:
+            raise RuntimeError("Account authority changed while opening")
+    except BaseException:
+        db.close()
+        raise
+    return db, identity
 
 
 def _admission_still_active(db_path: Path, grant_id: str) -> bool:
@@ -40,6 +60,40 @@ def _admission_still_active(db_path: Path, grant_id: str) -> bool:
     if row is None:
         return True
     return str(row[0]) in ACTIVE_ADMISSIONS
+
+
+def _dispatch_authorized(
+    db: sqlite3.Connection,
+    authority: AccountStore,
+    actor: AccountUser,
+    config: dict[str, Any],
+    *,
+    execution: bool = False,
+) -> bool:
+    """A late durable worker must never execute a failed/cancelled attempt."""
+    try:
+        info = authority.path.stat()
+        if (info.st_dev, info.st_ino) != config["_authority_identity"]:
+            return False
+        row = db.execute(
+            "SELECT state,kind FROM admissions WHERE id=? AND dispatch_channel='scoped_worker'",
+            (config["grant_id"],),
+        ).fetchone()
+        if row is None or row["state"] not in (
+            {"running"} if execution else {"starting", "running"}
+        ):
+            return False
+        authority.scope_in(
+            db, actor, config["scope_id"], edit=True, execute=row["kind"] == "scientific"
+        )
+        epoch = db.execute("SELECT auth_version FROM users WHERE id=?", (actor.id,)).fetchone()
+        if config.get("auth_version") is not None and (
+            epoch is None or epoch[0] != config["auth_version"]
+        ):
+            return False
+        return True
+    except (OSError, sqlite3.Error, ProductError):
+        return False
 
 
 def stage_budgets_from_config(config: dict[str, Any]) -> dict[str, int | None] | None:
@@ -92,6 +146,15 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO)
     for handler in logging.getLogger().handlers:
         handler.addFilter(SecretFilter(config["secret_names"]))
+    durable = config.get("dispatch_protocol") == "durable-v1"
+    account_db = base.runtime_root / "state/accounts/accounts.sqlite"
+    if durable:
+        authority = AccountStore(account_db, read_only=True)
+        actor = authority.user(config["actor_id"])
+        # WAL readers may need to open the shared-memory sidecar read/write.
+        # Establish its handle before Landlock, keeping the database itself
+        # mode=ro. No account database write authority enters the worker.
+        authority_db, config["_authority_identity"] = open_authority_connection(account_db)
     environment = initial.child_environment()
     apply_local_write_sandbox(
         [Path(p) for p in environment[LOCAL_WRITE_ROOTS_ENV].split(os.pathsep)]
@@ -112,9 +175,26 @@ def main() -> int:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return 0
-        deadline = time.monotonic() + 3600
+        if durable:
+            if not _dispatch_authorized(authority_db, authority, actor, config):
+                return 0
+            # Publish only after owning the request lock. The controller can
+            # adopt this exact process if it died before recording Popen's PID.
+            start = Path("/proc/self/stat").read_text().rpartition(") ")[2].split()[19]
+            immutable_json(
+                lock_path.parent / (config["grant_id"] + ".started.json"),
+                {
+                    "grant_id": config["grant_id"],
+                    "request_id": config["request_id"],
+                    "pid": os.getpid(),
+                    "start": start,
+                },
+            )
+        deadline = time.monotonic() + (60 if durable else 3600)
         while not assignment.is_file():
-            if not _admission_still_active(
+            if durable and not _dispatch_authorized(authority_db, authority, actor, config):
+                return 0
+            if not durable and not _admission_still_active(
                 base.runtime_root / "state/accounts/accounts.sqlite", config["grant_id"]
             ):
                 # The controller abandoned this admission (for example it crashed
@@ -127,6 +207,8 @@ def main() -> int:
                 if record is None or record["state"] not in {"accepted", "running", "interrupted"}:
                     return 0
                 if time.monotonic() >= deadline:
+                    if durable:
+                        return 1  # The controller owns startup failure/retry projection.
                     journal.update(
                         config["request_id"],
                         "failed",
@@ -136,7 +218,8 @@ def main() -> int:
                         },
                     )
                     return 1
-                journal.update(config["request_id"], "accepted", {"resource_waiting": True})
+                if not durable:
+                    journal.update(config["request_id"], "accepted", {"resource_waiting": True})
             finally:
                 journal.close()
             time.sleep(1)
@@ -144,6 +227,8 @@ def main() -> int:
         if allocated["grant_id"] != scope.grant_id:
             raise RuntimeError("Assignment identity mismatch")
         if allocated.get("cancelled"):
+            if durable:
+                return 0  # Never overwrite a new attempt's journal with an old cancellation.
             if allocated.get("code") == "admission_abandoned":
                 # The controller lost this admission before publishing our PID.
                 # Leave the journal untouched so the explicit resume path works.
@@ -169,6 +254,15 @@ def main() -> int:
         if current.execution_scope is None or current.execution_scope.grant_id != scope.grant_id:
             raise RuntimeError("Assigned execution scope mismatch")
         os.environ.update(current.child_environment())
+        if durable:
+            # Assignment is immutable but publication can precede the ledger
+            # commit. Wait for that commit; a rollback/revocation never runs.
+            while not _dispatch_authorized(authority_db, authority, actor, config, execution=True):
+                if time.monotonic() >= deadline or not _dispatch_authorized(
+                    authority_db, authority, actor, config
+                ):
+                    return 0
+                time.sleep(0.1)
     gateway = NativeGateway(
         current,
         confined(base.root, base.root / config["models"]),

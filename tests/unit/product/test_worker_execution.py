@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -91,6 +94,8 @@ def detached(tmp_path: Path, monkeypatch):
     finally:
         for admission in runtime.resources.active():
             pid, start = admission.worker_pid, admission.worker_start
+            if pid is None:
+                runtime.resources.transition(admission.id, "failed", reason="fixture_shutdown")
             if pid is not None and start is not None and process_identity(pid) == start:
                 try:
                     os.kill(pid, signal.SIGKILL)
@@ -132,13 +137,16 @@ def test_detached_worker_runs_the_scoped_lifecycle_and_fails_honestly(detached):
     admission = runtime.resources.latest(alice.id, request_id)
     assert admission is not None
     assert admission.state == "queued"
+    assert admission.worker_pid is None
+
+    control.tick()
+    admission = runtime.resources.get(admission.id)
     assert admission.worker_pid not in (None, os.getpid())
     assert process_identity(admission.worker_pid) == admission.worker_start
 
     control.launch(admission, None)  # idempotent: the live worker blocks a respawn
     assert runtime.resources.latest(alice.id, request_id).worker_pid == admission.worker_pid
 
-    control.tick()
     running = runtime.resources.get(admission.id)
     assert running.state == "running" and running.devices == (0,)
     allocations = read_device_allocations(control.pool.root)
@@ -203,76 +211,42 @@ def test_revocation_before_assignment_stops_the_queued_worker(detached):
     assert row is not None and row["result"]["code"] == "authorization_revoked"
 
 
-def test_controller_crash_after_spawn_abandons_the_worker_cleanly(detached, monkeypatch):
+def test_controller_crash_after_spawn_adopts_the_same_worker_receipt(detached, monkeypatch):
     control, runtime, store, admin, alice, _bob, _context = detached
     real_transition = runtime.resources.transition
 
     def crash_before_publication(grant_id, state, **kwargs):
-        if state == "queued" and kwargs.get("worker_pid") is not None:
+        if state == "starting" and kwargs.get("worker_pid") is not None:
             raise RuntimeError("simulated controller crash between Popen and PID publish")
         return real_transition(grant_id, state, **kwargs)
 
-    monkeypatch.setattr(runtime.resources, "transition", crash_before_publication)
     request_id = "crash-request-00000001"
-    with runtime.bind(alice, alice.id) as service:
-        admission, _ = runtime.resources.reserve(
-            alice, alice.id, request_id, {"operation": "create", "title": "t", "goal": GOAL}
-        )
-        journal = service.journal()
-        try:
-            journal.reserve(
-                "workbench-fixture",
-                {"operation": "create", "request_id": request_id, "title": "t", "goal": GOAL},
-            )
-        finally:
-            journal.close()
-        try:
-            control.launch(admission, service)
-        except RuntimeError:
-            pass  # the crash we wanted: worker spawned, PID never published
-    monkeypatch.undo()
-    stranded = runtime.resources.get(admission.id)
-    assert stranded.state == "reserved" and stranded.worker_pid is None
-
-    # The orphaned worker is alive: it owns the request lock and reports waiting.
-    lock_path = scoped_state(runtime.context, alice.id) / "product/workers" / (request_id + ".lock")
-    wait_until(
-        lambda: (
-            (row := read_request(runtime, alice.id, request_id)) is not None
-            and bool((row["result"] or {}).get("resource_waiting"))
-        ),
-        message="orphaned worker to start waiting",
-    )
-
-    control.tick()
-    assert runtime.resources.get(admission.id).state == "reserved"
-    # The controller publishes no PID; after the bounded 30s window the admission
-    # fails while the orphaned worker exits on its own instead of idling an hour.
-    deadline = time.monotonic() + 45
-    while time.monotonic() < deadline:
+    submit_create(runtime, alice, request_id)
+    admission = runtime.resources.latest(alice.id, request_id)
+    monkeypatch.setattr(runtime.resources, "transition", crash_before_publication)
+    with pytest.raises(RuntimeError, match="simulated controller crash"):
         control.tick()
-        if runtime.resources.get(admission.id).state == "failed":
-            break
-        time.sleep(1.0)
-    failed = runtime.resources.get(admission.id)
-    assert failed.state == "failed" and failed.reason == "worker_not_published"
-
-    import fcntl
-
-    def worker_released() -> bool:
-        if not lock_path.is_file():
-            return False
-        with lock_path.open("a") as handle:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return False
-            fcntl.flock(handle, fcntl.LOCK_UN)
-            return True
-
-    wait_until(worker_released, message="orphaned worker to observe the failed admission")
+    monkeypatch.setattr(runtime.resources, "transition", real_transition)
+    stranded = runtime.resources.get(admission.id)
+    assert stranded.state == "starting" and stranded.worker_pid is None
+    receipt_path = (
+        scoped_state(runtime.context, alice.id)
+        / "product/workers"
+        / (admission.id + ".started.json")
+    )
+    wait_until(receipt_path.is_file, timeout=10, message="worker identity receipt")
+    receipt = json.loads(receipt_path.read_text())
+    restarted = ResourceSupervisor(runtime, probe=control.probe)
+    restarted.tick()
+    recovered = runtime.resources.get(admission.id)
+    assert recovered.worker_pid == receipt["pid"]
+    assert recovered.worker_start == receipt["start"]
+    assert recovered.state == "running"
+    wait_until(lambda: process_identity(recovered.worker_pid) is None, message="recovered worker")
     row = read_request(runtime, alice.id, request_id)
-    assert row is not None and row["state"] == "accepted"  # resume path stays available
+    assert row is not None and row["result"]["code"] == "AgentBoundaryError"
+    restarted.tick()
+    assert read_device_allocations(control.pool.root)[0].status == "released"
 
 
 def test_two_detached_scientific_workers_get_distinct_devices(detached):
@@ -293,7 +267,7 @@ def test_two_detached_scientific_workers_get_distinct_devices(detached):
     assert running_first.state == "running" and running_second.state == "running"
     assert running_first.devices == (0,) and running_second.devices == (1,)
 
-    for admission in (first, second):
+    for admission in (running_first, running_second):
         wait_until(
             lambda admission=admission: process_identity(admission.worker_pid) is None,
             message=f"worker {admission.id} to finish",
@@ -303,3 +277,183 @@ def test_two_detached_scientific_workers_get_distinct_devices(detached):
     assert states == {"failed"}
     released = {r.status for r in read_device_allocations(control.pool.root)}
     assert released == {"released"}
+
+
+def test_late_worker_after_start_timeout_cannot_run_or_overwrite_retry(detached, monkeypatch):
+    from easydesign.product import resource_supervisor
+
+    control, runtime, store, _admin, alice, _bob, _context = detached
+    request_id = "late-start-request-001"
+    submit_create(runtime, alice, request_id)
+    admission = runtime.resources.latest(alice.id, request_id)
+    real_popen = resource_supervisor.subprocess.Popen
+    real_transition = runtime.resources.transition
+    children = []
+
+    def stopped_child(command, **kwargs):
+        child = real_popen(
+            [
+                command[0],
+                "-B",
+                "-c",
+                "import os,signal,runpy; os.kill(os.getpid(),signal.SIGSTOP); "
+                "runpy.run_module('easydesign.product.scoped_worker',run_name='__main__')",
+                command[-1],
+            ],
+            **kwargs,
+        )
+        children.append(child)
+        os.waitpid(child.pid, os.WUNTRACED)
+        return child
+
+    def crash(grant, state, **kwargs):
+        if state == "starting" and kwargs.get("worker_pid"):
+            raise RuntimeError("PID publication lost")
+        return real_transition(grant, state, **kwargs)
+
+    monkeypatch.setattr(resource_supervisor.subprocess, "Popen", stopped_child)
+    monkeypatch.setattr(runtime.resources, "transition", crash)
+    try:
+        with pytest.raises(RuntimeError, match="publication lost"):
+            control.tick()
+        monkeypatch.setattr(resource_supervisor.subprocess, "Popen", real_popen)
+        monkeypatch.setattr(runtime.resources, "transition", real_transition)
+        claimed = runtime.resources.get(admission.id)
+        monkeypatch.setattr(store, "clock", lambda: claimed.updated_at + 31)
+        control.tick()
+        assert runtime.resources.get(admission.id).reason == "worker_start_timeout"
+        with runtime.bind(alice, alice.id) as service:
+            assert service.retry(request_id)["state"] == "accepted"
+        successor = runtime.resources.latest(alice.id, request_id)
+        assert successor.id != admission.id and successor.worker_pid is None
+        os.kill(children[0].pid, signal.SIGCONT)
+        children[0].wait(timeout=15)
+        assert read_request(runtime, alice.id, request_id)["state"] == "accepted"
+        assert read_device_allocations(control.pool.root)[0].status == "released"
+    finally:
+        for child in children:
+            if child.poll() is None:
+                os.kill(child.pid, signal.SIGCONT)
+                child.terminate()
+                child.wait(timeout=5)
+
+
+def test_sandboxed_waiting_worker_observes_live_revocation_without_native_calls(
+    detached, monkeypatch
+):
+    control, runtime, store, admin, alice, _bob, _context = detached
+    request_id = "live-revoke-request-01"
+    submit_create(runtime, alice, request_id)
+    admission = runtime.resources.latest(alice.id, request_id)
+    real_transition = runtime.resources.transition
+
+    def crash(grant, state, **kwargs):
+        if state == "starting" and kwargs.get("worker_pid"):
+            raise RuntimeError("PID publication lost")
+        return real_transition(grant, state, **kwargs)
+
+    monkeypatch.setattr(runtime.resources, "transition", crash)
+    with pytest.raises(RuntimeError, match="publication lost"):
+        control.tick()
+    monkeypatch.setattr(runtime.resources, "transition", real_transition)
+    receipt_path = (
+        scoped_state(runtime.context, alice.id)
+        / "product/workers"
+        / (admission.id + ".started.json")
+    )
+    wait_until(receipt_path.is_file, timeout=10, message="sandboxed worker receipt")
+    receipt = json.loads(receipt_path.read_text())
+    # No controller tick: only the already-open read-only worker connection can
+    # observe this change. It must not retain a stale SQLite read transaction.
+    store.update_user(admin, alice.id, status="suspended")
+    wait_until(
+        lambda: process_identity(receipt["pid"]) is None, timeout=10, message="revoked worker"
+    )
+    row = read_request(runtime, alice.id, request_id)
+    assert row["state"] == "accepted" and row["result"] is None
+    assert not control.pool.assignment_path(admission.id).exists()
+
+
+def test_waiting_worker_rejects_replaced_authority_database(detached, monkeypatch):
+    control, runtime, store, _admin, alice, _bob, _context = detached
+    request_id = "replaced-auth-request"
+    submit_create(runtime, alice, request_id)
+    admission = runtime.resources.latest(alice.id, request_id)
+    real_transition = runtime.resources.transition
+
+    def crash(grant, state, **kwargs):
+        if state == "starting" and kwargs.get("worker_pid"):
+            raise RuntimeError("PID publication lost")
+        return real_transition(grant, state, **kwargs)
+
+    monkeypatch.setattr(runtime.resources, "transition", crash)
+    with pytest.raises(RuntimeError, match="publication lost"):
+        control.tick()
+    monkeypatch.setattr(runtime.resources, "transition", real_transition)
+    receipt_path = (
+        scoped_state(runtime.context, alice.id)
+        / "product/workers"
+        / (admission.id + ".started.json")
+    )
+    wait_until(receipt_path.is_file, timeout=10, message="worker receipt")
+    receipt = json.loads(receipt_path.read_text())
+    original = store.path.with_suffix(".fixture-original")
+    replacement = store.path.with_suffix(".fixture-copy")
+    os.link(store.path, original)
+    shutil.copyfile(store.path, replacement)
+    os.replace(replacement, store.path)
+    try:
+        wait_until(
+            lambda: process_identity(receipt["pid"]) is None,
+            timeout=10,
+            message="rotated authority rejected",
+        )
+    finally:
+        os.replace(original, store.path)
+    assert read_request(runtime, alice.id, request_id)["state"] == "accepted"
+    assert not control.pool.assignment_path(admission.id).exists()
+
+
+def test_preopened_authority_stays_read_only_inside_real_landlock(detached):
+    _control, runtime, store, _admin, alice, _bob, context = detached
+    accepted = submit_create(runtime, alice, "readonly-worker-auth")
+    allowed = scoped_state(context, alice.id)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            """
+import sqlite3, sys
+from pathlib import Path
+from easydesign.product.scoped_worker import open_authority_connection
+from easydesign.runtime_guard import apply_local_write_sandbox
+path = Path(sys.argv[1])
+db, identity = open_authority_connection(path)
+apply_local_write_sandbox([Path(sys.argv[2])])
+assert db.execute('SELECT count(*) FROM admissions').fetchone()[0] == 1
+try:
+    db.execute("UPDATE admissions SET state='running'")
+except sqlite3.OperationalError:
+    pass
+else:
+    raise AssertionError('preopened connection allowed an account write')
+try:
+    path.open('ab')
+except PermissionError:
+    pass
+else:
+    raise AssertionError('Landlock allowed an account database write')
+db.close()
+print('readonly-authority-ok')
+""",
+            str(store.path),
+            str(allowed),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "readonly-authority-ok"
+    assert runtime.resources.latest(alice.id, accepted["id"]).state == "queued"

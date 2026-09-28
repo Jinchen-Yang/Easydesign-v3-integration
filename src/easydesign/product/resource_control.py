@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from collections.abc import Callable
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from .artifacts import digest
 from .contracts import ProductError
 
 ACTIVE_ADMISSIONS = ("reserved", "queued", "starting", "running", "held")
+DispatchChannel = Literal["legacy", "scoped_worker", "web_stream"]
 
 
 def contract_digest(document: Any) -> str | None:
@@ -80,6 +82,8 @@ class Admission(BaseModel):
     created_at: float
     updated_at: float
     reason: str | None = None
+    dispatch_channel: DispatchChannel = "legacy"
+    auth_version: int | None = None
 
 
 def _admission(row: sqlite3.Row) -> Admission:
@@ -91,8 +95,11 @@ def _admission(row: sqlite3.Row) -> Admission:
 class ResourceLedger:
     """Reserve quotas before native side effects; retries cannot multiply admissions."""
 
-    def __init__(self, accounts: AccountStore) -> None:
+    def __init__(self, accounts: AccountStore, *, max_active_admissions: int = 300) -> None:
+        if type(max_active_admissions) is not int or not 1 <= max_active_admissions <= 10000:
+            raise ValueError("max_active_admissions must be between 1 and 10000")
         self.accounts = accounts
+        self.max_active_admissions = max_active_admissions
         with accounts.db(write=True) as db:
             db.execute("""CREATE TABLE IF NOT EXISTS compute_commands (
                 scope_id TEXT NOT NULL, request_id TEXT NOT NULL, actor_id TEXT NOT NULL,
@@ -117,6 +124,14 @@ class ResourceLedger:
             db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS one_active_admission
                 ON admissions(scope_id,request_id)
                 WHERE state IN ('reserved','queued','starting','running','held')""")
+            admission_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(admissions)")}
+            if "dispatch_channel" not in admission_columns:
+                db.execute(
+                    "ALTER TABLE admissions ADD COLUMN dispatch_channel TEXT NOT NULL "
+                    "DEFAULT 'legacy'"
+                )
+            if "auth_version" not in admission_columns:
+                db.execute("ALTER TABLE admissions ADD COLUMN auth_version INTEGER")
             db.execute("""CREATE TABLE IF NOT EXISTS upload_reservations (
                 id TEXT PRIMARY KEY, scope_id TEXT NOT NULL, resource_key TEXT NOT NULL,
                 actor_id TEXT NOT NULL, size_bytes INTEGER NOT NULL, state TEXT NOT NULL,
@@ -160,11 +175,14 @@ class ResourceLedger:
         gpu_slots: int = 1,
         retry: bool = False,
         stage_budgets: dict[str, int | None] | None = None,
+        dispatch_channel: DispatchChannel = "legacy",
     ) -> tuple[Admission, bool]:
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,96}", request_id):
             raise ProductError("invalid_request_id", "请求编号不合法", 400)
         if kind not in {"scientific", "conversation"} or gpu_slots < 0 or gpu_slots > 64:
             raise ProductError("invalid_resource_request", "资源请求不合法", 400)
+        if dispatch_channel not in {"legacy", "scoped_worker", "web_stream"}:
+            raise ValueError("Invalid dispatch channel")
         gpu_slots = gpu_slots if kind == "scientific" else 0
         if kind == "scientific" and gpu_slots < 1:
             raise ProductError("invalid_resource_request", "科学计算需要至少一个 GPU 槽位", 400)
@@ -190,6 +208,13 @@ class ResourceLedger:
                 ).fetchone()
                 if row is not None and (row["state"] in ACTIVE_ADMISSIONS or not retry):
                     return _admission(row), False
+            active = db.execute(
+                "SELECT count(*) FROM admissions "
+                "WHERE state IN ('reserved','queued','starting','running','held') "
+                "AND dispatch_channel!='web_stream'"
+            ).fetchone()[0]
+            if dispatch_channel != "web_stream" and active >= self.max_active_admissions:
+                raise ProductError("queue_full", "当前等待队列已满，请稍后再试", 429)
             limits = [self._limits(db, subject) for subject in self._subjects(user, scope)]
             for subject, limit in zip(self._subjects(user, scope), limits, strict=True):
                 field = "actor_id" if subject == user.id else "scope_id"
@@ -228,7 +253,10 @@ class ResourceLedger:
             grant_id = "grant-" + uuid4().hex
             scientific_actor = previous["actor_id"] if previous is not None else user.id
             db.execute(
-                "INSERT INTO admissions VALUES(?,?,?,?,?,?,'reserved',?,?,?,NULL,NULL,?,?,NULL)",
+                "INSERT INTO admissions(id,scope_id,request_id,actor_id,scientific_actor_id,"
+                "kind,state,gpu_slots,max_candidates,devices_json,worker_pid,worker_start,"
+                "created_at,updated_at,reason,dispatch_channel,auth_version) "
+                "VALUES(?,?,?,?,?,?,'reserved',?,?,?,NULL,NULL,?,?,NULL,?,?)",
                 (
                     grant_id,
                     scope_id,
@@ -241,6 +269,10 @@ class ResourceLedger:
                     "[]",
                     now,
                     now,
+                    dispatch_channel,
+                    db.execute("SELECT auth_version FROM users WHERE id=?", (user.id,)).fetchone()[
+                        0
+                    ],
                 ),
             )
             self.accounts.audit_record(
@@ -337,6 +369,113 @@ class ResourceLedger:
             changed = db.execute("SELECT * FROM admissions WHERE id=?", (grant_id,)).fetchone()
             assert changed is not None
             return _admission(changed)
+
+    def cancel_queued(self, actor: AccountUser, scope_id: str, request_id: str) -> Admission:
+        """Cancel only unclaimed work; dispatch competes in this same SQLite transaction."""
+        with self.accounts.db(write=True) as db:
+            user = self.accounts.live_user(db, actor)
+            self.accounts.scope_in(db, user, scope_id, edit=True)
+            row = db.execute(
+                "SELECT * FROM admissions WHERE scope_id=? AND request_id=? "
+                "ORDER BY created_at DESC,rowid DESC LIMIT 1",
+                (scope_id, request_id),
+            ).fetchone()
+            if row is None:
+                raise ProductError("not_found", "请求不存在", 404)
+            if row["actor_id"] != user.id:
+                raise ProductError("forbidden", "只能取消本人尚未派发的请求", 403)
+            if row["state"] == "cancelled" and row["reason"] == "queue_cancelled":
+                return _admission(row)
+            if (
+                row["dispatch_channel"] != "scoped_worker"
+                or row["state"] not in {"reserved", "queued"}
+                or row["worker_pid"] is not None
+            ):
+                raise ProductError("queue_not_cancellable", "该请求已派发，不能从等待队列取消", 409)
+            db.execute(
+                "UPDATE admissions SET state='cancelled',reason='queue_cancelled',updated_at=? "
+                "WHERE id=?",
+                (self.accounts.clock(), row["id"]),
+            )
+            self.accounts.audit_record(
+                db, user.id, "resource.cancelled", scope=scope_id, target=row["id"]
+            )
+            return _admission(
+                db.execute("SELECT * FROM admissions WHERE id=?", (row["id"],)).fetchone()
+            )
+
+    def claim_start(self, grant_id: str, *, max_conversation_workers: int) -> Admission | None:
+        """Atomically exclude cancellation, duplicate dispatch, and excess chat workers."""
+        with self.accounts.db(write=True) as db:
+            row = db.execute("SELECT * FROM admissions WHERE id=?", (grant_id,)).fetchone()
+            if row is None or row["state"] != "queued" or row["worker_pid"] is not None:
+                return None
+            if row["dispatch_channel"] != "scoped_worker":
+                return None
+            admission = _admission(row)
+            self._authorize_in(db, admission)
+            if admission.kind == "conversation":
+                busy = db.execute(
+                    "SELECT count(*) FROM admissions WHERE kind='conversation' "
+                    "AND dispatch_channel!='web_stream' "
+                    "AND (state IN ('starting','running','held') "
+                    "OR (state='queued' AND worker_pid IS NOT NULL))"
+                ).fetchone()[0]
+                if busy >= max_conversation_workers:
+                    return None
+            db.execute(
+                "UPDATE admissions SET state='starting',updated_at=?,reason='worker_starting' "
+                "WHERE id=?",
+                (self.accounts.clock(), grant_id),
+            )
+            return _admission(
+                db.execute("SELECT * FROM admissions WHERE id=?", (grant_id,)).fetchone()
+            )
+
+    def _authorize_in(self, db: sqlite3.Connection, admission: Admission) -> None:
+        self.accounts.scope_in(
+            db,
+            self.accounts.user(admission.actor_id),
+            admission.scope_id,
+            edit=True,
+            execute=admission.kind == "scientific",
+        )
+        epoch = db.execute(
+            "SELECT auth_version FROM users WHERE id=?", (admission.actor_id,)
+        ).fetchone()[0]
+        if admission.auth_version is not None and admission.auth_version != epoch:
+            raise ProductError("authorization_revoked", "接单后账户授权已变化，请重新确认请求", 403)
+
+    def authorize_dispatch(self, admission: Admission) -> None:
+        with self.accounts.db() as db:
+            self._authorize_in(db, admission)
+
+    def start_execution(
+        self, grant_id: str, devices: tuple[int, ...], publish: Callable[[], None]
+    ) -> None:
+        """Assignment publication linearizes against account/team revocation.
+
+        Durable workers wait for the committed running state, so a publication
+        followed by transaction rollback is not execution authority.
+        """
+        with self.accounts.db(write=True) as db:
+            row = db.execute("SELECT * FROM admissions WHERE id=?", (grant_id,)).fetchone()
+            if row is None or row["state"] != "starting":
+                raise ProductError("admission_conflict", "执行请求尚未领取或已结束", 409)
+            admission = _admission(row)
+            self._authorize_in(db, admission)
+            if (
+                len(set(devices)) != len(devices)
+                or any(d < 0 for d in devices)
+                or len(devices) > admission.gpu_slots
+            ):
+                raise ProductError("invalid_allocation", "显卡分配超出获批额度", 409)
+            publish()
+            db.execute(
+                "UPDATE admissions SET state='running',devices_json=?,updated_at=?,reason=NULL "
+                "WHERE id=?",
+                (json.dumps(devices), self.accounts.clock(), grant_id),
+            )
 
     def reserve_upload(
         self, actor: AccountUser, scope_id: str, resource_key: str, size_bytes: int

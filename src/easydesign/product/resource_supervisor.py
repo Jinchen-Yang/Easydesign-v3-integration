@@ -5,10 +5,13 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -147,6 +150,8 @@ class ResourceSupervisor:
         allowed_devices: tuple[int, ...] | None = None,
         probe: Any = None,
         poll_seconds: float = 1.0,
+        max_conversation_workers: int = 8,
+        startup_timeout_seconds: float = 30.0,
     ) -> None:
         self.runtime = runtime
         self.context = runtime.context
@@ -154,12 +159,20 @@ class ResourceSupervisor:
         self.pool = ProductDevicePool(self.context, allowed_devices=allowed_devices)
         self.probe = probe or NvidiaSmiProbe()
         self.poll_seconds = poll_seconds
+        if type(max_conversation_workers) is not int or not 1 <= max_conversation_workers <= 64:
+            raise ValueError("max_conversation_workers must be between 1 and 64")
+        if not math.isfinite(startup_timeout_seconds) or not 1 <= startup_timeout_seconds <= 60:
+            raise ValueError("startup_timeout_seconds must be between 1 and 60")
+        self.max_conversation_workers = max_conversation_workers
+        self.startup_timeout_seconds = startup_timeout_seconds
         self._stop = threading.Event()
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         self._controller_lock: Any = None
 
     def start(self) -> None:
+        if self._controller_lock is not None:
+            return
         path = self.context.runtime_root / "state/accounts/supervisor.lock"
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = path.open("a+b")
@@ -169,6 +182,7 @@ class ResourceSupervisor:
             handle.close()
             raise ProductError("controller_busy", "该工作区已有资源控制器", 409) from None
         self._controller_lock = handle
+        self._stop.clear()
         self.runtime.launcher = self.launch
         self._thread = threading.Thread(
             target=self._loop, name="account-resource-admission", daemon=True
@@ -179,11 +193,15 @@ class ResourceSupervisor:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=20)
+            if self._thread.is_alive():
+                raise ProductError("controller_busy", "资源控制器仍在安全收尾", 409)
         if self._controller_lock is not None:
             self._controller_lock.close()
+            self._controller_lock = None
         # Detached scientific work is deliberately not signalled here.
 
     def launch(self, admission: Admission, service: ScopedProductService) -> None:
+        """Commit executable intent; a queued request consumes no worker process."""
         with self._lock:
             current = self.ledger.get(admission.id)
             if (
@@ -193,6 +211,8 @@ class ResourceSupervisor:
                 return
             if current.state not in {"reserved", "queued"}:
                 raise ProductError("admission_conflict", "当前资源记录不允许重复启动", 409)
+            if current.state == "queued" and self._config_path(current).is_file():
+                return
             initial = self.context.with_execution_scope(
                 ExecutionScope(
                     scope_id=current.scope_id,
@@ -208,20 +228,6 @@ class ResourceSupervisor:
             secret_names = sorted(
                 {p.secret_env for p in [model_config.default, *model_config.roles.values()]}
             )
-            allowed_environment = {
-                "PATH",
-                "LANG",
-                "LC_ALL",
-                "LC_CTYPE",
-                "TZ",
-                "LD_LIBRARY_PATH",
-            } | set(secret_names)
-            environment = {
-                name: value for name, value in os.environ.items() if name in allowed_environment
-            }
-            environment.update(initial.child_environment())
-            environment["PYTHONUNBUFFERED"] = "1"
-            environment["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
             config = {
                 "grant_id": current.id,
                 "scope_id": current.scope_id,
@@ -237,34 +243,51 @@ class ResourceSupervisor:
                 # Stage budgets captured once at command authorization; the worker
                 # never re-reads mutable admin settings for a frozen thread.
                 "stage_budgets": self.ledger.command_budgets(current.scope_id, current.request_id),
+                "dispatch_protocol": "durable-v1",
+                "auth_version": current.auth_version,
             }
-            config_path = (
-                self.context.runtime_root / "state/accounts/worker-config" / (current.id + ".json")
+            immutable_json(self._config_path(current), config)
+            self.ledger.transition(current.id, "queued", reason="waiting_for_resources")
+
+    def _config_path(self, admission: Admission) -> Path:
+        return self.context.runtime_root / "state/accounts/worker-config" / (admission.id + ".json")
+
+    def _spawn(self, admission: Admission) -> Admission:
+        config_path = self._config_path(admission)
+        config = json.loads(config_path.read_text())
+        initial = self.context.with_execution_scope(
+            ExecutionScope(
+                scope_id=admission.scope_id,
+                actor_id=admission.actor_id,
+                grant_id=admission.id,
+                purpose="interactive",
+                max_gpu_devices=max(1, admission.gpu_slots),
+                max_candidates_per_job=admission.max_candidates,
             )
-            immutable_json(config_path, config)
-            log_path = initial.runtime_root / "logs/product" / (current.id + ".log")
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with log_path.open("ab") as log:
-                process = subprocess.Popen(
-                    [
-                        sys.executable,
-                        "-B",
-                        "-m",
-                        "easydesign.product.scoped_worker",
-                        str(config_path),
-                    ],
-                    cwd=self.context.root,
-                    env=environment,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=log,
-                    start_new_session=True,
-                )
-            start = process_identity(process.pid)
-            if start is None:
-                self.ledger.transition(current.id, "failed", reason="worker_start_failed")
-                raise ProductError("worker_start_failed", "执行进程未能启动", 503)
-            self.ledger.transition(current.id, "queued", worker_pid=process.pid, worker_start=start)
+        )
+        allowed = {"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "LD_LIBRARY_PATH"}
+        allowed.update(config["secret_names"])
+        environment = {name: value for name, value in os.environ.items() if name in allowed}
+        environment.update(initial.child_environment())
+        environment.update(PYTHONUNBUFFERED="1", CUDA_DEVICE_ORDER="PCI_BUS_ID")
+        log_path = initial.runtime_root / "logs/product" / (admission.id + ".log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as log:
+            process = subprocess.Popen(
+                [sys.executable, "-B", "-m", "easydesign.product.scoped_worker", str(config_path)],
+                cwd=self.context.root,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=log,
+                start_new_session=True,
+            )
+        start = process_identity(process.pid)
+        if start is None:
+            raise ProductError("worker_start_failed", "执行进程未能启动", 503)
+        return self.ledger.transition(
+            admission.id, "starting", worker_pid=process.pid, worker_start=start
+        )
 
     def _service(self, admission: Admission) -> tuple[WorkspaceContext, ProductService]:
         context = self.context.with_execution_scope(
@@ -278,7 +301,7 @@ class ResourceSupervisor:
         return context, ProductService(gateway, actor="account:" + admission.scientific_actor_id)
 
     def tick(self) -> None:
-        with self._lock:
+        with self._lock, self._dispatch_lock():
             # One GPU observation per poll is shared by every queued admission.
             memo: list[Any] = []
             for admission in self.ledger.active():
@@ -295,6 +318,20 @@ class ResourceSupervisor:
                     else:
                         raise
             self._reconcile_final_designs()
+
+    @contextmanager
+    def _dispatch_lock(self) -> Iterator[None]:
+        if self._controller_lock is not None:
+            yield
+            return
+        path = self.context.runtime_root / "state/accounts/supervisor.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a+b") as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ProductError("controller_busy", "该工作区已有资源控制器", 409) from None
+            yield
 
     def _final_designs_project_facts(
         self, scope_id: str, subject_id: str, project_id: str, authority_keys: set[str]
@@ -523,7 +560,142 @@ class ResourceSupervisor:
                     journal.close()
 
     def _tick_one(self, admission: Admission, memo: list[Any]) -> None:
+        if admission.dispatch_channel == "web_stream":
+            return  # Web streaming owns its lifecycle, not the scientific dispatcher.
+        _, service = self._service(admission)
+        # Serialize cross-store preparation/cancellation/retry with dispatch.
+        # A still-running HTTP prepare is never mistaken for an abandoned intent.
+        path = service.root / "commands" / (admission.request_id + ".lock")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return
+            admission = self.ledger.get(admission.id)
+            if admission.state in {"failed", "cancelled", "released"}:
+                return
+            self._reconcile_one(admission, memo)
+
+    def _reconcile_one(self, admission: Admission, memo: list[Any]) -> None:
+        if admission.dispatch_channel == "scoped_worker" and admission.state == "reserved":
+            config_path = self._config_path(admission)
+            if config_path.is_file():
+                config = json.loads(config_path.read_text())
+                if (
+                    any(
+                        config.get(key) != getattr(admission, key)
+                        for key in ("scope_id", "request_id", "actor_id", "scientific_actor_id")
+                    )
+                    or config.get("grant_id") != admission.id
+                    or config.get("dispatch_protocol") != "durable-v1"
+                ):
+                    raise ProductError("allocation_conflict", "执行配置身份不匹配", 409)
+                _, service = self._service(admission)
+                journal = service.journal()
+                try:
+                    record = journal.get(admission.request_id)
+                finally:
+                    journal.close()
+                if record is None or record["state"] != "accepted":
+                    self._finish_unstarted(admission, "request_not_ready")
+                    return
+                admission = self.ledger.transition(
+                    admission.id, "queued", reason="waiting_for_resources"
+                )
+            else:
+                if (
+                    self.runtime.accounts.clock() - admission.created_at
+                    > self.startup_timeout_seconds
+                ):
+                    self._finish_unstarted(admission, "submission_incomplete")
+                return
+        if admission.state == "starting" and admission.worker_pid is None:
+            _, service = self._service(admission)
+            receipt_path = service.root / "workers" / (admission.id + ".started.json")
+            if receipt_path.is_file():
+                receipt = json.loads(receipt_path.read_text())
+                if (
+                    receipt.get("grant_id") != admission.id
+                    or receipt.get("request_id") != admission.request_id
+                    or type(receipt.get("pid")) is not int
+                    or not isinstance(receipt.get("start"), str)
+                ):
+                    raise ProductError("allocation_conflict", "启动回执身份不匹配", 409)
+                if process_identity(receipt["pid"]) == receipt["start"]:
+                    try:
+                        command = (
+                            Path(f"/proc/{receipt['pid']}/cmdline").read_bytes().split(b"\0")[:-1]
+                        )
+                    except OSError:
+                        return  # Unobservable process identity is not dispatch authority.
+                    expected = [
+                        os.fsencode(sys.executable),
+                        b"-B",
+                        b"-m",
+                        b"easydesign.product.scoped_worker",
+                        os.fsencode(self._config_path(admission)),
+                    ]
+                    if command != expected:
+                        raise ProductError("allocation_conflict", "启动回执进程身份不匹配", 409)
+                    admission = self.ledger.transition(
+                        admission.id,
+                        "starting",
+                        worker_pid=receipt["pid"],
+                        worker_start=receipt["start"],
+                    )
+            if admission.worker_pid is None:
+                if (
+                    self.runtime.accounts.clock() - admission.updated_at
+                    > self.startup_timeout_seconds
+                ):
+                    self._finish_unstarted(admission, "worker_start_timeout")
+                return
+        pending = admission.worker_pid is None and admission.state == "queued"
+        if pending and self._config_path(admission).is_file():
+            if not self._authorized(admission):
+                self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
+                return
+            _, service = self._service(admission)
+            request_lock = service.root / "workers" / (admission.request_id + ".lock")
+            request_lock.parent.mkdir(parents=True, exist_ok=True)
+            with request_lock.open("a") as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return  # A legacy/orphan worker still owns this scientific request.
+                journal = service.journal()
+                try:
+                    record = journal.get(admission.request_id)
+                finally:
+                    journal.close()
+                if record is None or record["state"] != "accepted":
+                    self.ledger.transition(admission.id, "held", reason="request_state_uncertain")
+                    return
+            # No process is created merely to wait for a GPU. Allocation and
+            # dispatch retain the native device lease authority below.
+            if admission.kind == "scientific":
+                if not memo:
+                    try:
+                        memo.append(self.probe.snapshots())
+                    except Exception:
+                        return
+                if self.pool.allocate(admission, memo[0]) is None:
+                    return
+            try:
+                claimed = self.ledger.claim_start(
+                    admission.id, max_conversation_workers=self.max_conversation_workers
+                )
+            except ProductError:
+                self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
+                return
+            if claimed is None:
+                self.pool.release(admission.id)
+                return
+            admission = self._spawn(claimed)
         if admission.worker_pid is None:
+            if admission.state == "held":
+                return  # Quarantine is not an unpublished-worker timeout.
             if self.runtime.accounts.clock() - admission.created_at > 30:
                 self.ledger.transition(admission.id, "failed", reason="worker_not_published")
                 # A controller crash between spawning a worker and publishing its
@@ -587,27 +759,16 @@ class ResourceSupervisor:
                 )
                 if scope.grant_id != admission.id:
                     raise ProductError("allocation_conflict", "执行身份与资源记录不匹配", 409)
-                self.ledger.transition(admission.id, "running", devices=scope.devices)
+                if admission.dispatch_channel == "scoped_worker":
+                    try:
+                        self.ledger.start_execution(admission.id, scope.devices, lambda: None)
+                    except ProductError:
+                        self.ledger.transition(admission.id, "held", reason="authorization_revoked")
+                else:
+                    self.ledger.transition(admission.id, "running", devices=scope.devices)
             return
-        try:
-            actor = self.runtime.accounts.user(admission.actor_id)
-            self.runtime.accounts.scope(
-                actor,
-                admission.scope_id,
-                edit=True,
-                execute=admission.kind == "scientific",
-            )
-        except ProductError:
-            immutable_json(
-                self.pool.assignment_path(admission.id),
-                {
-                    "grant_id": admission.id,
-                    "cancelled": True,
-                    "code": "authorization_revoked",
-                },
-            )
-            self.pool.release(admission.id)
-            self.ledger.transition(admission.id, "cancelled", reason="authorization_revoked")
+        if not self._authorized(admission):
+            self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
             return
         devices: tuple[int, ...] = ()
         if admission.kind == "scientific":
@@ -632,14 +793,58 @@ class ResourceSupervisor:
         )
         context = self.context.with_execution_scope(scope)
         assert context.execution_scope_path is not None
-        immutable_json(
-            self.pool.assignment_path(admission.id),
-            {
-                "grant_id": admission.id,
-                "scope_file": str(context.execution_scope_path.relative_to(self.context.root)),
-            },
-        )
-        self.ledger.transition(admission.id, "running", devices=devices)
+        assignment = {
+            "grant_id": admission.id,
+            "scope_file": str(context.execution_scope_path.relative_to(self.context.root)),
+        }
+        if admission.dispatch_channel == "scoped_worker":
+            try:
+                self.ledger.start_execution(
+                    admission.id,
+                    devices,
+                    lambda: immutable_json(self.pool.assignment_path(admission.id), assignment),
+                )
+            except ProductError:
+                self._finish_unstarted(admission, "authorization_revoked", cancelled=True)
+        else:
+            immutable_json(self.pool.assignment_path(admission.id), assignment)
+            self.ledger.transition(admission.id, "running", devices=devices)
+
+    def _authorized(self, admission: Admission) -> bool:
+        try:
+            self.ledger.authorize_dispatch(admission)
+        except ProductError:
+            return False
+        return True
+
+    def _finish_unstarted(
+        self, admission: Admission, reason: str, *, cancelled: bool = False
+    ) -> None:
+        """Fence this attempt before freeing capacity; no execution assignment may exist."""
+        assignment = self.pool.assignment_path(admission.id)
+        if assignment.exists():
+            self.ledger.transition(
+                admission.id, "held", reason="assignment_requires_reconciliation"
+            )
+            return
+        self.ledger.transition(admission.id, "cancelled" if cancelled else "failed", reason=reason)
+        immutable_json(assignment, {"grant_id": admission.id, "cancelled": True, "code": reason})
+        self.pool.release(admission.id)
+        _, service = self._service(admission)
+        journal = service.journal()
+        try:
+            row = journal.get(admission.request_id)
+            if row is not None and row["state"] in {"accepted", "running"}:
+                journal.update(
+                    admission.request_id,
+                    "failed",
+                    {
+                        "code": reason,
+                        "message": "未启动科学计算；请核对权限或恢复该请求",
+                    },
+                )
+        finally:
+            journal.close()
 
     def _loop(self) -> None:
         while not self._stop.is_set():

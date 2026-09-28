@@ -123,6 +123,64 @@ def child_environment(path: Path) -> dict[str, str]:
     }
 
 
+class ScientificSpawnGuard:
+    """Append durable safety evidence before rejecting a scientific launch attempt."""
+
+    def __init__(self, path: Path, generation: int) -> None:
+        self.path, self.generation = path, generation
+        self.attempts = 0
+        self._record("ready")
+
+    def _record(self, event: str) -> None:
+        row = {"event": event, "pid": os.getpid(), "generation": self.generation}
+        data = (json.dumps(row) + "\n").encode()
+        descriptor = os.open(
+            self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600
+        )
+        try:
+            if os.fstat(descriptor).st_nlink != 1:
+                raise RuntimeError("Spawn evidence must have a unique owned path")
+            if os.write(descriptor, data) != len(data):
+                raise RuntimeError("Incomplete spawn guard evidence")
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def reject(self) -> None:
+        self._record("forbidden_spawn")
+        self.attempts += 1
+        raise RuntimeError("Scientific process creation is forbidden in capacity fixtures")
+
+
+def spawn_guard_summary(path: Path, owners: list[dict[str, int]]) -> dict[str, Any]:
+    """Missing or incomplete generations are unknown, never an inferred zero."""
+    unknown = {"verified": False, "attempts": None, "reason": "incomplete_spawn_guard_evidence"}
+    try:
+        expected = {(owner["pid"], owner["generation"]) for owner in owners}
+        if not expected or len(expected) != len(owners) or path.is_symlink():
+            return unknown
+        ready: set[tuple[int, int]] = set()
+        attempts = 0
+        for line in path.read_text().splitlines():
+            row = json.loads(line)
+            owner = (row["pid"], row["generation"])
+            if owner not in expected:
+                return unknown
+            if row["event"] == "ready":
+                if owner in ready:
+                    return unknown
+                ready.add(owner)
+            elif row["event"] == "forbidden_spawn" and owner in ready:
+                attempts += 1
+            else:
+                return unknown
+        if ready != expected:
+            return unknown
+        return {"verified": True, "attempts": attempts, "generations": len(ready)}
+    except (OSError, ValueError, KeyError, TypeError):
+        return unknown
+
+
 def serve_fixture(path: Path) -> None:
     """Owned child process, bound ONLY to loopback with no executable GPU slots."""
     from easydesign.product.account_server import MultiUserServer
@@ -137,6 +195,7 @@ def serve_fixture(path: Path) -> None:
 
     path = fixture_path(path)
     spec = json.loads((path / "spec.json").read_text())
+    guard = ScientificSpawnGuard(path / "scientific-spawn-guard.jsonl", spec["server_generation"])
     config = CapacityConfig.model_validate(spec["capacity"])
     config.validate_limits()
     context = WorkspaceContext.from_root(path / "workspace")
@@ -162,11 +221,8 @@ def serve_fixture(path: Path) -> None:
             return ()
 
     class NoSpawnSupervisor(ResourceSupervisor):
-        forbidden_spawns = 0
-
         def _spawn(self, admission: Any) -> Any:
-            self.forbidden_spawns += 1
-            raise RuntimeError("Scientific process creation is forbidden in capacity fixtures")
+            guard.reject()
 
     supervisor = NoSpawnSupervisor(runtime, probe=BusyProbe())
     # Reuse the real bounded subprocess transport, with an explicit local stub.
@@ -208,7 +264,7 @@ def serve_fixture(path: Path) -> None:
                             if item.dispatch_channel == "scoped_worker"
                         )
                     ),
-                    "forbidden_scientific_spawns": supervisor.forbidden_spawns,
+                    "forbidden_scientific_spawns": guard.attempts,
                 }
                 evidence.write(json.dumps(row) + "\n")
                 evidence.flush()
@@ -242,6 +298,9 @@ class FixtureProcess:
 
     def start(self) -> None:
         self.generation += 1
+        spec = json.loads((self.path / "spec.json").read_text())
+        spec["server_generation"] = self.generation
+        write_json(self.path / "spec.json", spec)
         ready = self.path / "ready.json"
         if ready.exists():
             ready.rename(self.path / f"ready-{self.generation - 1}.json")
@@ -255,7 +314,11 @@ class FixtureProcess:
             start_new_session=True,
         )
         self.owned_process_groups.append(
-            {"pid": self.process.pid, "pgid": os.getpgid(self.process.pid)}
+            {
+                "pid": self.process.pid,
+                "pgid": os.getpgid(self.process.pid),
+                "generation": self.generation,
+            }
         )
         write_json(self.path / "owned-process-groups.json", self.owned_process_groups)
         deadline = time.monotonic() + 30
@@ -977,6 +1040,12 @@ def run_stage(
         # Allow one observation after final completion; excluded from request timings.
         time.sleep(0.6)
         state = json.loads((path / "server-state.json").read_text())
+        # Freeze every owned generation before reading safety evidence; shutdown
+        # must not leave a window for a later attempt after the final audit read.
+        server.stop()
+        spawn_evidence = spawn_guard_summary(
+            path / "scientific-spawn-guard.jsonl", server.owned_process_groups
+        )
         login_starts = [
             row["started_at"]
             for row in metrics.rows
@@ -1022,7 +1091,8 @@ def run_stage(
                 "scientific_completed": 0,
             },
             "provider": state["provider"],
-            "forbidden_scientific_spawns": state["forbidden_scientific_spawns"],
+            "forbidden_scientific_spawns": spawn_evidence["attempts"],
+            "scientific_spawn_guard": spawn_evidence,
             "host": {
                 "logical_cpus": os.cpu_count(),
                 "machine": os.uname().machine,
@@ -1077,7 +1147,11 @@ def acceptance_passed(
     boundaries: bool = False,
 ) -> bool:
     passed = (
-        (report["slow_ai"]["passed"] and all(flow.get("pre_ai_ok") for flow in report["flows"]))
+        (
+            report["slow_ai"]["passed"]
+            and report["summary"]["latency_targets_pass"]
+            and all(flow.get("pre_ai_ok") for flow in report["flows"])
+        )
         if slow
         else report["summary"]["goal_pass"]
     )

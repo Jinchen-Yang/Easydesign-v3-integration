@@ -84,7 +84,7 @@ def test_persisted_gpu_request_admission_must_meet_the_one_second_p95_target():
 
 def test_acceptance_fails_closed_if_any_scientific_spawn_was_attempted():
     report = {
-        "summary": {"goal_pass": True},
+        "summary": {"goal_pass": True, "latency_targets_pass": True},
         "slow_ai": {"passed": True},
         "flows": [{"pre_ai_ok": True}],
         "forbidden_scientific_spawns": 0,
@@ -98,6 +98,68 @@ def test_acceptance_fails_closed_if_any_scientific_spawn_was_attempted():
             )
             is False
         )
+        assert (
+            capacity_smoke.acceptance_passed(
+                {**report, "forbidden_scientific_spawns": None},
+                slow=slow,
+            )
+            is False
+        )
+
+
+def test_slow_acceptance_requires_initial_login_and_admission_latency_without_ai_completion():
+    report = {
+        "summary": {"goal_pass": False, "latency_targets_pass": True},
+        "slow_ai": {"passed": True},
+        "flows": [{"pre_ai_ok": True}],
+        "forbidden_scientific_spawns": 0,
+    }
+    assert capacity_smoke.acceptance_passed(report, slow=True) is True
+    report["summary"]["latency_targets_pass"] = False
+    assert capacity_smoke.acceptance_passed(report, slow=True) is False
+
+
+def test_spawn_guard_evidence_survives_owner_crash_and_never_assumes_missing_means_zero(tmp_path):
+    evidence = tmp_path / "spawn-guard.jsonl"
+    code = (
+        "import os, sys\nfrom pathlib import Path\n"
+        "from scripts.capacity_smoke import ScientificSpawnGuard\n"
+        "guard = ScientificSpawnGuard(Path(sys.argv[1]), int(sys.argv[2]))\n"
+        "if sys.argv[2] == '1':\n"
+        "    try: guard.reject()\n"
+        "    except RuntimeError: os._exit(7)\n"
+    )
+    owners = []
+    for generation in (1, 2):
+        child = subprocess.Popen(
+            [sys.executable, "-c", code, str(evidence), str(generation)],
+            cwd=capacity_smoke.ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env={"PATH": os.defpath, "PYTHONPATH": str(capacity_smoke.ROOT / "src")},
+        )
+        try:
+            assert child.wait(timeout=5) == (7 if generation == 1 else 0)
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=3)
+        owners.append({"pid": child.pid, "generation": generation})
+    result = capacity_smoke.spawn_guard_summary(evidence, owners)
+    assert result["verified"] is True
+    assert result["attempts"] == 1  # Generation 2 is clean; generation 1 must not disappear.
+    incomplete = capacity_smoke.spawn_guard_summary(
+        evidence,
+        owners + [{"pid": 99999999, "generation": 3}],
+    )
+    assert incomplete["verified"] is False
+    assert incomplete["attempts"] is None
+    assert (
+        capacity_smoke.spawn_guard_summary(tmp_path / "missing.jsonl", owners)["attempts"] is None
+    )
+    with evidence.open("a") as stream:
+        stream.write("incomplete trailing record")
+    assert capacity_smoke.spawn_guard_summary(evidence, owners)["attempts"] is None
 
 
 def test_two_users_complete_real_http_with_gpu_waiting_and_ai_stub():
@@ -112,6 +174,7 @@ def test_two_users_complete_real_http_with_gpu_waiting_and_ai_stub():
     assert report["gpu"]["scientific_completed"] == 0
     assert report["provider"]["dispatched_requests"] == 2
     assert report["forbidden_scientific_spawns"] == 0
+    assert report["scientific_spawn_guard"]["verified"] is True
     assert report["summary"]["operations"]["snapshot"]["succeeded"] == 2
     assert report["password_iterations"] == 600000
     assert report["production_ai_defaults"]["requests_per_minute"] == 20
@@ -152,6 +215,7 @@ def test_owned_restart_preserves_gpu_queue_and_does_not_replay_paid_dispatch():
     assert report["summary"]["full_flow_completed"] == 2
     assert report["fault_summary"]["operations"]["ai"]["succeeded"] == 0
     assert len(report["owned_process_groups"]) == 2
+    assert report["scientific_spawn_guard"]["generations"] == 2
     assert all(row["pid"] == row["pgid"] for row in report["owned_process_groups"])
 
 

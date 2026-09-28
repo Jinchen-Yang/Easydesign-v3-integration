@@ -85,7 +85,9 @@ requests are not retried. Cancelled streams are never counted as completed full 
 This scenario exposes interaction with the 384-connection HTTP cap; it does not assume
 that 84 nominal remaining connections guarantee acceptable login/read behavior.
 Its mixed-workload latency targets must also pass; successful-but-slow responses do
-not produce a passing exit code. Any attempted scientific-process spawn fails final
+not produce a passing exit code. The initial pre-AI login/read/admission latency
+targets must pass too; intentional AI cancellation waives only model completion,
+not these earlier latency targets. Any attempted scientific-process spawn fails final
 acceptance in every scenario, even if the safety guard prevented execution.
 
 Fault checks kill only a new session/process group created by this tool, including its
@@ -106,6 +108,12 @@ new private fixture database. Evidence is not automatically deleted.
 Resource peaks are **observed peaks sampled every 0.5 seconds**, not absolute maxima.
 Child counts include children created by all server threads, deduplicated across the
 thread group; short-lived processes between samples can still be missed.
+Scientific-spawn safety is not inferred from sampling or the last restarted process.
+Each service generation durably appends its guard-ready record and every rejected
+launch attempt to an independent, append-only fixture journal. The final audit runs
+after stopping the owned service and requires evidence for every PID/generation.
+Missing, malformed or incomplete evidence is reported as unknown (`null`), never zero;
+acceptance requires an explicitly verified zero across all generations.
 
 Source edits are verified via the official integration verifier. Only tiny local
 debugging runs are appropriate while development/regression is running. Formal

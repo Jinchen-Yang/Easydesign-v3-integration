@@ -20,6 +20,41 @@ export interface ChatStatus {
   retry_after?: number;
   code?: string;
 }
+export type ChatRetryAction = 'same_request' | 'new_request';
+export class ChatStreamError extends Error {
+  constructor(
+    code: string,
+    readonly accepted: boolean,
+  ) {
+    super(code);
+  }
+}
+
+/** A queried, terminal no-dispatch result is required before offering a new ID. */
+export function chatRetryAction(
+  error: string,
+  accepted: boolean | null,
+  requestId: string,
+  status: ChatStatus | 'not_found' | null,
+): ChatRetryAction | null {
+  if (
+    accepted === false &&
+    status === 'not_found' &&
+    ['queue_full', 'user_limit', 'rate_limit'].includes(error)
+  )
+    return 'same_request';
+  if (
+    ['queue_timeout', 'rate_limit'].includes(error) &&
+    status &&
+    status !== 'not_found' &&
+    status.request_id === requestId &&
+    status.state === 'failed' &&
+    status.dispatched === false &&
+    ['queue_timeout', 'rate_limit'].includes(status.code || '')
+  )
+    return 'new_request';
+  return null;
+}
 export type ChatEvent =
   | { type: 'delta'; text: string }
   | { type: 'suggestions'; questions: string[] }
@@ -105,9 +140,9 @@ export async function streamChat(
         : typeof body.error?.code === 'string'
           ? body.error.code
           : 'unavailable';
-    throw new Error(code);
+    throw new ChatStreamError(code, false);
   }
-  if (!response.body) throw new Error('unavailable');
+  if (!response.body) throw new ChatStreamError('unavailable', true);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let pending = '';
@@ -120,13 +155,13 @@ export async function streamChat(
       for (const line of lines) {
         if (!line.trim()) continue;
         const event = JSON.parse(line) as ChatEvent;
-        if (event.type === 'error') throw new Error(event.code);
+        if (event.type === 'error') throw new ChatStreamError(event.code, true);
         if (event.type === 'done') return;
         if (event.type === 'status' && event.request_id === requestId) options.onStatus?.(event);
         if (event.type === 'delta') delta(event.text);
         if (event.type === 'suggestions') suggestions(validQuestions(event.questions));
       }
-      if (done) throw new Error('interrupted');
+      if (done) throw new ChatStreamError('interrupted', true);
     }
   } finally {
     await reader.cancel().catch(() => {});
@@ -134,10 +169,21 @@ export async function streamChat(
   }
 }
 
-export async function chatRequestStatus(requestId: string, transport: typeof fetch = fetch) {
+export async function chatRequestStatus(
+  requestId: string,
+  transport: typeof fetch = fetch,
+): Promise<ChatStatus | 'not_found'> {
   const response = await transport('/api/v1/rabbit/requests/' + encodeURIComponent(requestId));
   const value = await response.json();
+  if (response.status === 404 && value?.error?.code === 'not_found') return 'not_found';
   if (!response.ok) throw new Error(value.error?.code || 'unavailable');
+  if (
+    !value ||
+    value.request_id !== requestId ||
+    typeof value.dispatched !== 'boolean' ||
+    !['queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled'].includes(value.state)
+  )
+    throw new Error('invalid_status');
   return value as ChatStatus;
 }
 

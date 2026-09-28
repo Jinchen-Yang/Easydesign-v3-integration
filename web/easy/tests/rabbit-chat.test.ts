@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { createServer } from 'node:http';
 import { chatMiddleware, chatSshArgs, type ChatProvider } from '../server/rabbit-chat';
-import { parseChatRequest, streamChat, validQuestions, type ChatEvent } from '../src/easy/chat';
+import {
+  chatRequestStatus,
+  chatRetryAction,
+  parseChatRequest,
+  streamChat,
+  validQuestions,
+  type ChatEvent,
+} from '../src/easy/chat';
 
 const request = {
   locale: 'zh' as const,
@@ -33,6 +40,94 @@ const post = (url: string, body: unknown = request, headers: Record<string, stri
     body: JSON.stringify(body),
   });
 describe('rabbit chat boundary', () => {
+  it('only permits an explicit new request after status confirms a terminal never-dispatched timeout', () => {
+    const status = {
+      request_id: 'original-id',
+      state: 'failed',
+      dispatched: false,
+      code: 'queue_timeout',
+    };
+    expect(chatRetryAction('queue_timeout', true, 'original-id', null)).toBeNull();
+    expect(chatRetryAction('queue_timeout', true, 'original-id', status)).toBe('new_request');
+    expect(
+      chatRetryAction('queue_timeout', true, 'original-id', { ...status, dispatched: true }),
+    ).toBeNull();
+    expect(
+      chatRetryAction('queue_timeout', true, 'original-id', { ...status, state: 'queued' }),
+    ).toBeNull();
+    expect(
+      chatRetryAction('queue_timeout', true, 'original-id', { ...status, request_id: 'other-id' }),
+    ).toBeNull();
+    expect(
+      chatRetryAction('queue_timeout', true, 'original-id', { ...status, dispatched: undefined }),
+    ).toBeNull();
+    expect(chatRetryAction('outcome_unknown', true, 'original-id', status)).toBeNull();
+    expect(chatRetryAction('credentials', true, 'original-id', status)).toBeNull();
+  });
+  it('reuses an ID only for a known pre-admission rejection and a confirmed missing request', async () => {
+    await expect(
+      streamChat(
+        request,
+        new AbortController().signal,
+        () => {},
+        () => {},
+        async () =>
+          new Response(JSON.stringify({ error: { code: 'queue_full' } }), { status: 429 }),
+      ),
+    ).rejects.toMatchObject({ message: 'queue_full', accepted: false });
+    await expect(
+      streamChat(
+        request,
+        new AbortController().signal,
+        () => {},
+        () => {},
+        async () => new Response('{"type":"error","code":"queue_timeout"}\n'),
+      ),
+    ).rejects.toMatchObject({ message: 'queue_timeout', accepted: true });
+    expect(chatRetryAction('queue_full', false, 'original-id', 'not_found')).toBe('same_request');
+    expect(chatRetryAction('rate_limit', false, 'original-id', 'not_found')).toBe('same_request');
+    expect(chatRetryAction('queue_full', true, 'original-id', 'not_found')).toBeNull();
+    expect(chatRetryAction('queue_full', null, 'original-id', 'not_found')).toBeNull();
+    expect(chatRetryAction('queue_full', false, 'original-id', null)).toBeNull();
+    expect(chatRetryAction('outcome_unknown', false, 'original-id', 'not_found')).toBeNull();
+    expect(chatRetryAction('credentials', false, 'original-id', 'not_found')).toBeNull();
+  });
+  it('requires authoritative matching status and distinguishes 404 from failed or forbidden lookups', async () => {
+    const status = {
+      request_id: 'original-id',
+      state: 'failed',
+      dispatched: false,
+      code: 'queue_timeout',
+    };
+    await expect(
+      chatRequestStatus('original-id', async () => Response.json(status)),
+    ).resolves.toEqual(status);
+    for (const value of [
+      { ...status, request_id: 'other' },
+      { ...status, dispatched: undefined },
+      { ...status, dispatched: 'false' },
+      { ...status, state: 'anything' },
+    ]) {
+      await expect(
+        chatRequestStatus('original-id', async () => Response.json(value)),
+      ).rejects.toThrow('invalid_status');
+    }
+    await expect(
+      chatRequestStatus('original-id', async () =>
+        Response.json({ error: { code: 'not_found' } }, { status: 404 }),
+      ),
+    ).resolves.toBe('not_found');
+    await expect(
+      chatRequestStatus('original-id', async () =>
+        Response.json({ error: { code: 'not_found' } }, { status: 403 }),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      chatRequestStatus('original-id', async () => {
+        throw new Error('network');
+      }),
+    ).rejects.toThrow('network');
+  });
   it('keeps the supplied request identity and surfaces queue state without resubmitting', async () => {
     const sent: string[] = [];
     const states: string[] = [];

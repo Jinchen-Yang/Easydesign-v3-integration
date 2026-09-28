@@ -55,6 +55,8 @@ test('capacity: unknown AI outcome retains identity, does not auto retry, and ex
   expect(ids).toHaveLength(1);
   await panel.getByRole('button', { name: '查看请求状态' }).click();
   await expect(panel.getByText(`请求状态：failed · ${ids[0]}`)).toBeVisible();
+  await expect(panel.getByRole('button', { name: /重新排队|重试提交/ })).toHaveCount(0);
+  await expect(panel.getByText('该请求已经派发，不会重放；再次提问可能再次计费。')).toBeVisible();
   expect(ids).toHaveLength(1);
 });
 
@@ -93,6 +95,115 @@ test('capacity: explicit stop cancels the same authenticated request once', asyn
   await panel.getByRole('button', { name: '停止回复' }).click();
   await expect.poll(() => cancelled).toBe(1);
   await expect(panel.getByRole('button', { name: '查看请求状态' })).toBeVisible();
+});
+
+test('capacity: timed-out queue explicitly requeues the original payload with a new identity after status confirmation', async ({
+  page,
+}) => {
+  await install(page);
+  const sent: { id: string; body: unknown }[] = [];
+  await page.route('**/scopes/user-a/rabbit/chat', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { configured: true } });
+    sent.push({
+      id: route.request().headers()['x-request-id'],
+      body: route.request().postDataJSON(),
+    });
+    return route.fulfill({
+      contentType: 'application/x-ndjson',
+      body:
+        sent.length === 1
+          ? '{"type":"error","code":"queue_timeout"}\n'
+          : '{"type":"delta","text":"Confirmed fresh requeue reply"}\n{"type":"done"}\n',
+    });
+  });
+  await page.route('**/scopes/user-a/rabbit/requests/*', (route) =>
+    route.fulfill({
+      json: {
+        request_id: sent[0].id,
+        state: 'failed',
+        dispatched: false,
+        code: 'queue_timeout',
+      },
+    }),
+  );
+  await page.goto('/easy/?scope=user-a');
+  await page.getByRole('button', { name: '和豆豆聊天', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: '和豆豆聊天' });
+  await panel.getByRole('textbox').fill('Original timed-out question');
+  await panel.getByRole('button', { name: '发送消息' }).click();
+  await expect(panel.getByText(/等待超时/)).toBeVisible();
+  await expect(panel.getByRole('button', { name: '重试回复' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: '重新排队（新请求）' })).toHaveCount(0);
+  await panel.getByRole('button', { name: '查看请求状态' }).click();
+  await panel.getByRole('button', { name: '重新排队（新请求）' }).click();
+  await expect(panel.getByText('Confirmed fresh requeue reply')).toBeVisible();
+  expect(sent).toHaveLength(2);
+  expect(sent[1].id).not.toBe(sent[0].id);
+  expect(sent[1].body).toEqual(sent[0].body);
+});
+
+test('capacity: pre-admission rejection requires a real 404 before retrying the same identity', async ({
+  page,
+}) => {
+  await install(page);
+  const sent: { id: string; body: unknown }[] = [];
+  let queries = 0;
+  await page.route('**/scopes/user-a/rabbit/chat', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { configured: true } });
+    sent.push({
+      id: route.request().headers()['x-request-id'],
+      body: route.request().postDataJSON(),
+    });
+    return sent.length === 1
+      ? route.fulfill({ status: 429, json: { error: { code: 'queue_full' } } })
+      : route.fulfill({
+          contentType: 'application/x-ndjson',
+          body: '{"type":"delta","text":"Accepted original request"}\n{"type":"done"}\n',
+        });
+  });
+  await page.route('**/scopes/user-a/rabbit/requests/*', (route) => {
+    queries++;
+    return route.fulfill({
+      status: queries === 1 ? 403 : 404,
+      json: { error: { code: 'not_found' } },
+    });
+  });
+  await page.goto('/easy/?scope=user-a');
+  await page.getByRole('button', { name: '和豆豆聊天', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: '和豆豆聊天' });
+  await panel.getByRole('textbox').fill('Pre-admission question');
+  await panel.getByRole('button', { name: '发送消息' }).click();
+  await expect(panel.getByText(/对话队列已满/)).toBeVisible();
+  await expect(panel.getByRole('button', { name: /重试回复|重试提交|重新排队/ })).toHaveCount(0);
+  await panel.getByRole('button', { name: '查看请求状态' }).click();
+  await expect(panel.getByText(/状态查询失败/)).toBeVisible();
+  await expect(panel.getByRole('button', { name: /重试提交|重新排队/ })).toHaveCount(0);
+  await panel.getByRole('button', { name: '查看请求状态' }).click();
+  await panel.getByRole('button', { name: '重试提交（原请求）' }).click();
+  await expect(panel.getByText('Accepted original request')).toBeVisible();
+  expect(sent).toHaveLength(2);
+  expect(sent[1]).toEqual(sent[0]);
+});
+
+test('capacity: credentials failure offers configuration guidance, not an invalid retry', async ({
+  page,
+}) => {
+  await install(page);
+  await page.route('**/scopes/user-a/rabbit/chat', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ json: { configured: true } })
+      : route.fulfill({
+          contentType: 'application/x-ndjson',
+          body: '{"type":"error","code":"credentials"}\n',
+        }),
+  );
+  await page.goto('/easy/?scope=user-a');
+  await page.getByRole('button', { name: '和豆豆聊天', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: '和豆豆聊天' });
+  await panel.getByRole('textbox').fill('Configuration issue');
+  await panel.getByRole('button', { name: '发送消息' }).click();
+  await expect(panel.getByText(/模型密钥|server configuration/)).toBeVisible();
+  await expect(panel.getByRole('button', { name: /重试回复|重试提交|重新排队/ })).toHaveCount(0);
 });
 
 test('capacity: GPU queue survives a fresh page and scoped cancellation refreshes it', async ({
@@ -163,14 +274,35 @@ test('capacity: GPU queue survives a fresh page and scoped cancellation refreshe
   await page.reload();
   await expect(page.getByRole('heading', { name: '排队已取消' })).toBeVisible();
   await expect(page.getByText('Agent 正在工作')).toHaveCount(0);
-  await page.route('**/workbench', route => {
+  await page.route('**/workbench', (route) => {
     const value = workbenchSnapshot();
-    return route.fulfill({json: {...value, decision: null, project: {...value.project, status: 'running'}, requests: [
-      {id: 'queue-1', project: 'proj-1', state: 'failed', result: {code: 'queue_cancelled'}, created: 1, updated: 2},
-      {id: 'new-request', project: 'proj-1', state: 'running', result: null, created: 3, updated: 3},
-    ]}});
+    return route.fulfill({
+      json: {
+        ...value,
+        decision: null,
+        project: { ...value.project, status: 'running' },
+        requests: [
+          {
+            id: 'queue-1',
+            project: 'proj-1',
+            state: 'failed',
+            result: { code: 'queue_cancelled' },
+            created: 1,
+            updated: 2,
+          },
+          {
+            id: 'new-request',
+            project: 'proj-1',
+            state: 'running',
+            result: null,
+            created: 3,
+            updated: 3,
+          },
+        ],
+      },
+    });
   });
   await page.reload();
   await expect(page.getByText('Agent 正在工作')).toBeVisible();
-  await expect(page.getByRole('heading', {name: '排队已取消'})).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '排队已取消' })).toHaveCount(0);
 });

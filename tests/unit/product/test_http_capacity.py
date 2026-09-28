@@ -350,6 +350,90 @@ def test_full_computational_queue_does_not_reject_web_chat_and_queued_chat_can_c
         assert len(calls) == 1
 
 
+def test_timed_out_chat_needs_explicit_new_identity_and_dispatches_original_payload_once(tmp_path):
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def provider(payload):
+        calls.append(payload)
+        if payload["messages"][-1]["content"] == "blocking synthetic request":
+            started.set()
+            assert release.wait(timeout=8)
+        yield {"type": "delta", "text": "synthetic reply"}
+        yield {"type": "done"}
+
+    rabbit = RabbitChatService(
+        provider,
+        limits=RabbitCapacityLimits(max_active=1, queue_timeout_seconds=0.2),
+        ledger_path=tmp_path / "chat.sqlite",
+    )
+    with site(tmp_path, rabbit_chat=rabbit) as (_server, client, admin, _context):
+        login = client.post(
+            "/api/v1/accounts/login", json={"username": "admin", "password": PASSWORD}
+        )
+        client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
+        base = f"/api/v1/scopes/{admin.id}/rabbit"
+        payload = {
+            "locale": "zh",
+            "messages": [{"role": "user", "content": "original timeout question"}],
+            "context": {"stage": "Idle", "status": "idle", "goal": "fixture"},
+        }
+
+        def occupy():
+            with httpx.Client(
+                base_url=client.base_url,
+                headers=client.headers,
+                cookies=client.cookies,
+                trust_env=False,
+                timeout=10,
+            ) as writer:
+                result = writer.post(
+                    base + "/chat",
+                    json={
+                        **payload,
+                        "messages": [{"role": "user", "content": "blocking synthetic request"}],
+                    },
+                    headers={"X-Request-ID": "http-timeout-blocker"},
+                )
+                assert result.status_code == 200
+
+        blocker = threading.Thread(target=occupy)
+        blocker.start()
+        try:
+            assert started.wait(timeout=3)
+            old_id = "http-timeout-original"
+            response = client.post(base + "/chat", json=payload, headers={"X-Request-ID": old_id})
+            assert response.status_code == 200
+            assert json.loads(response.text.splitlines()[-1]) == {
+                "type": "error",
+                "code": "queue_timeout",
+            }
+            status = client.get(f"{base}/requests/{old_id}")
+            assert status.json() == {
+                "request_id": old_id,
+                "state": "failed",
+                "dispatched": False,
+                "code": "queue_timeout",
+            }
+            assert (
+                client.post(
+                    base + "/chat", json=payload, headers={"X-Request-ID": old_id}
+                ).status_code
+                == 409
+            )
+        finally:
+            release.set()
+            blocker.join(timeout=5)
+        assert not blocker.is_alive()
+        new_id = "http-timeout-explicit-new"
+        response = client.post(base + "/chat", json=payload, headers={"X-Request-ID": new_id})
+        assert response.status_code == 200
+        assert json.loads(response.text.splitlines()[-1])["type"] == "done"
+        assert client.get(f"{base}/requests/{new_id}").json()["dispatched"] is True
+        assert [call for call in calls if call["messages"] == payload["messages"]] == [payload]
+        assert len(calls) == 2  # One unrelated blocker, one explicit new request.
+
+
 @pytest.mark.parametrize("revocation", ["logout", "suspend", "password_reset", "team_removal"])
 def test_queued_chat_rechecks_live_session_and_scope_before_provider_dispatch(tmp_path, revocation):
     started, release = threading.Event(), threading.Event()

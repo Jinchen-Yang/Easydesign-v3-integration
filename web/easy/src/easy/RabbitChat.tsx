@@ -5,10 +5,13 @@ import {
   streamChat,
   chatRequestStatus,
   cancelChatRequest,
+  ChatStreamError,
+  chatRetryAction,
   type ChatContext,
   type ChatMessage,
   type ChatRequest,
   type ChatStatus,
+  type ChatRetryAction,
 } from './chat';
 import { translate, type Locale } from './i18n';
 import { parseRabbitInlineMarkdown } from './rabbitMarkdown';
@@ -45,6 +48,10 @@ export function RabbitChat({
   const [retryText, setRetryText] = useState('');
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [requestStatus, setRequestStatus] = useState<ChatStatus | null>(null);
+  const [retryEvidence, setRetryEvidence] = useState<ChatStatus | 'not_found' | null>(null);
+  const [acceptedFailure, setAcceptedFailure] = useState<boolean | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [statusFailed, setStatusFailed] = useState(false);
   const lastRequest = useRef<{ id: string; payload: ChatRequest } | null>(null);
   const controller = useRef<AbortController | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -83,6 +90,10 @@ export function RabbitChat({
       setRetryText('');
       setBusy(false);
       setRequestStatus(null);
+      setRetryEvidence(null);
+      setAcceptedFailure(null);
+      setCheckingStatus(false);
+      setStatusFailed(false);
       lastRequest.current = null;
     },
     [transport],
@@ -91,9 +102,13 @@ export function RabbitChat({
     if (log.current) log.current.scrollTop = log.current.scrollHeight;
   }, [messages, suggestions, open, error]);
 
-  async function send(text = input, retrying = false) {
+  const retryAction = lastRequest.current
+    ? chatRetryAction(error, acceptedFailure, lastRequest.current.id, retryEvidence)
+    : null;
+  async function send(text = input, retrying: ChatRetryAction | false = false) {
     const content = text.trim();
     if (!content || content.length > 4000 || controller.current || readOnly) return;
+    if (retrying && account && retrying !== retryAction) return;
     const id = ++sequence.current;
     let history = messages
       .filter((m) => m.complete)
@@ -118,6 +133,10 @@ export function RabbitChat({
     setInput('');
     setError('');
     setRetryText('');
+    setRetryEvidence(null);
+    setAcceptedFailure(null);
+    setCheckingStatus(false);
+    setStatusFailed(false);
     setSuggestions([]);
     setBusy(true);
     onActivity('waiting');
@@ -125,7 +144,10 @@ export function RabbitChat({
     controller.current = abort;
     const submitted =
       retrying && lastRequest.current
-        ? lastRequest.current
+        ? {
+            id: retrying === 'new_request' ? crypto.randomUUID() : lastRequest.current.id,
+            payload: lastRequest.current.payload,
+          }
         : { id: crypto.randomUUID(), payload: { locale, context, messages: history } };
     lastRequest.current = submitted;
     setRequestStatus({ request_id: submitted.id, state: 'submitting' });
@@ -184,6 +206,7 @@ export function RabbitChat({
         );
       });
       setRetryText(content);
+      setAcceptedFailure(failure instanceof ChatStreamError ? failure.accepted : null);
       setError(
         [
           'stopped',
@@ -214,6 +237,24 @@ export function RabbitChat({
       }
     }
   }
+  async function checkStatus() {
+    const identity = lastRequest.current?.id;
+    const id = sequence.current;
+    if (!identity || checkingStatus) return;
+    setCheckingStatus(true);
+    setStatusFailed(false);
+    setRetryEvidence(null);
+    try {
+      const status = await chatRequestStatus(identity, transport);
+      if (sequence.current !== id || lastRequest.current?.id !== identity) return;
+      setRetryEvidence(status);
+      if (status !== 'not_found') setRequestStatus(status);
+    } catch {
+      if (sequence.current === id && lastRequest.current?.id === identity) setStatusFailed(true);
+    } finally {
+      if (sequence.current === id && lastRequest.current?.id === identity) setCheckingStatus(false);
+    }
+  }
   function clear() {
     controller.current?.abort('new-chat');
     controller.current = null;
@@ -224,6 +265,10 @@ export function RabbitChat({
     setRetryText('');
     setBusy(false);
     setRequestStatus(null);
+    setRetryEvidence(null);
+    setAcceptedFailure(null);
+    setCheckingStatus(false);
+    setStatusFailed(false);
     lastRequest.current = null;
     onActivity('idle');
     field.current?.focus();
@@ -355,31 +400,41 @@ export function RabbitChat({
           <div className="rabbit-chat-error" role="status">
             <p>{t(errors[error])}</p>
             {retryText &&
-              !(account && ['stopped', 'paused'].includes(error)) &&
+              !account &&
               ![
                 'not_configured',
+                'credentials',
                 'outcome_unknown',
                 'request_already_processed',
                 'cancelled',
                 'authorization_revoked',
               ].includes(error) && (
-                <button onClick={() => void send(retryText, true)}>{t('Retry reply')}</button>
+                <button onClick={() => void send(retryText, 'same_request')}>
+                  {t('Retry reply')}
+                </button>
               )}
-            {account && lastRequest.current && (
+            {account && retryText && retryAction && (
               <button
-                onClick={() => {
-                  const identity = lastRequest.current?.id;
-                  if (!identity) return;
-                  void chatRequestStatus(identity, transport)
-                    .then((status) => {
-                      if (lastRequest.current?.id !== identity) return;
-                      setRequestStatus(status);
-                    })
-                    .catch(() => setError('outcome_unknown'));
-                }}
+                disabled={readOnly || checkingStatus}
+                onClick={() => void send(retryText, retryAction)}
               >
+                {retryAction === 'new_request' ? '重新排队（新请求）' : '重试提交（原请求）'}
+              </button>
+            )}
+            {account && lastRequest.current && (
+              <button disabled={checkingStatus} onClick={() => void checkStatus()}>
                 查看请求状态
               </button>
+            )}
+            {statusFailed && <p>状态查询失败，尚不能确认是否派发；请稍后再查，不会重新调用。</p>}
+            {retryEvidence === 'not_found' && <p>未找到原请求记录。</p>}
+            {retryEvidence && retryEvidence !== 'not_found' && retryEvidence.dispatched && (
+              <p>该请求已经派发，不会重放；再次提问可能再次计费。</p>
+            )}
+            {retryAction === 'new_request' && (
+              <p>
+                已确认原请求未派发。重新排队将使用新请求 ID 提交原问题，成功派发后会计入调用额度。
+              </p>
             )}
             {requestStatus && !busy && (
               <p>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EasyProductAdapter } from '../src/easy/EasyProductAdapter';
+import { approvedTransitionPhase, EasyProductAdapter } from '../src/easy/EasyProductAdapter';
 import { emptyInput, type EasyInput } from '../src/easy/contracts';
 import type { LabOrderView, ProductSnapshot } from '../src/easy/product-contracts';
 
@@ -230,6 +230,70 @@ describe('Easy live adapter preserves Product API authority', () => {
     });
     resolve(Response.json({ id: 'accepted', project: project.id, state: 'succeeded' }));
     await first;
+  });
+
+  it('moves Gate 4 presentation to Scale immediately while approval is processed', async () => {
+    let resolve!: (response: Response) => void;
+    const current = snapshot();
+    current.project = { ...project, phase: 'pilot', status: 'awaiting_scientist' };
+    current.decision = {
+      ...current.decision!,
+      gate: 4,
+      type: 'pilot-promotion',
+      default_option_id: 'PROMOTE_TO_SCALE',
+      options: [
+        {
+          option_id: 'PROMOTE_TO_SCALE',
+          eligible: true,
+          actions: ['approve', 'revise', 'reject'],
+        },
+      ],
+    };
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      if (init?.method === 'POST')
+        return new Promise<Response>((done) => {
+          resolve = done;
+        });
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      return Response.json({ total: 0, offset: 0, limit: 100, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    let live = await adapter.load();
+    adapter.subscribe((event) => {
+      live = event.snapshot;
+    });
+    await adapter.selectProject(project.id);
+    const approval = adapter.decide({
+      action: 'approve',
+      selected_option_id: 'PROMOTE_TO_SCALE',
+    });
+    expect(live.transitionPhase).toBe('scale');
+    resolve(Response.json({ id: 'accepted', project: project.id, state: 'succeeded' }));
+    await approval;
+    expect(live.transitionPhase).toBe('scale');
+    current.project = { ...current.project, phase: 'scale', status: 'running' };
+    await adapter.refresh();
+    expect(live.transitionPhase).toBeNull();
+  });
+
+  it('maps non-linear scientist routes without pretending they all enter Scale', () => {
+    const gate4 = { ...snapshot().decision!, gate: 4 };
+    expect(
+      approvedTransitionPhase(gate4, {
+        action: 'approve',
+        selected_option_id: 'REVISE_DESIGN',
+      }),
+    ).toBe('design');
+    expect(
+      approvedTransitionPhase(gate4, {
+        action: 'approve',
+        selected_option_id: 'REVISE_SITE',
+      }),
+    ).toBe('site');
   });
 
   it('uses a fresh idempotency identity for each explicit resume', async () => {

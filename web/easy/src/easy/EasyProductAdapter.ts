@@ -51,6 +51,27 @@ export interface EasyProductPort {
   submitLabOrder(): Promise<LabOrderView>;
 }
 const emptyPage = <T>(): Page<T> => ({ items: [], total: 0, offset: 0, limit: 20 });
+
+type TransitionPhase = NonNullable<LiveState['transitionPhase']>;
+
+export function approvedTransitionPhase(
+  decision: ProductSnapshot['decision'],
+  input: GateInput,
+): TransitionPhase | null {
+  if (!decision || !['approve', 'override'].includes(input.action)) return null;
+  if (decision.gate === 1) return 'site';
+  if (decision.gate === 2) return 'design';
+  if (decision.gate === 3) return 'pilot';
+  if (decision.gate === 4) {
+    if (input.selected_option_id === 'PROMOTE_TO_SCALE') return 'scale';
+    if (input.selected_option_id === 'REVISE_DESIGN') return 'design';
+    if (input.selected_option_id === 'REVISE_SITE') return 'site';
+    return 'pilot';
+  }
+  if (decision.gate === 5) return 'candidates';
+  return null;
+}
+
 /** Poll serially after a response. A slow Runtime never accumulates overlapping GETs. */
 export class EasyProductAdapter implements EasyProductPort {
   private state: LiveState = {
@@ -64,6 +85,7 @@ export class EasyProductAdapter implements EasyProductPort {
     pending: false,
     error: null,
     pendingRequest: null,
+    transitionPhase: null,
   };
   private listeners = new Set<(event: { type: 'snapshot'; snapshot: LiveState }) => void>();
   private timer?: ReturnType<typeof setTimeout>;
@@ -138,7 +160,10 @@ export class EasyProductAdapter implements EasyProductPort {
     });
   }
   private observeRequest(request: RequestState) {
-    this.emit({ pendingRequest: request });
+    this.emit({
+      pendingRequest: request,
+      ...(['failed'].includes(request.state) ? { transitionPhase: null } : {}),
+    });
     if (['succeeded', 'failed'].includes(request.state)) {
       for (const [signature, id] of this.commands) {
         const { body } = JSON.parse(signature);
@@ -193,9 +218,22 @@ export class EasyProductAdapter implements EasyProductPort {
         if (generation !== this.generation) return;
         const changed =
           this.state.snapshot?.revision !== snapshot.revision ||
-          this.state.snapshot?.event_cursor !== snapshot.event_cursor;
-        if (changed || this.state.snapshot?.project.status !== snapshot.project.status)
-          this.emit({ snapshot, connection: 'connected', error: null });
+          this.state.snapshot?.event_cursor !== snapshot.event_cursor ||
+          this.state.snapshot?.project.phase !== snapshot.project.phase;
+        const transitionFinished = Boolean(
+          this.state.transitionPhase && snapshot.project.phase === this.state.transitionPhase,
+        );
+        if (
+          changed ||
+          transitionFinished ||
+          this.state.snapshot?.project.status !== snapshot.project.status
+        )
+          this.emit({
+            snapshot,
+            connection: 'connected',
+            error: null,
+            ...(transitionFinished ? { transitionPhase: null } : {}),
+          });
         else if (this.state.connection !== 'connected' || this.state.error !== null)
           // A successful manual/automatic refresh is itself authoritative
           // connection evidence, even when the scientific snapshot is
@@ -259,6 +297,7 @@ export class EasyProductAdapter implements EasyProductPort {
       selectedCandidate: null,
       candidates: emptyPage(),
       candidatePhase: null,
+      transitionPhase: null,
       error: null,
     });
     const generation = this.generation;
@@ -292,6 +331,7 @@ export class EasyProductAdapter implements EasyProductPort {
       candidates: emptyPage(),
       candidatePhase: null,
       pendingRequest: null,
+      transitionPhase: null,
       error: null,
     });
   }
@@ -370,6 +410,7 @@ export class EasyProductAdapter implements EasyProductPort {
           candidates: emptyPage(),
           candidatePhase: null,
           selectedCandidate: null,
+          transitionPhase: null,
         });
       }
     } catch (error) {
@@ -427,11 +468,18 @@ export class EasyProductAdapter implements EasyProductPort {
     const v = this.state.snapshot;
     if (!v?.decision || !v.capabilities.decide)
       throw new Error('Refresh the current Scientist Gate.');
-    await this.command(`/projects/${v.project.id}/actions`, {
-      ...input,
-      revision: v.revision,
-      card_id: v.decision.id,
-    });
+    const transitionPhase = approvedTransitionPhase(v.decision, input);
+    if (transitionPhase) this.emit({ transitionPhase });
+    try {
+      await this.command(`/projects/${v.project.id}/actions`, {
+        ...input,
+        revision: v.revision,
+        card_id: v.decision.id,
+      });
+    } catch (error) {
+      this.emit({ transitionPhase: null });
+      throw error;
+    }
   }
   private async act(action: 'resume' | 'message', instruction?: string) {
     const v = this.state.snapshot;

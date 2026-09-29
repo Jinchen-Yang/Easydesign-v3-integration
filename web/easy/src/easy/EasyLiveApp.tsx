@@ -81,9 +81,9 @@ function productGoal(input: EasyInput) {
   return `${input.goal.trim()} Input ${input.type}: ${source}.${organism}`.slice(0, 1500);
 }
 
-function activeIndex(snapshot: ProductSnapshot | null) {
+function activeIndex(snapshot: ProductSnapshot | null, transitionPhase?: string | null) {
   if (!snapshot) return 0;
-  return PHASE_INDEX[snapshot.project.phase] ?? 0;
+  return PHASE_INDEX[transitionPhase || snapshot.project.phase] ?? 0;
 }
 
 export function canAutoContinue(
@@ -135,9 +135,18 @@ export function isProductExecutionActive(
   );
 }
 
-function stageStatus(snapshot: ProductSnapshot | null, index: number) {
+function stageStatus(
+  snapshot: ProductSnapshot | null,
+  index: number,
+  transitionPhase?: string | null,
+) {
   if (!snapshot) return 'waiting';
   const phase = STEPS[index].toLowerCase();
+  if (transitionPhase) {
+    const transitionIndex = PHASE_INDEX[transitionPhase] ?? 0;
+    if (index === transitionIndex) return 'running';
+    if (index < transitionIndex) return 'complete';
+  }
   const row = snapshot.workflow.find((item) => item.id === phase);
   return row?.status || (index < activeIndex(snapshot) ? 'complete' : 'waiting');
 }
@@ -741,9 +750,7 @@ function GatePanel({
                 onChange={() => selectOption(item.option_id)}
               />
               <span>
-                <strong>
-                  {normalizeLiveScientificChinese(fallback.label)}
-                </strong>
+                <strong>{normalizeLiveScientificChinese(fallback.label)}</strong>
                 {fallback.description && (
                   <small>{normalizeLiveScientificChinese(fallback.description)}</small>
                 )}
@@ -751,8 +758,7 @@ function GatePanel({
                 {designPlanSummary && (
                   <div className="easy-live-design-plan-summary" aria-label="设计方案规模">
                     <strong>
-                      针对{designPlanSummary.siteLabel}，共设计 {designPlanSummary.planCount}{' '}
-                      种方案
+                      针对{designPlanSummary.siteLabel}，共设计 {designPlanSummary.planCount} 种方案
                     </strong>
                     <ul>
                       {designPlanSummary.plans.map((plan) => (
@@ -1099,7 +1105,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     setRecentProjectOpens((current) => rememberProjectOpen(current, project));
   }, [snapshot?.project.id]);
   const issue = validateInput(input);
-  const index = activeIndex(snapshot);
+  const index = activeIndex(snapshot, state?.transitionPhase);
   const shownIndex = viewedIndex ?? index;
   const shownCandidatePhase: CandidatePhase | null =
     shownIndex === 3
@@ -1118,6 +1124,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const requestInFlight = Boolean(
     state?.pending || ['accepted', 'running'].includes(state?.pendingRequest?.state || ''),
   );
+  const phaseTransition = Boolean(state?.transitionPhase);
   // Adapter errors describe background polling, connection recovery and deferred
   // candidate reads.  The connection badge already represents that transient
   // state.  Only failures caused by an explicit user action belong in the
@@ -1406,26 +1413,31 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                 <span className="easy-kicker">{snapshot.project.title}</span>
                 <h2>{liveStageName(shownIndex)}</h2>
               </div>
-              <span className={`easy-status ${snapshot.project.status}`}>
-                {state.pending || active ? (
+              <span
+                className={`easy-status ${phaseTransition ? 'running' : snapshot.project.status}`}
+              >
+                {state.pending || active || phaseTransition ? (
                   <LoaderCircle className="easy-spin" size={12} />
                 ) : (
                   <Check size={12} />
                 )}
-                {liveStatusName(snapshot.project.status)}
+                {phaseTransition ? '正在准备' : liveStatusName(snapshot.project.status)}
               </span>
             </div>
             <div className="easy-steps">
               {STEPS.map((step, stepIndex) => (
                 <button
                   key={step}
-                  className={`${stageStatus(snapshot, stepIndex) === 'complete' ? 'done' : ''} ${stepIndex === shownIndex ? 'current' : ''}`}
+                  className={`${stageStatus(snapshot, stepIndex, state.transitionPhase) === 'complete' ? 'done' : ''} ${stepIndex === shownIndex ? 'current' : ''}`}
                   aria-pressed={stepIndex === shownIndex}
-                  disabled={stepIndex > index && stageStatus(snapshot, stepIndex) !== 'complete'}
+                  disabled={
+                    stepIndex > index &&
+                    stageStatus(snapshot, stepIndex, state.transitionPhase) !== 'complete'
+                  }
                   onClick={() => setViewedIndex(stepIndex === index ? null : stepIndex)}
                 >
                   <span>
-                    {stageStatus(snapshot, stepIndex) === 'complete' ? (
+                    {stageStatus(snapshot, stepIndex, state.transitionPhase) === 'complete' ? (
                       <Check size={12} />
                     ) : (
                       stepIndex + 1
@@ -1461,7 +1473,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       <p>第 5 关已记录；实验与真实下单仍未授权。</p>
                     </div>
                   </section>
-                ) : requestInFlight && snapshot.decision ? (
+                ) : phaseTransition && snapshot.decision ? (
                   <section
                     className="easy-live-progress-card easy-live-approval-starting"
                     role="status"
@@ -1469,8 +1481,8 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                   >
                     <LoaderCircle className="easy-spin" size={22} />
                     <div>
-                      <h3>审批已提交</h3>
-                      <p>正在启动下一阶段，请稍候。</p>
+                      <h3>正在进入{liveStageName(shownIndex)}</h3>
+                      <p>审批已提交；正在记录授权并准备下一阶段。</p>
                     </div>
                   </section>
                 ) : snapshot.decision && !active ? (
@@ -1480,9 +1492,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     busy={requestInFlight}
                     connection={state.connection}
                     adapter={adapter}
-                    selectedOptionId={
-                      snapshot.decision.gate === 2 ? selectedOptionId : undefined
-                    }
+                    selectedOptionId={snapshot.decision.gate === 2 ? selectedOptionId : undefined}
                     onSelectedOptionChange={
                       snapshot.decision.gate === 2
                         ? (optionId) => {
@@ -1536,15 +1546,17 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     </div>
                   </section>
                 )}
-                {shownIndex === index && (shownIndex === 3 || shownIndex === 4) && (
-                  <ExecutionProgress
-                    snapshot={snapshot}
-                    phase={shownIndex === 3 ? 'pilot' : 'scale'}
-                    candidates={candidates}
-                    candidatePhase={state.candidatePhase}
-                  />
-                )}
-                {shownIndex === index && (
+                {!phaseTransition &&
+                  shownIndex === index &&
+                  (shownIndex === 3 || shownIndex === 4) && (
+                    <ExecutionProgress
+                      snapshot={snapshot}
+                      phase={shownIndex === 3 ? 'pilot' : 'scale'}
+                      candidates={candidates}
+                      candidatePhase={state.candidatePhase}
+                    />
+                  )}
+                {!phaseTransition && shownIndex === index && (
                   <section className="easy-live-activity">
                     <h3>实时过程</h3>
                     {activity.map((item) => (
@@ -1601,14 +1613,16 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     )}
                   </section>
                 )}
-                {shownCandidatePhase && state.candidatePhase === shownCandidatePhase && (
-                  <CandidatePanel
-                    phase={shownCandidatePhase}
-                    candidates={candidates}
-                    selected={state.selectedCandidate?.id || null}
-                    onSelect={(id) => void adapter.selectCandidate(id)}
-                  />
-                )}
+                {!phaseTransition &&
+                  shownCandidatePhase &&
+                  state.candidatePhase === shownCandidatePhase && (
+                    <CandidatePanel
+                      phase={shownCandidatePhase}
+                      candidates={candidates}
+                      selected={state.selectedCandidate?.id || null}
+                      onSelect={(id) => void adapter.selectCandidate(id)}
+                    />
+                  )}
               </div>
               <aside className="easy-live-science">
                 <div className="easy-live-kicker">

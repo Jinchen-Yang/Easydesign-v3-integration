@@ -226,6 +226,8 @@ export interface LiveState {
   pending: boolean;
   error: string | null;
   pendingRequest: RequestState | null;
+  /** Temporary presentation phase while an accepted Gate transition is processed. */
+  transitionPhase?: 'target' | 'site' | 'design' | 'pilot' | 'scale' | 'candidates' | null;
 }
 export interface LocalizationPassage {
   id: string;

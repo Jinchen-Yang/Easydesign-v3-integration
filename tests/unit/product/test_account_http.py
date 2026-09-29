@@ -61,6 +61,7 @@ def test_account_api_requires_individual_sessions_and_disables_workspace_token(p
     server, _accounts, _admin, _users, _context = product
     with client(server) as anonymous:
         assert anonymous.get("/api/v1/accounts/config").json()["mode"] == "multi-user"
+        assert anonymous.get("/api/v1/accounts/config").json()["registration"] == "open"
         assert anonymous.get("/api/v1/health").status_code == 401
         assert (
             anonymous.get(
@@ -78,13 +79,14 @@ def test_account_api_requires_individual_sessions_and_disables_workspace_token(p
             },
         )
         assert created.status_code == 201
-        assert created.json()["user"]["status"] == "pending"
+        assert created.json()["user"]["status"] == "active"
         assert (
             anonymous.post(
                 "/api/v1/accounts/login", json={"username": "carol", "password": PASSWORD}
             ).status_code
-            == 403
+            == 200
         )
+        assert anonymous.get("/api/v1/accounts/me").json()["user"]["username"] == "carol"
 
 
 def test_successful_account_login_and_private_scope_are_not_cacheable(product):

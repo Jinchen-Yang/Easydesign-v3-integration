@@ -1,0 +1,203 @@
+export const CHAT_ENDPOINT = '/api/rabbit/chat';
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+export interface ChatContext {
+  stage: string;
+  status: string;
+  goal: string;
+}
+export interface ChatRequest {
+  locale: 'zh' | 'en';
+  messages: ChatMessage[];
+  context: ChatContext;
+}
+export interface ChatStatus {
+  request_id: string;
+  state: string;
+  dispatched?: boolean;
+  retry_after?: number;
+  code?: string;
+}
+export type ChatRetryAction = 'same_request' | 'new_request';
+export class ChatStreamError extends Error {
+  constructor(
+    code: string,
+    readonly accepted: boolean,
+  ) {
+    super(code);
+  }
+}
+
+/** A queried, terminal no-dispatch result is required before offering a new ID. */
+export function chatRetryAction(
+  error: string,
+  accepted: boolean | null,
+  requestId: string,
+  status: ChatStatus | 'not_found' | null,
+): ChatRetryAction | null {
+  if (
+    accepted === false &&
+    status === 'not_found' &&
+    ['queue_full', 'user_limit', 'rate_limit'].includes(error)
+  )
+    return 'same_request';
+  if (
+    ['queue_timeout', 'rate_limit'].includes(error) &&
+    status &&
+    status !== 'not_found' &&
+    status.request_id === requestId &&
+    status.state === 'failed' &&
+    status.dispatched === false &&
+    ['queue_timeout', 'rate_limit'].includes(status.code || '')
+  )
+    return 'new_request';
+  return null;
+}
+export type ChatEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'suggestions'; questions: string[] }
+  | { type: 'done' }
+  | ({ type: 'status' } & ChatStatus)
+  | { type: 'error'; code: string };
+
+export function validQuestions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .filter((q): q is string => typeof q === 'string')
+        .map((q) => q.trim())
+        .filter((q) => q.length > 0 && q.length <= 120),
+    ),
+  ].slice(0, 3);
+}
+
+/** Only plain conversational text and a small page summary cross this boundary. */
+export function parseChatRequest(value: unknown): ChatRequest {
+  const v = value as Partial<ChatRequest> | null;
+  if (
+    !v ||
+    !['zh', 'en'].includes(v.locale ?? '') ||
+    !Array.isArray(v.messages) ||
+    v.messages.length < 1 ||
+    v.messages.length > 17
+  )
+    throw new Error('invalid');
+  let total = 0;
+  const messages = v.messages.map((m) => {
+    if (
+      !m ||
+      !['user', 'assistant'].includes(m.role) ||
+      typeof m.content !== 'string' ||
+      !m.content.trim() ||
+      m.content.length > 8000
+    )
+      throw new Error('invalid');
+    total += m.content.length;
+    return { role: m.role, content: m.content };
+  });
+  if (total > 32000 || messages.at(-1)?.role !== 'user' || messages.at(-1)!.content.length > 4000)
+    throw new Error('invalid');
+  const c = v.context;
+  if (
+    !c ||
+    !['Idle', 'Target', 'Site', 'Design', 'Pilot', 'Scale', 'Candidates'].includes(c.stage) ||
+    !['idle', 'draft', 'running', 'paused', 'complete'].includes(c.status) ||
+    typeof c.goal !== 'string' ||
+    c.goal.length > 1200
+  )
+    throw new Error('invalid');
+  return {
+    locale: v.locale!,
+    messages,
+    context: { stage: c.stage, status: c.status, goal: c.goal },
+  };
+}
+
+export async function streamChat(
+  request: ChatRequest,
+  signal: AbortSignal,
+  delta: (text: string) => void,
+  suggestions: (questions: string[]) => void = () => {},
+  transport: typeof fetch = fetch,
+  options: { requestId?: string; onStatus?: (status: ChatStatus) => void } = {},
+) {
+  const requestId = options.requestId || crypto.randomUUID();
+  signal.throwIfAborted();
+  const response = await transport(CHAT_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Request-ID': requestId },
+    body: JSON.stringify(request),
+    signal,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const code =
+      typeof body.error === 'string'
+        ? body.error
+        : typeof body.error?.code === 'string'
+          ? body.error.code
+          : 'unavailable';
+    throw new ChatStreamError(code, false);
+  }
+  if (!response.body) throw new ChatStreamError('unavailable', true);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      pending += decoder.decode(value, { stream: !done });
+      const lines = pending.split('\n');
+      pending = lines.pop()!;
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line) as ChatEvent;
+        if (event.type === 'error') throw new ChatStreamError(event.code, true);
+        if (event.type === 'done') return;
+        if (event.type === 'status' && event.request_id === requestId) options.onStatus?.(event);
+        if (event.type === 'delta') delta(event.text);
+        if (event.type === 'suggestions') suggestions(validQuestions(event.questions));
+      }
+      if (done) throw new ChatStreamError('interrupted', true);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+export async function chatRequestStatus(
+  requestId: string,
+  transport: typeof fetch = fetch,
+): Promise<ChatStatus | 'not_found'> {
+  const response = await transport('/api/v1/rabbit/requests/' + encodeURIComponent(requestId));
+  const value = await response.json();
+  if (response.status === 404 && value?.error?.code === 'not_found') return 'not_found';
+  if (!response.ok) throw new Error(value.error?.code || 'unavailable');
+  if (
+    !value ||
+    value.request_id !== requestId ||
+    typeof value.dispatched !== 'boolean' ||
+    !['queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled'].includes(value.state)
+  )
+    throw new Error('invalid_status');
+  return value as ChatStatus;
+}
+
+export async function cancelChatRequest(requestId: string, transport: typeof fetch = fetch) {
+  const response = await transport(
+    '/api/v1/rabbit/requests/' + encodeURIComponent(requestId) + '/cancel',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      keepalive: true,
+    },
+  );
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.error?.code || 'unavailable');
+  return value as ChatStatus;
+}

@@ -1,35 +1,62 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { AppShell } from '../src/shell/AppShell';
+import { applyLegacyRedirect } from '../src/shell/legacyRedirect';
 import { LANGUAGE_KEY } from '../src/shell/I18nProvider';
 
+// jsdom 不实现 matchMedia；演示工作台的兔兔组件在渲染期就会读取。
+if (typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    matches: false, media: query, onchange: null,
+    addListener: () => {}, removeListener: () => {},
+    addEventListener: () => {}, removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof matchMedia;
+}
+// jsdom 也不实现 <dialog> 的 showModal/close；演示应用在挂载期调用。
+if (typeof HTMLDialogElement !== 'undefined' && !HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) { this.removeAttribute('open'); };
+}
+// jsdom 的 canvas getContext 返回 null（未装 canvas 包）；给演示画布一个 no-op 上下文。
+HTMLCanvasElement.prototype.getContext = function getContextStub(
+  this: HTMLCanvasElement,
+): CanvasRenderingContext2D | null {
+  const canvas = this;
+  return new Proxy({}, {
+    get: (_target, property) => {
+      if (property === 'canvas') return canvas;
+      return () => undefined;
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D;
+} as unknown as HTMLCanvasElement['getContext'];
+
 /**
- * Boot-level checks for the phase-1 shell: the loading text, the fallback when
- * no backend answers, hash routing and the language toggle. The real session
- * API is unreachable under jsdom (relative fetch fails), which exercises the
- * network-error branch exactly like a dev server without a backend.
+ * Shell-level boot checks. Under jsdom the real session API is unreachable
+ * (relative fetch fails), which drives the network-error branch exactly like
+ * a dev server without a backend.
  */
 
 afterEach(cleanup);
 
 beforeEach(() => {
   localStorage.clear();
-  window.location.hash = '';
+  window.history.pushState({}, '', '/');
 });
 
-describe('AppShell 空壳', () => {
+describe('AppShell 统一壳（阶段 3）', () => {
   it('首次渲染即显示 App Shell Loading...（checking 状态）', () => {
     render(<AppShell />);
     expect(screen.getByText('App Shell Loading...')).toBeTruthy();
   });
 
-  it('后端不可达时落入 network-error 面板并保留路由与导航', async () => {
+  it('后端不可达时落入 network-error 面板并保留导航', async () => {
     render(<AppShell />);
     const retry = await screen.findByTestId('session-network-error');
     expect(retry.textContent).toContain('网络异常');
     expect(screen.getByText('重试')).toBeTruthy();
-    expect(screen.getByText('以访客继续')).toBeTruthy();
-    expect(screen.getByText('账号与团队')).toBeTruthy();
+    expect(screen.getByRole('link', { name: '账号与团队' })).toBeTruthy();
   });
 
   it('network-error 面板可放弃并以访客继续', async () => {
@@ -50,9 +77,67 @@ describe('AppShell 空壳', () => {
     expect(localStorage.getItem(LANGUAGE_KEY)).toBe('en');
   });
 
-  it('hash 路由表：#/account 渲染账号占位', async () => {
+  it('#/account 渲染账号门户（登录表单可见）', async () => {
     window.location.hash = '#/account';
     render(<AppShell />);
-    expect(await screen.findByText(/账号与团队（阶段 3 迁入）/)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: '登录 EasyDesign' })).toBeTruthy();
+  });
+
+  it('#/demo 渲染演示工作台，专业版链接指向应用内路由（死链已修）', async () => {
+    window.location.hash = '#/demo';
+    render(<AppShell />);
+    const pro = await screen.findByRole('link', { name: '专业版' }, { timeout: 3000 });
+    expect(pro.getAttribute('href')).toBe('#/projects');
+  });
+
+  it('#/projects（未登录）Easy 视图给出登录引导而不是弹跳', async () => {
+    const originalFetch = window.fetch;
+    window.fetch = (async () => new Response(JSON.stringify({ error: { code: 'unauthorized' } }), {
+      status: 401, headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
+    try {
+      window.location.hash = '#/projects?scope=s1&view=easy';
+      render(<AppShell />);
+      expect(await screen.findByText('请先登录')).toBeTruthy();
+      expect(screen.getByRole('link', { name: '前往账号与团队' })).toBeTruthy();
+      expect(window.location.hash).toBe('#/projects?scope=s1&view=easy');
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+});
+
+describe('legacyRedirect 旧链接规范化', () => {
+  function arrive(path: string, search = ''): string[] {
+    const calls: string[] = [];
+    window.history.pushState({}, '', `${path}${search}`);
+    applyLegacyRedirect((url) => { calls.push(url); });
+    return calls;
+  }
+
+  it('/account/ → #/account', () => {
+    expect(arrive('/account/', '')).toEqual(['#/account']);
+  });
+
+  it('/easy/?scope=u1&project=p1 → 项目路由（view=easy）', () => {
+    expect(arrive('/easy/', '?scope=u1&project=p1')).toEqual(['#/projects/p1?scope=u1&view=easy']);
+  });
+
+  it('/?scope=u1&project=p1（旧 Pro 链接）→ view=pro', () => {
+    expect(arrive('/', '?scope=u1&project=p1')).toEqual(['#/projects/p1?scope=u1&view=pro']);
+  });
+
+  it('仅有 scope 时保留为首页参数', () => {
+    expect(arrive('/easy/', '?scope=u1')).toEqual(['#/?scope=u1']);
+  });
+
+  it('已在应用路由内或带 ?next= 时不动作', () => {
+    const quiet: string[] = [];
+    window.history.pushState({}, '', '/');
+    window.location.hash = '#/projects/p9';
+    applyLegacyRedirect((url) => { quiet.push(url); });
+    window.history.pushState({}, '', '/?next=%23%2Faccount');
+    applyLegacyRedirect((url) => { quiet.push(url); });
+    expect(quiet).toEqual([]);
   });
 });

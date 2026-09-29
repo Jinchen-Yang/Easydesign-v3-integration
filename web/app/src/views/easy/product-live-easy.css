@@ -1,0 +1,587 @@
+.easy-live-app {
+  min-height: 100vh;
+  background: #fbfbfe;
+}
+
+.easy-live-app .easy-intro p {
+  max-width: 680px;
+  margin: 12px auto 0;
+  color: #73707d;
+  text-align: center;
+}
+
+.easy-live-pill {
+  color: #2f7c61 !important;
+  background: #eaf7f1 !important;
+}
+
+.easy-live-connection {
+  font-size: 12px;
+  color: #2f7c61;
+  text-transform: capitalize;
+}
+
+.easy-live-upload {
+  display: flex;
+  min-height: 88px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed #bcb5dc;
+  border-radius: 13px;
+  color: #6253c6;
+  cursor: pointer;
+}
+
+.easy-live-upload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.easy-live-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.85fr);
+  gap: 22px;
+  margin-top: 22px;
+}
+
+.easy-live-center,
+.easy-live-science,
+.easy-live-gate,
+.easy-live-activity,
+.easy-live-order {
+  min-width: 0;
+}
+
+.easy-live-science,
+.easy-live-gate,
+.easy-live-activity,
+.easy-live-order,
+.easy-live-progress-card {
+  border: 1px solid #e2dfeb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
+}
+
+.easy-live-science {
+  padding: 18px;
+}
+
+.easy-live-gate,
+.easy-live-activity,
+.easy-live-order {
+  padding: 22px;
+}
+
+.easy-live-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: #6756d8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.easy-live-gate h3,
+.easy-live-order h3,
+.easy-live-progress-card h3,
+.easy-live-activity h3,
+.easy-live-candidates h3 {
+  margin: 0 0 8px;
+}
+
+.easy-live-gate > p,
+.easy-live-order > p,
+.easy-live-progress-card p {
+  margin: 0 0 18px;
+  color: #777381;
+  line-height: 1.55;
+}
+
+.easy-live-options {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.easy-live-options label {
+  display: flex;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #dedbe9;
+  border-radius: 13px;
+  cursor: pointer;
+}
+
+.easy-live-options label.selected {
+  border-color: #7361e4;
+  background: #f3f0ff;
+}
+
+.easy-live-options label > span {
+  display: grid;
+  gap: 4px;
+}
+
+.easy-live-options small,
+.easy-live-options em {
+  color: #777381;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.easy-live-gate details {
+  margin: 14px 0;
+  color: #6d6877;
+}
+
+.easy-live-gate textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 12px;
+  border: 1px solid #dcd8e8;
+  border-radius: 12px;
+  resize: vertical;
+}
+
+.easy-live-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.easy-live-progress-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+}
+
+.easy-live-progress-card > div {
+  flex: 1;
+}
+
+.easy-live-history-card {
+  padding: 22px;
+  border: 1px solid #e2dfeb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
+}
+
+.easy-live-history-card > p {
+  color: #777381;
+}
+
+.easy-live-history-card dl {
+  margin: 18px 0;
+}
+
+.easy-live-history-card dl > div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eeecf3;
+}
+
+.easy-live-history-card dt {
+  color: #817b89;
+}
+
+.easy-live-history-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.easy-execution-progress {
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid #e2dfeb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
+}
+
+.easy-execution-title {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.easy-execution-title > div {
+  display: grid;
+  gap: 4px;
+}
+
+.easy-execution-title span {
+  color: #7361e4;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.easy-execution-title strong {
+  font-size: 15px;
+}
+
+.easy-execution-title b {
+  color: #6154c7;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.easy-progress-track {
+  height: 8px;
+  margin: 14px 0 16px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #eeebf7;
+}
+
+.easy-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #745fe2, #9887f2);
+  transition: width 300ms ease;
+}
+
+.easy-pipeline-steps {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.easy-pipeline-steps > div {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: #aaa5b5;
+  text-align: center;
+}
+
+.easy-pipeline-steps > div > span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid #ded9eb;
+  border-radius: 99px;
+  background: #fff;
+  font-size: 10px;
+}
+
+.easy-pipeline-steps small,
+.easy-pipeline-steps em {
+  font-size: 10px;
+  font-style: normal;
+}
+
+.easy-pipeline-steps > div.done,
+.easy-pipeline-steps > div.active {
+  color: #6654d3;
+}
+
+.easy-pipeline-steps > div.done > span {
+  border-color: #b9dfd0;
+  background: #eaf7f1;
+  color: #338064;
+}
+
+.easy-pipeline-steps > div.active > span {
+  border-color: #7966e6;
+  background: #eeeaff;
+  box-shadow: 0 0 0 4px #f5f2ff;
+}
+
+.easy-execution-progress > p {
+  margin: 14px 0 0;
+  color: #7d7886;
+  font-size: 11px;
+}
+
+.easy-live-activity {
+  margin-top: 16px;
+}
+
+.easy-live-activity article {
+  display: flex;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid #efedf4;
+}
+
+.easy-live-activity article > span {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 99px;
+  background: #b7b1c7;
+}
+
+.easy-live-activity article > span.running {
+  background: #6f5ee0;
+  box-shadow: 0 0 0 4px #eeeaff;
+}
+
+.easy-live-activity article > span.completed,
+.easy-live-activity article > span.complete {
+  background: #45a17d;
+}
+
+.easy-live-activity p {
+  margin: 3px 0 0;
+  color: #807b88;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.easy-live-technical-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #efedf4;
+  color: #625a73;
+  font-size: 12px;
+}
+
+.easy-live-technical-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #6756d8;
+  font-weight: 700;
+}
+
+.easy-live-technical-details > a {
+  display: inline-block;
+  margin-top: 12px;
+  color: #6756d8;
+}
+
+.easy-live-technical-details article {
+  padding-left: 4px;
+}
+
+.easy-live-gate-recovery {
+  border-color: #d8d0ff;
+  background: #fbfaff;
+}
+
+.easy-live-science .live-molecule {
+  min-height: 420px;
+  border: 1px solid #e3e0eb;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.easy-live-science .molecule-canvas {
+  min-height: 350px;
+}
+
+.easy-live-site-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.easy-live-site-tabs button,
+.easy-live-candidates button {
+  border: 1px solid #dfdbe9;
+  border-radius: 10px;
+  background: white;
+}
+
+.easy-live-site-tabs button {
+  padding: 9px;
+}
+
+.easy-live-site-tabs button.selected,
+.easy-live-candidates button.selected {
+  border-color: #7866e5;
+  background: #f2efff;
+  color: #5f4fd0;
+}
+
+.easy-live-candidates {
+  margin-top: 18px;
+}
+
+.easy-live-candidates button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.easy-live-candidates button span {
+  display: grid;
+  gap: 3px;
+}
+
+.easy-live-candidates small,
+.easy-live-candidates em {
+  color: #817c89;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.easy-live-order {
+  margin-top: 22px;
+}
+
+.easy-live-order-candidates {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.easy-live-order-candidates label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid #e2deeb;
+  border-radius: 11px;
+}
+
+.easy-live-order-candidates span {
+  display: grid;
+  gap: 2px;
+}
+
+.easy-live-order-candidates small {
+  color: #807b88;
+}
+
+.easy-live-order-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.easy-live-order-fields label,
+.easy-live-login label {
+  display: grid;
+  gap: 6px;
+  color: #6f6a78;
+  font-size: 12px;
+}
+
+.easy-live-order-fields input,
+.easy-live-order-fields select,
+.easy-live-login input {
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid #dad6e5;
+  border-radius: 10px;
+}
+
+.easy-live-quote {
+  margin-top: 14px !important;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f6f3ff;
+  color: #5949c2 !important;
+}
+
+.easy-live-receipt,
+.easy-live-receipt div {
+  display: grid;
+  gap: 8px;
+}
+
+.easy-live-receipt div {
+  grid-template-columns: 150px 1fr;
+  padding: 9px 0;
+  border-top: 1px solid #eeecf3;
+}
+
+.easy-live-receipt dt {
+  color: #817b89;
+}
+
+.easy-history-table td:first-child {
+  max-width: 560px;
+}
+
+.easy-history-table td:first-child strong,
+.easy-history-table td:first-child small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.easy-history-table td:first-child small {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #817c88;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.easy-live-loading,
+.easy-live-login {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.easy-live-login {
+  flex-direction: column;
+  padding: 24px;
+}
+
+.easy-live-login label {
+  width: min(540px, 90vw);
+}
+
+@media (max-width: 980px) {
+  .easy-live-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .easy-live-science {
+    order: -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .easy-live-app .easy-history {
+    /* Leave scroll space for project actions above the floating companion. */
+    padding-bottom: 180px;
+  }
+
+  /* The live table's last column contains project actions, not demo metrics. */
+  .easy-live-app .easy-history th:last-child,
+  .easy-live-app .easy-history td:last-child {
+    display: table-cell;
+  }
+
+  .easy-pipeline-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .easy-live-order-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .easy-live-app .easy-header nav,
+  .easy-live-app .easy-live-connection {
+    display: none;
+  }
+}

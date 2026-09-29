@@ -9,7 +9,8 @@
     "giveUp": "以访客继续",
     "dismiss": "取消恢复",
     "language": "语言",
-    "brand": "EasyDesign"
+    "brand": "EasyDesign",
+    "signIn": "登录"
   },
   "nav": {
     "home": "首页",
@@ -37,5 +38,10 @@
     "cancel": "取消",
     "hint": "未保存的输入已暂存，登录后将自动恢复",
     "failed": "登录失败，请重试"
+  },
+  "projects": {
+    "new": "新建设计",
+    "loading": "项目列表加载中…",
+    "empty": "还没有项目，从新建设计开始。"
   }
 }

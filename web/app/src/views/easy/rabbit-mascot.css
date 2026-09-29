@@ -1,0 +1,505 @@
+.rabbit-companion {
+  position: fixed;
+  bottom: auto;
+  height: auto;
+  z-index: 12;
+  isolation: isolate;
+  pointer-events: none;
+  font-size: 15px;
+  color: #33313b;
+}
+
+.rabbit-companion button,
+.rabbit-album button {
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+.rabbit-companion button:focus-visible,
+.rabbit-album button:focus-visible,
+.rabbit-album a:focus-visible {
+  outline: 3px solid #6653a3;
+  outline-offset: 3px;
+}
+.rabbit-pet {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 45%;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.rabbit-minimize {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e2dfea;
+  border-radius: 50%;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: auto;
+}
+.rabbit-companion:hover .rabbit-minimize,
+.rabbit-companion:focus-within .rabbit-minimize {
+  opacity: 1;
+}
+.rabbit-companion.minimized {
+  width: 48px;
+}
+.rabbit-companion.minimized .rabbit-pet {
+  border: 1px solid #e2dfea;
+  background: #fff;
+  padding: 3px;
+}
+.rabbit-fallback {
+  display: block;
+  font-size: 54px;
+}
+.rabbit-companion.minimized .rabbit-fallback {
+  font-size: 26px;
+}
+.rabbit-popover {
+  position: fixed;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  width: min(280px, calc(100vw - 28px));
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e5e1ec;
+  border-radius: 18px;
+  box-shadow: 0 8px 36px #26213212;
+  pointer-events: auto;
+}
+
+.rabbit-popover-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rabbit-popover-title strong {
+  font-weight: 600;
+}
+.rabbit-popover-title button,
+.rabbit-album header button {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  min-width: 32px;
+  min-height: 32px;
+}
+.rabbit-popover p {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 8px 0 12px;
+  color: #65616d;
+}
+.rabbit-actions {
+  display: grid;
+  gap: 2px;
+}
+.rabbit-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px;
+  background: transparent;
+  text-align: left;
+}
+.rabbit-actions button:hover,
+.rabbit-popover-title button:hover {
+  background: #f5f2fa;
+}
+.rabbit-actions button:disabled {
+  cursor: default;
+  color: #77727f;
+}
+.rabbit-album {
+  width: min(590px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 20px;
+  border: 1px solid #e5e1ec;
+  border-radius: 22px;
+  color: #33313b;
+  overflow: auto;
+}
+.rabbit-album::backdrop {
+  background: #28253560;
+}
+.rabbit-album header,
+.rabbit-album footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.rabbit-album h2 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 600;
+}
+.rabbit-album-main {
+  display: block;
+  width: 100%;
+  max-height: 55dvh;
+  object-fit: contain;
+  border-radius: 12px;
+  margin: 16px 0;
+}
+.rabbit-thumbnails {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+.rabbit-thumbnails button {
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+}
+.rabbit-thumbnails button[aria-pressed='true'] {
+  border-color: #6653a3;
+}
+.rabbit-thumbnails img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 5px;
+}
+.rabbit-album footer {
+  margin-top: 16px;
+  font-size: 14px;
+  color: #626674;
+}
+.rabbit-album a {
+  color: #6653a3;
+}
+@media (max-width: 740px) {
+  .rabbit-minimize {
+    opacity: 1;
+  }
+  .rabbit-album {
+    padding: 16px;
+  }
+  .rabbit-thumbnails {
+    gap: 3px;
+  }
+}
+/* Drag the stable hit box while the independently layered artwork performs inside it. */
+.rabbit-pet {
+  touch-action: none;
+  user-select: none;
+  cursor: grab !important;
+}
+.rabbit-companion[data-dragging='true'] .rabbit-pet {
+  cursor: grabbing !important;
+}
+.rabbit-companion {
+  height: auto;
+}
+.rabbit-actor {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.rabbit-scene * {
+  transform-box: view-box;
+}
+.rabbit-scene,
+.bunny-body {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.rabbit-scene {
+  overflow: visible;
+}
+.rabbit-drag-hint,
+.rabbit-motion-note {
+  font-size: 13px;
+  color: #6f657d;
+  line-height: 1.5;
+}
+.rabbit-motion-note {
+  padding: 0 8px 6px;
+}
+/* Important declarations scope an explicit user opt-in to the bunny only. React still
+   pauses by default for reduced motion; the rest of the page retains its OS preference. */
+.bunny-body {
+  transform-origin: 50% 90.78%;
+  animation: bunny-bounce 2.6s ease-in-out infinite !important;
+}
+
+.bunny-shadow {
+  transform-origin: 630px 1205px;
+  animation: bunny-shadow 2.6s ease-in-out infinite !important;
+}
+.rabbit-actor[data-stage='Target'] .bunny-body {
+  animation: bunny-search 3.2s ease-in-out infinite !important;
+}
+
+.bunny-magnifier {
+  transform-origin: 386px 831px;
+  animation: bunny-scan 2.1s ease-in-out infinite !important;
+}
+.rabbit-actor[data-stage='Site'] .bunny-body {
+  animation: bunny-point 2.4s ease-in-out infinite !important;
+}
+.bunny-pointer {
+  transform-origin: 837px 809px;
+  animation: bunny-pointer 2.4s ease-in-out infinite !important;
+}
+.bunny-site-ring {
+  transform-origin: 990px 521px;
+  animation: bunny-ring 1.2s ease-out infinite !important;
+}
+.rabbit-actor[data-stage='Design'] .bunny-body {
+  animation: bunny-work 1.6s ease-in-out infinite !important;
+}
+
+.bunny-code {
+  animation: bunny-screen 1.2s ease-in-out infinite !important;
+}
+.rabbit-actor[data-stage='Pilot'] .bunny-body {
+  animation: bunny-work 2.2s ease-in-out infinite !important;
+}
+
+.bunny-pipette {
+  animation: bunny-pipette 2.2s ease-in-out infinite !important;
+}
+.bunny-drop {
+  animation: bunny-drop 2.2s linear infinite !important;
+}
+.rabbit-actor[data-stage='Scale'] .bunny-body {
+  animation: bunny-batch 2.4s ease-in-out infinite !important;
+}
+
+.bunny-tube {
+  animation: bunny-tube 2.4s ease-in-out infinite !important;
+  animation-delay: calc(var(--tube) * -0.3s) !important;
+}
+.bunny-liquid {
+  animation: bunny-screen 1.8s ease-in-out infinite !important;
+  animation-delay: calc(var(--tube) * -0.3s) !important;
+}
+.rabbit-actor[data-stage='Candidates'] .bunny-body {
+  animation: bunny-cheer 1.8s ease-in-out infinite !important;
+}
+
+.bunny-star {
+  transform-origin: 627px 622px;
+  animation: bunny-stars 1.8s ease-out infinite !important;
+  animation-delay: calc(var(--star) * -0.3s) !important;
+}
+.rabbit-companion[data-motion='paused'] .rabbit-actor * {
+  animation-play-state: paused !important;
+}
+.rabbit-companion.minimized .rabbit-actor * {
+  animation: none !important;
+}
+@keyframes bunny-bounce {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  35% {
+    transform: translateY(-8.253%) rotate(4deg);
+  }
+  65% {
+    transform: translateY(0) rotate(-2deg) scale(1.025, 0.97);
+  }
+}
+
+@keyframes bunny-shadow {
+  0%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.13;
+  }
+  35% {
+    transform: scaleX(0.75);
+    opacity: 0.08;
+  }
+}
+@keyframes bunny-search {
+  0%,
+  100% {
+    transform: translateX(-2.476%) rotate(-7deg);
+  }
+  50% {
+    transform: translateX(2.751%) rotate(7deg);
+  }
+}
+
+@keyframes bunny-scan {
+  0%,
+  100% {
+    transform: rotate(-12deg);
+  }
+  50% {
+    transform: rotate(16deg) translateY(-28px);
+  }
+}
+@keyframes bunny-point {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  45%,
+  65% {
+    transform: rotate(7deg) translateY(-3.439%);
+  }
+}
+@keyframes bunny-pointer {
+  0%,
+  100% {
+    transform: rotate(-12deg);
+  }
+  45%,
+  65% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes bunny-ring {
+  0% {
+    transform: scale(0.7);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+@keyframes bunny-work {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(2.063%) rotate(3deg);
+  }
+}
+
+@keyframes bunny-screen {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes bunny-pipette {
+  0%,
+  100% {
+    transform: translateY(-50px);
+  }
+  40%,
+  60% {
+    transform: translateY(25px);
+  }
+}
+@keyframes bunny-drop {
+  0%,
+  40% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  43% {
+    opacity: 1;
+  }
+  75%,
+  100% {
+    transform: translateY(180px);
+    opacity: 0;
+  }
+}
+@keyframes bunny-batch {
+  0%,
+  100% {
+    transform: translateX(-3.095%) rotate(-5deg);
+  }
+  50% {
+    transform: translateX(3.095%) rotate(5deg);
+  }
+}
+@keyframes bunny-tube {
+  0%,
+  65%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-70px);
+  }
+}
+@keyframes bunny-cheer {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-5deg);
+  }
+  35% {
+    transform: translateY(-14.443%) rotate(8deg);
+  }
+  60% {
+    transform: translateY(0) rotate(-5deg) scale(1.04, 0.96);
+  }
+  80% {
+    transform: translateY(-4.814%) rotate(2deg);
+  }
+}
+@keyframes bunny-stars {
+  0% {
+    transform: translateY(70px) scale(0.7);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-160px) scale(1.1);
+    opacity: 0;
+  }
+}
+.rabbit-mesh {
+  position: absolute;
+  inset: 0;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.rabbit-original-fallback {
+  position: absolute;
+  left: 6.8776%;
+  top: 10.316%;
+  width: 86.2448%;
+  height: auto;
+}
+.rabbit-actor .rabbit-fallback {
+  font-size: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}

@@ -9,7 +9,8 @@
     "giveUp": "Continue as guest",
     "dismiss": "Dismiss recovery",
     "language": "Language",
-    "brand": "EasyDesign"
+    "brand": "EasyDesign",
+    "signIn": "Sign in"
   },
   "nav": {
     "home": "Home",
@@ -37,5 +38,10 @@
     "cancel": "Cancel",
     "hint": "Unsaved input is kept and will be restored after sign-in",
     "failed": "Sign-in failed, please retry"
+  },
+  "projects": {
+    "new": "New design",
+    "loading": "Loading projects…",
+    "empty": "No projects yet — start a new design."
   }
 }

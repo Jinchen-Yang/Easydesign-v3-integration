@@ -85,7 +85,65 @@ function fireSessionExpired(detail: Record<string, unknown> = {}): void {
 
 beforeEach(() => {
   localStorage.clear();
-  window.location.hash = '';
+  window.history.pushState({}, '', '/');
+});
+
+describe('SessionProvider ?next= 回跳（痛点④⑥）', () => {
+  it('访客打开深链后登录成功，回到原目标', async () => {
+    window.location.hash = '#/projects/p1?scope=s1&view=easy';
+    const view = setup({ handlers: { probe: () => Promise.reject(new AccountApiError('unauthorized', '请登录', 401)) } });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('guest'));
+    expect(window.location.hash).toBe('#/projects/p1?scope=s1&view=easy');
+    await act(async () => { await view.result.current.login('test01', 'password'); });
+    expect(view.result.current.state.kind).toBe('authenticated');
+    expect(window.location.hash).toBe('#/projects/p1?scope=s1&view=easy');
+    expect(localStorage.getItem('easydesign-next-url')).toBeNull();
+    view.unmount();
+  });
+
+  it('?next= 参数比当前 hash 优先', async () => {
+    window.history.pushState({}, '', '/app?next=%23%2Faccount');
+    const view = setup({ handlers: { probe: () => Promise.reject(new AccountApiError('unauthorized', '请登录', 401)) } });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('guest'));
+    await act(async () => { await view.result.current.login('test01', 'password'); });
+    expect(view.result.current.state.kind).toBe('authenticated');
+    expect(window.location.hash).toBe('#/account');
+    view.unmount();
+  });
+
+  it('根路由不算意图：无 next 时登录不改变路由', async () => {
+    const view = setup({ handlers: { probe: () => Promise.reject(new AccountApiError('unauthorized', '请登录', 401)) } });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('guest'));
+    await act(async () => { await view.result.current.login('test01', 'password'); });
+    expect(view.result.current.state.kind).toBe('authenticated');
+    expect(window.location.hash).toBe('');
+    view.unmount();
+  });
+
+  it('已登录的探测会丢弃陈旧的 next 意图', async () => {
+    localStorage.setItem('easydesign-next-url', '#/projects/stale');
+    const view = setup();
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    expect(localStorage.getItem('easydesign-next-url')).toBeNull();
+    view.unmount();
+  });
+
+  it('访客意图与账号无关：任何登录成功都带回目标且只消费一次', async () => {
+    localStorage.setItem('easydesign-next-url', '#/projects/other');
+    const view = setup({
+      handlers: {
+        probe: () => Promise.reject(new AccountApiError('unauthorized', '请登录', 401)),
+        login: () => Promise.resolve(sessionFixture('u2', 'other')),
+      },
+    });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('guest'));
+    await act(async () => { await view.result.current.login('other', 'password'); });
+    expect(view.result.current.state.kind).toBe('authenticated');
+    // 深链属于这个浏览器标签页的访客意图，与登录了哪个账号无关（痛点⑥）。
+    expect(window.location.hash).toBe('#/projects/other');
+    expect(localStorage.getItem('easydesign-next-url')).toBeNull();
+    view.unmount();
+  });
 });
 
 describe('reduceSession 纯转移规则（非法转移一律保持原状态）', () => {

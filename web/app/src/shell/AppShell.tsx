@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter, Link, Routes, Route, useParams, useSearchParams } from 'react-router-dom';
 import { I18nProvider, useI18n } from './I18nProvider';
 import { SessionProvider, useSession } from './SessionProvider';
+import { SessionRecoveryModal } from './SessionRecoveryModal';
 import '../styles/shell.css';
 
 /**
@@ -37,6 +38,7 @@ export function AppShell() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </HashRouter>
+          <SessionRecoveryModal />
         </SessionProvider>
       </QueryClientProvider>
     </I18nProvider>

@@ -26,5 +26,16 @@
   "notFound": {
     "title": "页面不存在",
     "back": "返回首页"
+  },
+  "recovery": {
+    "title": "会话已过期",
+    "description": "请重新登录以继续操作",
+    "account": "账号：{{name}}",
+    "password": "密码",
+    "submit": "重新登录",
+    "busy": "正在登录…",
+    "cancel": "取消",
+    "hint": "未保存的输入已暂存，登录后将自动恢复",
+    "failed": "登录失败，请重试"
   }
 }

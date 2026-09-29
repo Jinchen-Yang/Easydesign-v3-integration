@@ -26,5 +26,16 @@
   "notFound": {
     "title": "Page not found",
     "back": "Back to home"
+  },
+  "recovery": {
+    "title": "Session expired",
+    "description": "Sign in again to continue where you left off",
+    "account": "Account: {{name}}",
+    "password": "Password",
+    "submit": "Sign in",
+    "busy": "Signing in…",
+    "cancel": "Cancel",
+    "hint": "Unsaved input is kept and will be restored after sign-in",
+    "failed": "Sign-in failed, please retry"
   }
 }

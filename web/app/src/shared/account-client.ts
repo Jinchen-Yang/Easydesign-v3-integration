@@ -1,3 +1,7 @@
+// Value import from a leaf module: sessionEvents type-imports this file, so
+// the cycle stays type-only and erases at runtime.
+import { dispatchSessionExpired } from './sessionEvents';
+
 export interface AccountUser {
   id: string;
   username: string;
@@ -170,8 +174,11 @@ export function scopedTransport(session: AccountSession, scope: AccountScope): t
     headers.set('X-CSRF-Token', session.csrf_token);
     const response = await fetch(scopedProductPath(scope.id, input), {...init, headers, credentials: 'same-origin'});
     if (response.status === 401) {
+      // 旧界面（/easy/、/account/ 兼容期）仍靠广播自行跳转；本应用不再
+      // location.replace —— 只发事件，由 SessionProvider 切到 expired 状态
+      // 并浮出恢复遮罩，页面与未保存输入原地保留。
       notifySessionChange();
-      location.replace(accountLoginUrl());
+      dispatchSessionExpired({ session, scope });
     }
     return response;
   };

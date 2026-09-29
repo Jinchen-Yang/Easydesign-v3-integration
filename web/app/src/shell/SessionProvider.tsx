@@ -7,6 +7,10 @@ import {
   type AccountScope, type AccountSession,
 } from '../shared/account-client';
 import { draftRecovery, type DraftRecoveryModule } from '../data/draftRecovery';
+import { SESSION_EXPIRED_EVENT, type SessionExpiredDetail } from '../shared/sessionEvents';
+import { captureBootIntent, discardNextUrl, takeNextUrl } from './nextUrl';
+
+export { SESSION_EXPIRED_EVENT };
 
 /**
  * Session state machine (execution guide §2.1).
@@ -85,12 +89,7 @@ export function reduceSession(state: SessionState, event: SessionEvent): Session
   }
 }
 
-/** Fired by the scoped transport on any 401 (wired up in the bleeding-fix phase). */
-export const SESSION_EXPIRED_EVENT = 'easydesign:session-expired';
-export interface SessionExpiredDetail {
-  session: AccountSession;
-  scope?: AccountScope;
-}
+/** Fired by the scoped transport on any 401; see shell/sessionEvents.ts. */
 
 const RECOVERY_PATH_KEY = 'easydesign-recovery-path';
 
@@ -175,8 +174,14 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
       const scope = await resolveScope(session);
       drafts.setIdentity(session.user.id);
       dispatch({ type: 'probe-authenticated', session, scope });
+      // An already-signed-in visitor has no pending login intent; drop any
+      // stale target so a later login is not thrown back to an old route.
+      discardNextUrl();
     } catch (error) {
       if (error instanceof AccountApiError && error.status === 401) {
+        // Park the deep link this guest actually opened (?next= or the hash)
+        // so the next successful login returns them to it.
+        captureBootIntent();
         dispatch({ type: 'probe-guest' });
         return;
       }
@@ -217,7 +222,9 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
     const session = await api.login(username, password);
     const scope = await resolveScope(session);
     drafts.setIdentity(session.user.id);
-    const restorePath = recovering ? takeRecoveryPath() : null;
+    // Same-account recovery returns to the interrupted route; a fresh guest
+    // login consumes the parked `?next=` intent (if any) instead.
+    const restorePath = recovering ? takeRecoveryPath() : takeNextUrl();
     dispatch({ type: 'login-authenticated', session, scope });
     if (restorePath) location.hash = restorePath;
   }, [api, drafts]);

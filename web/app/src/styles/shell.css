@@ -76,3 +76,74 @@
   padding: 0.35rem 0.9rem;
   cursor: pointer;
 }
+
+.session-recovery-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 36, 48, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.session-recovery-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(15, 20, 34, 0.24);
+  padding: 1.5rem 1.75rem;
+  width: min(24rem, 90vw);
+}
+
+.session-recovery-modal h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.session-recovery-account {
+  font-weight: 600;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.session-recovery-modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.session-recovery-modal input {
+  border: 1px solid #d8dbe6;
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.95rem;
+}
+
+.session-recovery-modal button {
+  border: 1px solid #d8dbe6;
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+}
+
+.session-recovery-modal button.session-recovery-primary {
+  background: #1f2430;
+  color: #fff;
+  border-color: #1f2430;
+}
+
+.session-recovery-modal button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.session-recovery-error {
+  color: #b3261e;
+  margin: 0.5rem 0 0;
+}
+
+.recovery-hint {
+  color: #6b7280;
+  font-size: 0.85rem;
+  margin: 0.75rem 0 0;
+}

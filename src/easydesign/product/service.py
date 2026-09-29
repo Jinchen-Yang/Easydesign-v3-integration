@@ -54,6 +54,7 @@ from .projection import (
     activity_rows,
     activity_tasks,
     candidate_page,
+    job_views,
     project_view,
     workbench,
 )
@@ -74,6 +75,7 @@ class ProductService:
         self.launcher = launcher or self.launch
         self._cache_lock = threading.Lock()
         self._stable_snapshots: dict[str, dict[str, Any]] = {}
+        self._live_snapshots: dict[str, dict[str, Any]] = {}
         self._compact_candidate_pages: dict[
             tuple[str, int, int, str | None, str | None], dict[str, Any]
         ] = {}
@@ -81,8 +83,58 @@ class ProductService:
     def _invalidate_projection_cache(self, project: str) -> None:
         with self._cache_lock:
             self._stable_snapshots.pop(project, None)
+            self._live_snapshots.pop(project, None)
             for key in [key for key in self._compact_candidate_pages if key[0] == project]:
                 self._compact_candidate_pages.pop(key, None)
+
+    @staticmethod
+    def _request_signature(value: dict[str, Any]) -> tuple[tuple[str, str, float], ...]:
+        return tuple(
+            (str(row["id"]), str(row["state"]), float(row["updated"]))
+            for row in value.get("requests", [])
+        )
+
+    def _refresh_live_snapshot(
+        self, project: str, cached: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Refresh volatile job progress without rebuilding scientific history."""
+
+        if cached.get("project", {}).get("status") not in {"running", "incomplete"}:
+            return None
+        journal = self.journal()
+        try:
+            requests = [self.request(row["id"]) for row in journal.for_project(project)]
+        finally:
+            journal.close()
+        if self._request_signature({"requests": requests}) != self._request_signature(cached):
+            return None
+        with self.gateway.session(project) as session:
+            row = session.bridge.store.db.execute(
+                "SELECT COALESCE(MAX(seq),0) FROM events WHERE thread=?",
+                (session.bridge.thread,),
+            ).fetchone()
+            if int(row[0]) != int(cached.get("event_cursor", -1)):
+                return None
+            jobs = job_views(session, bool(cached["project"].get("validation_only")))
+        value = deepcopy(cached)
+        value["jobs"] = jobs
+        # Keep the human-readable task ledger aligned with the authoritative
+        # controller receipts while the scientific event cursor is unchanged.
+        by_task = {str(task.get("task_id")): task for task in value.get("tasks", [])}
+        for job in jobs:
+            task = by_task.get("target-job-" + job["id"])
+            if task is None:
+                continue
+            task["status"] = (
+                "completed"
+                if job["status"] == "succeeded"
+                else "failed"
+                if job["status"] in {"failed", "operational-failed", "lost", "drained"}
+                else "pending"
+                if job["status"] == "queued"
+                else "running"
+            )
+        return value
 
     def _remember_project_view(self, project: str, value: dict[str, Any]) -> None:
         journal = self.journal()
@@ -570,6 +622,14 @@ class ProductService:
         )
         if cached is not None and not cached_awaiting_without_card:
             return deepcopy(cached)
+        with self._cache_lock:
+            live = self._live_snapshots.get(project)
+        if live is not None:
+            refreshed = self._refresh_live_snapshot(project, live)
+            if refreshed is not None:
+                with self._cache_lock:
+                    self._live_snapshots[project] = deepcopy(refreshed)
+                return refreshed
         if (
             registered is not None
             and not (self.context.projects_root / project / "PROJECT.yaml").is_file()
@@ -634,6 +694,9 @@ class ProductService:
         }:
             with self._cache_lock:
                 self._stable_snapshots[project] = deepcopy(value)
+        elif value["project"]["status"] in {"running", "incomplete"}:
+            with self._cache_lock:
+                self._live_snapshots[project] = deepcopy(value)
         return value
 
     def candidates(

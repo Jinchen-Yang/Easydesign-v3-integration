@@ -1202,6 +1202,46 @@ def project_view(session: DomainSession, title: str | None = None) -> ProjectVie
     )
 
 
+def job_views(session: DomainSession, validation_only: bool) -> list[dict[str, Any]]:
+    """Project only the live job receipts needed by the product progress UI.
+
+    This deliberately avoids rebuilding the scientific state machine. Reading
+    controller rows and bounded progress manifests is cheap enough for live
+    polling, while re-validating every historical YAML/evidence document is not.
+    """
+
+    b = session.bridge
+    jobs: list[dict[str, Any]] = []
+    for job in b.controller.list(project_id=b.project_id)[:40]:
+        progress = job_progress(job, b.context.runs_root)
+        phase = {
+            1: "target",
+            2: "site",
+            3: "design",
+            4: "pilot",
+            5: "pilot",
+            6: "scale",
+            7: "candidates",
+        }.get(job.step, "unknown")
+        if progress is not None:
+            stage_id = str(progress["stage_id"])
+            if stage_id.startswith(("04-", "05-")):
+                phase = "pilot"
+            elif stage_id.startswith(("06-", "07-")):
+                phase = "scale"
+        jobs.append(
+            {
+                "id": job.job_id,
+                "phase": phase,
+                "status": str(job.status),
+                "resumable": str(job.status) in {"failed", "lost", "drained"},
+                "validation_only": validation_only,
+                **({"progress": progress} if progress is not None else {}),
+            }
+        )
+    return jobs
+
+
 def workbench(
     session: DomainSession, catalog: ArtifactCatalog, title: str | None = None
 ) -> WorkbenchProjection:
@@ -1285,34 +1325,7 @@ def workbench(
             {"label": label, "status": "complete" if done else "waiting"}
             for label, done in checks.get(step["id"], [])
         ]
-    jobs = []
-    for j in b.controller.list(project_id=b.project_id)[:40]:
-        progress = job_progress(j, b.context.runs_root)
-        phase = {
-            1: "target",
-            2: "site",
-            3: "design",
-            4: "pilot",
-            5: "pilot",
-            6: "scale",
-            7: "candidates",
-        }.get(j.step, "unknown")
-        if progress is not None:
-            stage_id = str(progress["stage_id"])
-            if stage_id.startswith(("04-", "05-")):
-                phase = "pilot"
-            elif stage_id.startswith(("06-", "07-")):
-                phase = "scale"
-        jobs.append(
-            {
-                "id": j.job_id,
-                "phase": phase,
-                "status": str(j.status),
-                "resumable": str(j.status) in {"failed", "lost", "drained"},
-                "validation_only": project.validation_only,
-                **({"progress": progress} if progress is not None else {}),
-            }
-        )
+    jobs = job_views(session, project.validation_only)
     events = activity(session, recent=True)
     projected_tasks = activity_tasks(activity(session, limit=200, recent=True))
     known_tasks = {task.get("task_id"): task for task in projected_tasks}

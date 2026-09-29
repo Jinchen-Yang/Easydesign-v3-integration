@@ -1737,6 +1737,50 @@ def test_compact_candidate_cache_is_project_scoped_and_invalidated(bridge, tmp_p
     assert service._compact_candidate_pages == {}
 
 
+def test_running_snapshot_refreshes_jobs_without_reprojecting_scientific_history(
+    bridge, tmp_path, monkeypatch
+):
+    service = service_for(bridge, tmp_path)
+    baseline = {
+        "project": {"status": "running", "validation_only": False},
+        "event_cursor": 7,
+        "requests": [],
+        "jobs": [],
+        "tasks": [],
+    }
+    service._live_snapshots["target-test"] = baseline
+
+    class Cursor:
+        @staticmethod
+        def execute(*_args, **_kwargs):
+            return SimpleNamespace(fetchone=lambda: (7,))
+
+    @contextmanager
+    def unchanged_session(_project):
+        yield SimpleNamespace(
+            bridge=SimpleNamespace(
+                store=SimpleNamespace(db=Cursor()),
+                thread="thread",
+                controller=SimpleNamespace(list=lambda **_kwargs: []),
+                project_id="target-test",
+                context=SimpleNamespace(runs_root=tmp_path),
+            )
+        )
+
+    monkeypatch.setattr(service.gateway, "session", unchanged_session)
+
+    def must_not_reproject(*_args, **_kwargs):
+        raise AssertionError("unchanged live event cursor must use the lightweight job path")
+
+    monkeypatch.setattr("easydesign.product.service.workbench", must_not_reproject)
+    refreshed = service.snapshot("target-test")
+    assert refreshed["event_cursor"] == baseline["event_cursor"]
+    assert refreshed["project"]["status"] == "running"
+
+    service._invalidate_projection_cache("target-test")
+    assert "target-test" not in service._live_snapshots
+
+
 def test_gate3_decision_is_bound_to_current_pilot_plan(design_bridge, tmp_path):
     from easydesign.agent.phase34_runtime import Phase34Runtime
     from tests.unit.agent.test_phase34_authority import prepared

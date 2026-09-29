@@ -38,6 +38,20 @@ export function awaitingDecisionRecovery(snapshot: ProductSnapshot): boolean {
   return snapshot.project.status === 'awaiting_scientist' && snapshot.decision === null;
 }
 
+/**
+ * Gate 1 is a compact target/construct confirmation, not a scientific risk
+ * review. The full warnings remain in the durable decision record and become
+ * user-facing only at the later gates where they can affect site or design
+ * authority.
+ */
+export function shouldShowGateRiskDisclosure(
+  gate: number,
+  warningCount: number,
+  limitationCount: number,
+): boolean {
+  return gate !== 1 && warningCount + limitationCount > 0;
+}
+
 export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySummary[] {
   const raw = (snapshot.recent_activity || []).filter((item) => item.visible !== false);
   const awaiting = snapshot.project.status === 'awaiting_scientist' || snapshot.decision !== null;

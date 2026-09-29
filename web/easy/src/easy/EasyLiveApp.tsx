@@ -29,6 +29,7 @@ import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
 import {
   awaitingDecisionRecovery,
+  shouldShowGateRiskDisclosure,
   summarizeEasyActivity,
   summarizeGoal,
 } from './live-presentation';
@@ -615,10 +616,17 @@ function GatePanel({
     decision.gate === 1
       ? decision.options.filter((item) => item.option_id === decision.default_option_id)
       : decision.options;
-  const gatePassages: LocalizationPassage[] = [
-    ...decision.warnings.map((text, index) => ({ id: `gate.warning.${index}`, text })),
-    ...decision.limitations.map((text, index) => ({ id: `gate.limitation.${index}`, text })),
-  ].filter((item) => item.text.trim());
+  const showRiskDisclosure = shouldShowGateRiskDisclosure(
+    decision.gate,
+    decision.warnings.length,
+    decision.limitations.length,
+  );
+  const gatePassages: LocalizationPassage[] = showRiskDisclosure
+    ? [
+        ...decision.warnings.map((text, index) => ({ id: `gate.warning.${index}`, text })),
+        ...decision.limitations.map((text, index) => ({ id: `gate.limitation.${index}`, text })),
+      ].filter((item) => item.text.trim())
+    : [];
   const [gateChinese, setGateChinese] = useState<Record<string, string>>({});
   const [gateLanguageError, setGateLanguageError] = useState(false);
   const [gateLocalizationAttempt, setGateLocalizationAttempt] = useState(0);
@@ -693,7 +701,7 @@ function GatePanel({
           );
         })}
       </div>
-      {(decision.warnings.length > 0 || decision.limitations.length > 0) && (
+      {showRiskDisclosure && (
         <details>
           <summary>风险与局限（{decision.warnings.length + decision.limitations.length}）</summary>
           <ul>

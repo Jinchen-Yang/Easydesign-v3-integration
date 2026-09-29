@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   awaitingDecisionRecovery,
+  shouldShowGateRiskDisclosure,
   summarizeEasyActivity,
   summarizeGoal,
 } from '../../src/easy/live-presentation';
@@ -93,6 +94,12 @@ describe('Easy live presentation', () => {
     expect(awaitingDecisionRecovery(value)).toBe(true);
     value.project.status = 'running';
     expect(awaitingDecisionRecovery(value)).toBe(false);
+  });
+
+  it('keeps target confirmation compact while preserving later-gate risk review', () => {
+    expect(shouldShowGateRiskDisclosure(1, 4, 6)).toBe(false);
+    expect(shouldShowGateRiskDisclosure(2, 4, 6)).toBe(true);
+    expect(shouldShowGateRiskDisclosure(3, 0, 0)).toBe(false);
   });
 
   it('does not present an available continuation as active model work', () => {

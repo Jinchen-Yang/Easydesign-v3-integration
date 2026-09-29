@@ -45,6 +45,18 @@ from .transport_policy import DeadlineReader, TransportPolicy
 # The cookie remains origin-bound, HttpOnly and strict same-site; the durable
 # workspace token is still required for the first login in each browser profile.
 SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+
+# Server-level 404 for browser navigations; client-side routes are handled by the
+# SPA's own NotFoundPage once the app has loaded. Plain markup only: the shared
+# CSP header forbids inline styles and scripts.
+_STATIC_NOT_FOUND_PAGE = (
+    '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    "<title>页面不存在 · EasyDesign</title></head>"
+    "<body><h1>404 · 页面不存在</h1>"
+    "<p>您访问的地址不存在或尚未发布。请从已有入口重新进入。</p>"
+    "</body></html>"
+).encode()
 GPU_SAMPLE_TTL_SECONDS = 10.0
 # Vite's content-addressed output is public and immutable across releases. Never
 # infer cacheability for API/artifact URLs or unhashed files from their suffix.
@@ -436,7 +448,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             if not path.startswith("/api/"):
-                self.static(path)
+                self.serve_static_page(path)
                 return
             if not self.authenticated():
                 raise ProductError("unauthorized", "Open the Workbench access link", 401)
@@ -646,6 +658,16 @@ class Handler(BaseHTTPRequestHandler):
             immutable=HASHED_BUILD_ASSET.fullmatch(relative) is not None,
         )
 
+    def serve_static_page(self, path: str) -> None:
+        """Browsers navigating to an unknown page get an HTML 404, not bare JSON."""
+        try:
+            self.static(path)
+        except ProductError as error:
+            if error.status == 404 and "text/html" in self.headers.get("Accept", ""):
+                self.send(404, _STATIC_NOT_FOUND_PAGE, "text/html; charset=utf-8")
+            else:
+                raise
+
 
 def load_provider_credentials(gateway: NativeGateway, env_file: Path | None) -> None:
     """Load only declared provider variables; never execute a credential file."""
@@ -699,6 +721,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional Easy UI build served from /easy/ on the same authenticated origin",
     )
     parser.add_argument(
+        "--app-web",
+        type=Path,
+        help="Optional unified app build served from /app/ on the same authenticated origin",
+    )
+    parser.add_argument(
         "--prediction-backend",
         choices=("openfold3-af3-jax", "protenix-v2"),
         default="openfold3-af3-jax",
@@ -725,6 +752,7 @@ def main(argv: list[str] | None = None) -> int:
             accounts_only=args.accounts_only,
             gpu_devices=args.gpu_devices,
             capacity_config=args.capacity_config,
+            app_web=args.app_web,
         )
     context = WorkspaceContext.discover()
     capacity = load_capacity_config(context.root, args.capacity_config)

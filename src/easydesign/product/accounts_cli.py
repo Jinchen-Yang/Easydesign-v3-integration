@@ -50,6 +50,7 @@ def serve_accounts(
     accounts_only: bool,
     gpu_devices: str | None,
     capacity_config: Path | None = None,
+    app_web: Path | None = None,
 ) -> int:
     context = WorkspaceContext.discover()
     capacity = load_capacity_config(context.root, capacity_config)
@@ -65,6 +66,11 @@ def serve_accounts(
         raise ProductError("account_ui_not_built", "请先构建包含账户页面的 Easy UI", 503)
     if not accounts_only and not (web_root / "index.html").is_file():
         raise ProductError("workbench_not_built", "请先构建专业版工作台", 503)
+    app_root = None
+    if app_web is not None:
+        app_root = confined(context.root, context.root / app_web)
+        if not (app_root / "index.html").is_file():
+            raise ProductError("app_ui_not_built", "请先构建统一应用（web/app）", 503)
     runtime = MultiUserRuntime(
         context,
         accounts,
@@ -110,6 +116,7 @@ def serve_accounts(
         port=port,
         web_root=web_root,
         easy_web_root=easy_root,
+        app_web_root=app_root,
         public_origin=public_origin,
         rabbit_chat=rabbit,
         transport_policy=capacity.http.policy(),

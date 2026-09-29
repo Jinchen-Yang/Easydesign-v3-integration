@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import mimetypes
 import os
 import secrets
 import threading
@@ -25,6 +26,7 @@ from .rabbit_chat import RabbitChatService, validate_chat_request
 from .resource_supervisor import process_identity
 from .server import Handler, ProductServer
 from .service import ProductService
+from .static_assets import HASHED_BUILD_ASSET, StaticAssets
 from .tenancy import MultiUserRuntime, ScopedProductService
 from .transport_policy import TransportPolicy
 
@@ -73,6 +75,7 @@ class MultiUserServer(ProductServer):
         port: int = 14983,
         web_root: Path | None = None,
         easy_web_root: Path | None = None,
+        app_web_root: Path | None = None,
         public_origin: str | None = None,
         rabbit_chat: RabbitChatService | None = None,
         transport_policy: TransportPolicy | None = None,
@@ -117,6 +120,10 @@ class MultiUserServer(ProductServer):
             web_history=web_history,
             easy_web_history=easy_web_history,
         )
+        self.app_web_root = app_web_root
+        # The unified SPA is a third, independent static tree; /app/ stays 404
+        # until a release explicitly points --app-web at a built dist.
+        self.app_assets = StaticAssets(self.asset_root, app_web_root)
 
     @staticmethod
     def _unbound_launch(_request_id: str) -> None:
@@ -203,7 +210,7 @@ class AccountHandler(Handler):
                 200,
                 {
                     "mode": "multi-user",
-                    "registration": "admin-review",
+                    "registration": "open",
                     "setup_required": not store.has_admin(),
                     "compute_available": self.server.runtime.launcher is not None,
                 },
@@ -545,7 +552,7 @@ class AccountHandler(Handler):
             if "\x00" in path or "\\" in path or ".." in path.split("/"):
                 raise ProductError("invalid_path", "请求路径不合法", 403)
             if not path.startswith("/api/"):
-                self.static(path)
+                self.serve_static_page(path)
                 return
             if "%" in path:
                 raise ProductError("invalid_path", "API 路径不能重复编码", 403)
@@ -673,6 +680,26 @@ class AccountHandler(Handler):
             if root is None or self.command != "GET":
                 raise ProductError("not_found", "账户页面尚未构建", 404)
             self.send(200, confined_bytes(root, "account/index.html"), "text/html")
+            return
+        if path == "/app" or path.startswith("/app/"):
+            root = self.server.app_web_root
+            if root is None or self.command != "GET":
+                raise ProductError("not_found", "统一应用尚未构建", 404)
+            relative = path.removeprefix("/app").lstrip("/") or "index.html"
+            # Same allowlist shape as the parent static(): the mascot textures and
+            # demo structures must stay listed, or the app degrades silently.
+            if not (
+                relative == "index.html"
+                or relative.startswith(("assets/", "structures/", "mascot/rabbit/"))
+                or relative in {"favicon.svg"}
+            ):
+                raise ProductError("not_found", "Unknown application resource", 404)
+            self.send(
+                200,
+                self.server.app_assets.read(relative),
+                mimetypes.guess_type(relative)[0] or "application/octet-stream",
+                immutable=HASHED_BUILD_ASSET.fullmatch(relative) is not None,
+            )
             return
         super().static(path)
 

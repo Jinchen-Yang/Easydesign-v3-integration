@@ -382,7 +382,13 @@ def test_route_aliases_share_the_same_capacity_gate_as_the_actual_dispatcher(tmp
             # Prove that each spelling actually routes, not only that a matcher
             # classifies it; the fixture contains no science workers or models.
             assert client.get(path).status_code == 200, path
-            assert server.read_slots.acquire(blocking=False)
+            # The response reaches the client before the serving thread reaches
+            # its finally-release, so wait briefly instead of racing the assert.
+            deadline = time.monotonic() + 2.0
+            while not server.read_slots.acquire(blocking=False):
+                if time.monotonic() > deadline:
+                    pytest.fail(f"read slot was not released after: {path}")
+                time.sleep(0.005)
             try:
                 result = client.get(path)
                 assert result.status_code == 503, path

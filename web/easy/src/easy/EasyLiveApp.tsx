@@ -158,7 +158,7 @@ const PIPELINE_STEPS = [
   ['boltzgen-refold', '重折叠'],
   ['boltzgen-analysis', '分析'],
   ['boltzgen-filter', '筛选'],
-  ['native-filter', 'AFO / 原生筛选'],
+  ['native-filter', '独立结构预测 / 原生筛选'],
 ] as const;
 
 function ExecutionProgress({
@@ -217,7 +217,7 @@ function ExecutionProgress({
           <span>真实计算</span>
           <strong>
             {phase === 'pilot' ? '小规模试运行' : '扩大测试'} ·{' '}
-            {native ? 'AFO 独立结构预测与原生筛选' : currentLabel || 'BoltzGen'}
+            {native ? '独立结构预测与原生筛选' : currentLabel || '候选结构计算'}
           </strong>
         </div>
         <b>{total ? `${completed} / ${total} 条` : '等待资源'}</b>

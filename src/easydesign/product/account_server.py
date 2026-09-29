@@ -227,7 +227,7 @@ class AccountHandler(Handler):
                     fields.get("display_name") or fields["username"],
                     peer=self.client_ip(),
                 )
-                self.send(201, {"user": user.model_dump(), "status": "pending-review"})
+                self.send(201, {"user": user.model_dump(), "status": "registered"})
             else:
                 session = store.login(fields["username"], fields["password"], peer=self.client_ip())
                 previous = self._token()

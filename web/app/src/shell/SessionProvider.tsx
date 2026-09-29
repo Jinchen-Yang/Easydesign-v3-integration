@@ -143,7 +143,14 @@ export interface SessionApi {
 
 export const defaultSessionApi: SessionApi = {
   probe: () => accountApi<AccountSession>('/accounts/me'),
-  login: (username, password) => accountApi<AccountSession>('/accounts/login', null, { username, password }),
+  login: async (username, password) => {
+    // Login establishes the cookie and returns only user + CSRF. The canonical
+    // session endpoint supplies scopes and invitations, including on recovery.
+    await accountApi<Pick<AccountSession, 'user' | 'csrf_token'>>(
+      '/accounts/login', null, { username, password },
+    );
+    return accountApi<AccountSession>('/accounts/me');
+  },
   logout: (session) => accountApi('/accounts/logout', session, {}),
 };
 

@@ -151,7 +151,7 @@ def test_administration_only_mode_guards_compute_without_side_effects(tmp_path):
         thread.join(timeout=5)
 
 
-def test_registration_approval_and_session_revocation_over_http(multiuser):
+def test_open_registration_and_session_revocation_over_http(multiuser):
     server = multiuser.server
     with client(server) as anonymous:
         register = anonymous.post(
@@ -160,6 +160,19 @@ def test_registration_approval_and_session_revocation_over_http(multiuser):
         )
         assert register.status_code == 201
         dave_id = register.json()["user"]["id"]
+        assert register.json()["user"]["status"] == "active"
+        assert anonymous.get("/api/v1/scopes/" + dave_id + "/projects").status_code == 401
+        immediate = anonymous.post(
+            "/api/v1/accounts/login", json={"username": "dave", "password": PASSWORD}
+        )
+        assert immediate.status_code == 200
+
+    with client(server, "admin") as admin:
+        assert (
+            admin.post(f"/api/v1/admin/users/{dave_id}", json={"status": "pending"}).status_code
+            == 200
+        )
+    with client(server) as anonymous:
         denied = anonymous.post(
             "/api/v1/accounts/login", json={"username": "dave", "password": PASSWORD}
         )

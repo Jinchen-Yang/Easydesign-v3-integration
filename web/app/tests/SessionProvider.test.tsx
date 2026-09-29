@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
   reduceSession, SESSION_EXPIRED_EVENT, SessionProvider, useSession,
   type SessionApi, type SessionEvent, type SessionState,
@@ -82,6 +82,44 @@ function setup({ handlers = {} }: SetupOptions = {}) {
 function fireSessionExpired(detail: Record<string, unknown> = {}): void {
   window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail }));
 }
+
+it('真实登录响应不含 scopes 时仍可登录并恢复过期会话', async () => {
+  const session = sessionFixture();
+  let signedIn = false;
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (input === '/api/v1/accounts/login') {
+      signedIn = true;
+      return Response.json({ user: session.user, csrf_token: session.csrf_token });
+    }
+    if (input === '/api/v1/accounts/me') {
+      return signedIn
+        ? Response.json(session)
+        : Response.json({ error: { code: 'unauthorized' } }, { status: 401 });
+    }
+    throw new Error(`Unexpected request: ${String(input)}`);
+  });
+  const drafts = createDraftRecovery({ storage: memoryStorage() });
+  const wrapper = ({ children }: { children?: ReactNode }) => (
+    <SessionProvider drafts={drafts}>{children}</SessionProvider>
+  );
+  const view = renderHook(() => useSession(), { wrapper });
+  try {
+    await waitFor(() => expect(view.result.current.state.kind).toBe('guest'));
+    await act(async () => { await view.result.current.login('test01', 'password'); });
+    expect(view.result.current.state).toEqual({
+      kind: 'authenticated', session, scope: session.scopes[0],
+    });
+    act(() => fireSessionExpired());
+    expect(view.result.current.state.kind).toBe('expired');
+    await act(async () => { await view.result.current.recoverSession('password'); });
+    expect(view.result.current.state).toEqual({
+      kind: 'authenticated', session, scope: session.scopes[0],
+    });
+  } finally {
+    view.unmount();
+    fetchMock.mockRestore();
+  }
+});
 
 beforeEach(() => {
   localStorage.clear();

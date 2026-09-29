@@ -79,6 +79,7 @@ def test_account_api_requires_individual_sessions_and_disables_workspace_token(p
             },
         )
         assert created.status_code == 201
+        assert created.json()["status"] == "registered"
         assert created.json()["user"]["status"] == "active"
         assert (
             anonymous.post(

@@ -219,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
         cookie.load(self.headers.get("Cookie", ""))
         value = cookie.get("easydesign_session")
         valid = value is not None and hmac.compare_digest(value.value, self.server.token)
-        if valid and self.command == "POST" and not self.headers.get("Origin"):
+        if valid and self.command in {"POST", "DELETE"} and not self.headers.get("Origin"):
             raise ProductError(
                 "origin_required", "Browser writes require a same-origin request", 403
             )
@@ -246,6 +246,9 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatch()
 
     def do_POST(self) -> None:
+        self.dispatch()
+
+    def do_DELETE(self) -> None:
         self.dispatch()
 
     def dispatch(self) -> None:
@@ -381,6 +384,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     raise ProductError("not_found", "Unknown API resource", 404)
                 self.send(200, result)
+            elif self.command == "DELETE" and len(tail) == 2 and tail[0] == "projects":
+                self.send(200, service.delete(tail[1]))
             elif tail == ["inputs"]:
                 self.send(
                     201, service.upload(query.get("filename", [""])[0], self.body(32 * 1024**2))

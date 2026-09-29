@@ -237,6 +237,67 @@ def test_easy_project_listing_reuses_the_persisted_lightweight_projection(
     assert service.projects(limit=5, surface="easy")["items"] == first["items"]
 
 
+def test_easy_project_delete_is_recoverable_scoped_and_rejects_active_work(
+    bridge, tmp_path
+):
+    service = service_for(bridge, tmp_path)
+    active = service.create(
+        CreateProject(
+            request_id=str(uuid4()),
+            title="Active Easy design",
+            goal="Design an extracellular VHH.",
+            surface="easy",
+        )
+    )
+    with pytest.raises(ProductError, match="running design") as busy:
+        service.delete(active["project"])
+    assert busy.value.code == "project_busy"
+
+    request_id = str(uuid4())
+    removable = service.create(
+        CreateProject(
+            request_id=request_id,
+            title="Removable Easy design",
+            goal="Design another extracellular VHH.",
+            surface="easy",
+        )
+    )
+    professional_request = str(uuid4())
+    professional = service.create(
+        CreateProject(
+            request_id=professional_request,
+            title="Professional design",
+            goal="Review a professional workflow.",
+            surface="professional",
+        )
+    )
+    journal = service.journal()
+    try:
+        journal.update(request_id, "succeeded", {"status": "ready"})
+        journal.update(professional_request, "succeeded", {"status": "ready"})
+    finally:
+        journal.close()
+
+    with http_api(service) as client:
+        deleted = client.delete(f"/api/v1/projects/{removable['project']}")
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {
+            "id": removable["project"],
+            "deleted": True,
+            "recoverable": True,
+        }
+        assert removable["project"] not in {
+            item["id"]
+            for item in client.get("/api/v1/projects?surface=easy&limit=100").json()["items"]
+        }
+        assert client.get(
+            f"/api/v1/projects/{removable['project']}/workbench"
+        ).status_code == 404
+        assert client.delete(f"/api/v1/projects/{professional['project']}").status_code == 404
+
+    assert (tmp_path / "workspace/projects" / removable["project"]).is_dir()
+
+
 def test_gate1_remote_structure_candidates_have_checksum_bound_previews(tmp_path):
     workspace = tmp_path / "workspace"
     root = workspace / "runs" / "project" / "run"

@@ -32,6 +32,7 @@ export interface EasyProductPort {
   clearProject(): void;
   projectPage(offset: number): Promise<void>;
   renameProject(id: string, title: string): Promise<void>;
+  deleteProject(id: string): Promise<void>;
   candidatePage(offset: number, phase?: 'pilot' | 'scale' | 'candidates'): Promise<void>;
   selectCandidate(id: string): Promise<void>;
   artifactText(url: string): Promise<string>;
@@ -232,6 +233,18 @@ export class EasyProductAdapter implements EasyProductPort {
             }
           : this.state.snapshot,
     });
+  }
+  async deleteProject(id: string) {
+    await this.api<{ id: string; deleted: boolean; recoverable: boolean }>(`/projects/${id}`, {
+      method: 'DELETE',
+    });
+    if (this.state.selectedProject === id) this.clearProject();
+    this.projectsAt = 0;
+    const projects = await this.api<Page<Project>>(
+      `/projects?surface=easy&offset=${this.state.projects.offset}&limit=5`,
+    );
+    this.projectsAt = Date.now();
+    this.emit({ projects, connection: 'connected', error: null });
   }
   async projectPage(offset: number) {
     this.emit({

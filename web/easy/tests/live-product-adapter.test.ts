@@ -271,6 +271,41 @@ describe('Easy live adapter preserves Product API authority', () => {
     expect(selected).toBeNull();
   });
 
+  it('deletes an Easy project, clears an open copy and reloads the lightweight list', async () => {
+    let deleted = false;
+    let latest: ReturnType<EasyProductAdapter['load']> extends Promise<infer T> ? T : never;
+    const calls: { path: string; method: string }[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      const method = init?.method || 'GET';
+      calls.push({ path, method });
+      if (method === 'DELETE') {
+        deleted = true;
+        return Response.json({ id: project.id, deleted: true, recoverable: true });
+      }
+      if (path.endsWith('/workbench')) return Response.json(snapshot());
+      if (path.includes('/projects?'))
+        return Response.json({
+          total: deleted ? 0 : 1,
+          offset: 0,
+          limit: 5,
+          items: deleted ? [] : [project],
+        });
+      return Response.json({ total: 0, offset: 0, limit: 100, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    adapter.subscribe((event) => {
+      latest = event.snapshot;
+    });
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await adapter.deleteProject(project.id);
+    expect(calls).toContainEqual({ path: `/api/v1/projects/${project.id}`, method: 'DELETE' });
+    expect(latest!.selectedProject).toBeNull();
+    expect(latest!.projects.items).toEqual([]);
+  });
+
   it('loads the Easy summary candidate view without the unused metric payload', async () => {
     const current = snapshot();
     current.candidates.total = 1;

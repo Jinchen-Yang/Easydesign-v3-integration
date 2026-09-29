@@ -9,6 +9,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
@@ -40,6 +41,7 @@ import type {
   LabOrderView,
   LiveState,
   LocalizationPassage,
+  Project,
   ProductSnapshot,
 } from './product-contracts';
 
@@ -947,6 +949,9 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const [viewedIndex, setViewedIndex] = useState<number | null>(null);
   const [order, setOrder] = useState<LabOrderView | null>(null);
   const [error, setError] = useState('');
+  const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const autoContinuation = useRef<string | null>(null);
   useEffect(() => {
     const unsubscribe = adapter.subscribe((event) => setState(event.snapshot));
@@ -1087,6 +1092,39 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     params.delete('token');
     params.set('project', id);
     history.replaceState({}, '', `${location.pathname}?${params.toString()}#current-design`);
+  }
+
+  async function confirmDelete() {
+    if (!deleteCandidate || deletingProject) return;
+    const deletedSelected = state?.selectedProject === deleteCandidate.id;
+    setDeletingProject(true);
+    setDeleteError('');
+    try {
+      await adapter.deleteProject(deleteCandidate.id);
+      if (deletedSelected) {
+        setOrder(null);
+        setSelectedSite(undefined);
+        setViewedIndex(null);
+        autoContinuation.current = null;
+        const params = new URLSearchParams(location.search);
+        params.delete('project');
+        params.delete('token');
+        history.replaceState(
+          {},
+          '',
+          `${location.pathname}${params.size ? `?${params}` : ''}#my-designs`,
+        );
+      }
+      setDeleteCandidate(null);
+    } catch (reason) {
+      setDeleteError(
+        (reason as { code?: string }).code === 'project_busy'
+          ? '当前设计仍在运行，完成或停止后才能删除。'
+          : '删除失败，请稍后重试。',
+      );
+    } finally {
+      setDeletingProject(false);
+    }
   }
 
   if (!state)
@@ -1502,9 +1540,29 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     <td>{liveStageName(project.phase)}</td>
                     <td>{liveStatusName(project.status)}</td>
                     <td>
-                      <button className="easy-outline" onClick={() => void openProject(project.id)}>
-                        打开
-                      </button>
+                      <div className="easy-history-actions">
+                        <button
+                          className="easy-outline"
+                          onClick={() => void openProject(project.id)}
+                        >
+                          打开
+                        </button>
+                        <button
+                          className="easy-delete-project"
+                          disabled={['running', 'incomplete'].includes(project.status)}
+                          title={
+                            ['running', 'incomplete'].includes(project.status)
+                              ? '正在运行的设计暂不能删除'
+                              : `删除 ${project.title}`
+                          }
+                          onClick={() => {
+                            setDeleteError('');
+                            setDeleteCandidate(project);
+                          }}
+                        >
+                          <Trash2 size={14} /> 删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1513,6 +1571,42 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
           </div>
         </section>
       </main>
+      {deleteCandidate && (
+        <div className="easy-delete-backdrop" role="presentation">
+          <section
+            className="easy-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="easy-delete-title"
+          >
+            <h2 id="easy-delete-title">确认删除这个设计？</h2>
+            <strong>{deleteCandidate.title}</strong>
+            <p>
+              删除后，它将立即从“我的设计”中移除。为避免误操作造成不可逆损失，底层科学运行记录仍保留在本地归档中。
+            </p>
+            {deleteError && <p className="easy-error">{deleteError}</p>}
+            <div>
+              <button
+                className="easy-outline"
+                disabled={deletingProject}
+                onClick={() => {
+                  setDeleteError('');
+                  setDeleteCandidate(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="easy-confirm-delete"
+                disabled={deletingProject}
+                onClick={() => void confirmDelete()}
+              >
+                <Trash2 size={15} /> {deletingProject ? '正在删除…' : '确认删除'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <RabbitMascot
         locale="zh"
         mood={

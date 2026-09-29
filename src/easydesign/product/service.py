@@ -237,6 +237,9 @@ class ProductService:
         journal = self.journal()
         try:
             registered = journal.project(project)
+            deleted = journal.project(project, include_deleted=True)
+            if registered is None and deleted is not None:
+                raise ProductError("not_found", "Unknown project", 404)
             if registered is None:
                 with self.gateway.session(project):
                     pass  # Verify an accessible native session without changing it.
@@ -251,6 +254,14 @@ class ProductService:
         finally:
             journal.close()
         return {"id": project, "title": title}
+
+    def delete(self, project: str) -> dict[str, Any]:
+        self._invalidate_projection_cache(project)
+        journal = self.journal()
+        try:
+            return journal.delete_easy_project(project)
+        finally:
+            journal.close()
 
     def title(self, session: Any) -> str | None:
         journal = self.journal()
@@ -529,6 +540,13 @@ class ProductService:
         return value
 
     def snapshot(self, project: str) -> dict[str, Any]:
+        journal = self.journal()
+        try:
+            registered = journal.project(project, include_deleted=True)
+        finally:
+            journal.close()
+        if registered is not None and registered.get("deleted_at") is not None:
+            raise ProductError("not_found", "Unknown project", 404)
         with self._cache_lock:
             cached = self._stable_snapshots.get(project)
         # A native turn can publish its awaiting-scientist action immediately
@@ -543,11 +561,6 @@ class ProductService:
         )
         if cached is not None and not cached_awaiting_without_card:
             return deepcopy(cached)
-        journal = self.journal()
-        try:
-            registered = journal.project(project)
-        finally:
-            journal.close()
         if (
             registered is not None
             and not (self.context.projects_root / project / "PROJECT.yaml").is_file()
@@ -744,6 +757,9 @@ class ProductService:
         self._invalidate_projection_cache(project)
         journal = self.journal()
         try:
+            registered = journal.project(project, include_deleted=True)
+            if registered is not None and registered.get("deleted_at") is not None:
+                raise ProductError("not_found", "Unknown project", 404)
             previous = journal.get(request.request_id)
             payload = {
                 "operation": "conversation" if request.action == "message" else "action",

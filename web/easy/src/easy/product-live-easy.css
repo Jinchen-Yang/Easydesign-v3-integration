@@ -669,6 +669,100 @@
   white-space: nowrap;
 }
 
+.easy-history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.easy-delete-project,
+.easy-confirm-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9px;
+  font-weight: 600;
+}
+
+.easy-delete-project {
+  padding: 9px 11px;
+  color: #9a4d5d;
+  border: 1px solid #ead7dc;
+  background: #fff;
+}
+
+.easy-delete-project:hover:not(:disabled) {
+  background: #fff6f7;
+  border-color: #dbaeb8;
+}
+
+.easy-delete-project:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.easy-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(36 26 49 / 24%);
+  backdrop-filter: blur(3px);
+}
+
+.easy-delete-dialog {
+  width: min(460px, 100%);
+  padding: 28px;
+  border: 1px solid #e4dce9;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(42 24 62 / 18%);
+}
+
+.easy-delete-dialog h2 {
+  margin: 0 0 14px;
+  font-size: 22px;
+}
+
+.easy-delete-dialog > strong {
+  display: block;
+  overflow: hidden;
+  color: #322d39;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.easy-delete-dialog p {
+  margin: 14px 0 24px;
+  color: #746e79;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.easy-delete-dialog > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.easy-confirm-delete {
+  padding: 10px 16px;
+  color: #fff;
+  background: #a94e61;
+}
+
+.easy-confirm-delete:hover:not(:disabled) {
+  background: #913f50;
+}
+
+.easy-confirm-delete:disabled {
+  opacity: 0.6;
+}
+
 .easy-history-table td:first-child small {
   margin-top: 4px;
   overflow: hidden;

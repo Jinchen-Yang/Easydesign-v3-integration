@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AtomSelectionSpec, GLViewer } from '3dmol';
 import { RotateCcw, Rotate3D, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Artifact, Site } from './product-contracts';
+import { siteDisplayRank } from './site-selection';
 
 const verifiedStructureCache = new Map<string, ArrayBuffer>();
 
@@ -264,7 +265,10 @@ export function EasyStructureViewer({
         </label>
         <span className="viewer-selection">
           {sites.length
-            ? `已高亮位点 ${sites.find((s) => s.id === selectedSite)?.rank || ''}`
+            ? (() => {
+                const index = sites.findIndex((site) => site.id === selectedSite);
+                return index >= 0 ? `已高亮位点 ${siteDisplayRank(sites[index], index)}` : '位点预览';
+              })()
             : artifact?.candidate_id
               ? Object.values(roles).includes('focus-target')
                 ? '已高亮靶点链'

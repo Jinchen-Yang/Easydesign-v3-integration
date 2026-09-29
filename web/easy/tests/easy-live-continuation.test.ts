@@ -5,6 +5,8 @@ import {
   shouldOfferManualResume,
 } from '../src/easy/EasyLiveApp';
 import type { ProductSnapshot } from '../src/easy/product-contracts';
+import type { Decision, Site } from '../src/easy/product-contracts';
+import { optionIdForSite, siteDisplayRank, siteIdForOption } from '../src/easy/site-selection';
 
 function snapshot(status: string, stage: string): ProductSnapshot {
   return {
@@ -74,5 +76,33 @@ describe('Easy live automatic continuation', () => {
     expect(isProductExecutionActive(awaiting, false, 'accepted')).toBe(true);
     expect(isProductExecutionActive(awaiting, false, 'running')).toBe(true);
     expect(isProductExecutionActive(awaiting, false, 'succeeded')).toBe(false);
+  });
+});
+
+describe('Easy site approval and structure preview mapping', () => {
+  const sites: Site[] = [
+    { id: 'site-a', rank: 'A', name: 'A', selectable: true, design_labels: [], why_ranked: '', risks: [], uncertainty: [], confidence: 'high', coordinates: [] },
+    { id: 'site-b', rank: 'B', name: 'B', selectable: true, design_labels: [], why_ranked: '', risks: [], uncertainty: [], confidence: 'medium', coordinates: [] },
+    { id: 'site-c', rank: null, name: 'C', selectable: false, design_labels: [], why_ranked: '', risks: [], uncertainty: [], confidence: 'low', coordinates: [] },
+  ];
+  const decision = {
+    gate: 2,
+    default_option_id: 'option-a',
+    options: [
+      { option_id: 'option-a', rank: 'A' },
+      { option_id: 'option-b', rank: 'B' },
+      { option_id: 'option-c' },
+    ],
+  } as Decision;
+
+  it('maps approval choices to their structure previews in both directions', () => {
+    expect(siteIdForOption(sites, decision, 'option-b')).toBe('site-b');
+    expect(optionIdForSite(sites, decision, 'site-a')).toBe('option-a');
+  });
+
+  it('gives an unranked comparison entry a stable display letter without ranking it', () => {
+    expect(siteDisplayRank(sites[2], 2)).toBe('C');
+    expect(sites[2].rank).toBeNull();
+    expect(siteIdForOption(sites, decision, 'option-c')).toBe('site-c');
   });
 });

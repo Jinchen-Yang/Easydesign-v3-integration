@@ -477,7 +477,19 @@
 }
 
 .easy-live-site-tabs button {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
   padding: 9px;
+}
+
+.easy-live-site-tabs button small {
+  color: #8b8695;
+  font-size: 9px;
+}
+
+.easy-live-site-tabs button.preview-only {
+  border-style: dashed;
 }
 
 .easy-live-site-tabs button.selected,

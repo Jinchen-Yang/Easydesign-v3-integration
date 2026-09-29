@@ -84,7 +84,7 @@ export interface Decision {
 }
 export interface Site {
   id: string;
-  rank: string;
+  rank: string | null;
   name: string;
   selectable: boolean;
   design_labels: number[];

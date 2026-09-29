@@ -45,6 +45,7 @@ import type {
   Project,
   ProductSnapshot,
 } from './product-contracts';
+import { optionIdForSite, siteDisplayRank, siteIdForOption } from './site-selection';
 
 type CandidatePhase = 'pilot' | 'scale' | 'candidates';
 
@@ -605,25 +606,36 @@ function GatePanel({
   busy,
   connection,
   onDecide,
+  selectedOptionId,
+  onSelectedOptionChange,
   adapter,
 }: {
   snapshot: ProductSnapshot;
   busy: boolean;
   connection: LiveState['connection'];
   onDecide: (input: GateInput) => Promise<void>;
+  selectedOptionId?: string;
+  onSelectedOptionChange?: (optionId: string) => void;
   adapter: EasyProductPort;
 }) {
   const decision = snapshot.decision!;
-  const [selected, setSelected] = useState(decision.default_option_id);
+  const [localSelected, setLocalSelected] = useState(decision.default_option_id);
   const [showRevise, setShowRevise] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
-    setSelected(decision.default_option_id);
+    setLocalSelected(decision.default_option_id);
     setShowRevise(false);
     setInstruction('');
     setError('');
   }, [decision.id, decision.default_option_id]);
+  const selected = decision.options.some((item) => item.option_id === selectedOptionId)
+    ? selectedOptionId!
+    : localSelected;
+  function selectOption(optionId: string) {
+    setLocalSelected(optionId);
+    onSelectedOptionChange?.(optionId);
+  }
   const option = decision.options.find((item) => item.option_id === selected);
   const visibleOptions =
     decision.gate === 1
@@ -701,7 +713,7 @@ function GatePanel({
                 name="easy-live-option"
                 checked={selected === item.option_id}
                 disabled={!item.eligible || busy}
-                onChange={() => setSelected(item.option_id)}
+                onChange={() => selectOption(item.option_id)}
               />
               <span>
                 <strong>
@@ -966,7 +978,8 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const [input, setInput] = useState<EasyInput>(() => emptyInput());
   const [file, setFile] = useState<File | null>(null);
   const [token, setToken] = useState('');
-  const [selectedSite, setSelectedSite] = useState<string | undefined>();
+  const [selectedOptionId, setSelectedOptionId] = useState<string | undefined>();
+  const [previewSiteId, setPreviewSiteId] = useState<string | undefined>();
   const [viewedIndex, setViewedIndex] = useState<number | null>(null);
   const [order, setOrder] = useState<LabOrderView | null>(null);
   const [error, setError] = useState('');
@@ -1018,7 +1031,10 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   }, [adapter, snapshot, state?.pending, state?.pendingRequest?.state]);
   useEffect(() => {
     const defaultSite = snapshot?.scientific_context.approved_site?.selected_candidate_id;
-    setSelectedSite(defaultSite || snapshot?.decision?.default_option_id || undefined);
+    const selection = defaultSite || snapshot?.decision?.default_option_id || undefined;
+    const sites = snapshot?.scientific_context.sites || [];
+    setSelectedOptionId(selection);
+    setPreviewSiteId(siteIdForOption(sites, snapshot?.decision, selection));
     setOrder(snapshot?.lab_order || null);
   }, [snapshot?.revision]);
   useEffect(() => {
@@ -1066,11 +1082,10 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
     .reverse();
   const activity = snapshot ? summarizeEasyActivity(snapshot) : [];
   const projects = state?.projects.items || [];
-  const gateOption = snapshot?.decision?.options.find((item) => item.option_id === selectedSite);
-  const visibleSite = gateOption?.rank
-    ? snapshot?.scientific_context.sites.find((site) => site.rank === gateOption.rank)
-    : selectedSite;
-  const visibleSiteId = typeof visibleSite === 'string' ? visibleSite : visibleSite?.id;
+  const sites = snapshot?.scientific_context.sites || [];
+  const visibleSiteId = sites.some((site) => site.id === previewSiteId)
+    ? previewSiteId
+    : siteIdForOption(sites, snapshot?.decision, selectedOptionId);
   const candidates = candidateDataReady ? state?.candidates.items || [] : [];
 
   async function start() {
@@ -1100,7 +1115,8 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   function newDesign() {
     adapter.clearProject();
     setOrder(null);
-    setSelectedSite(undefined);
+    setSelectedOptionId(undefined);
+    setPreviewSiteId(undefined);
     setViewedIndex(null);
     autoContinuation.current = null;
     const params = new URLSearchParams(location.search);
@@ -1127,7 +1143,8 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       await adapter.deleteProject(deleteCandidate.id);
       if (deletedSelected) {
         setOrder(null);
-        setSelectedSite(undefined);
+        setSelectedOptionId(undefined);
+        setPreviewSiteId(undefined);
         setViewedIndex(null);
         autoContinuation.current = null;
         const params = new URLSearchParams(location.search);
@@ -1400,8 +1417,20 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     busy={requestInFlight}
                     connection={state.connection}
                     adapter={adapter}
+                    selectedOptionId={
+                      snapshot.decision.gate === 2 ? selectedOptionId : undefined
+                    }
+                    onSelectedOptionChange={
+                      snapshot.decision.gate === 2
+                        ? (optionId) => {
+                            setSelectedOptionId(optionId);
+                            const siteId = siteIdForOption(sites, snapshot.decision, optionId);
+                            if (siteId) setPreviewSiteId(siteId);
+                          }
+                        : undefined
+                    }
                     onDecide={async (value) => {
-                      if (value.selected_option_id) setSelectedSite(value.selected_option_id);
+                      if (value.selected_option_id) setSelectedOptionId(value.selected_option_id);
                       await adapter.decide(value);
                     }}
                   />
@@ -1525,20 +1554,41 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                 <EasyStructureViewer
                   artifact={artifact}
                   roles={roles}
-                  sites={snapshot.scientific_context.sites}
+                  sites={sites}
                   selectedSite={visibleSiteId}
                 />
-                {shownIndex >= 1 && snapshot.scientific_context.sites.length > 0 && (
+                {shownIndex >= 1 && sites.length > 0 && (
                   <div className="easy-live-site-tabs">
-                    {snapshot.scientific_context.sites.map((site) => (
-                      <button
-                        key={site.id}
-                        className={site.id === visibleSiteId ? 'selected' : ''}
-                        onClick={() => setSelectedSite(site.id)}
-                      >
-                        位点 {site.rank}
-                      </button>
-                    ))}
+                    {sites.map((site, siteIndex) => {
+                      const displayRank = siteDisplayRank(site, siteIndex);
+                      return (
+                        <button
+                          key={site.id}
+                          className={`${site.id === visibleSiteId ? 'selected' : ''}${
+                            site.selectable ? '' : ' preview-only'
+                          }`}
+                          aria-label={
+                            site.selectable
+                              ? `选择并预览位点 ${displayRank}`
+                              : `预览位点 ${displayRank}，该位点不可批准`
+                          }
+                          onClick={() => {
+                            setPreviewSiteId(site.id);
+                            if (
+                              shownIndex === index &&
+                              snapshot.decision?.gate === 2 &&
+                              site.selectable
+                            ) {
+                              const optionId = optionIdForSite(sites, snapshot.decision, site.id);
+                              if (optionId) setSelectedOptionId(optionId);
+                            }
+                          }}
+                        >
+                          <span>位点 {displayRank}</span>
+                          {!site.selectable && <small>仅供比较</small>}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </aside>

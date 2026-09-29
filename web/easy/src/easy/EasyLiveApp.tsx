@@ -406,9 +406,11 @@ function AcademicChineseDetails({
 function DesignYamlDisclosure({
   artifacts,
   adapter,
+  summary,
 }: {
   artifacts: Artifact[];
   adapter: EasyProductPort;
+  summary?: string;
 }) {
   const [selected, setSelected] = useState(artifacts[0]?.id || '');
   const [content, setContent] = useState<Record<string, string>>({});
@@ -431,16 +433,18 @@ function DesignYamlDisclosure({
   return (
     <details
       className="easy-live-explanation"
+      onClick={(event) => event.stopPropagation()}
       onToggle={(event) => {
         if (event.currentTarget.open && artifact) void load(artifact);
       }}
     >
-      <summary>查看详细 YAML（{artifacts.length} 个骨架）</summary>
+      <summary>{summary || `查看详细 YAML（${artifacts.length} 个）`}</summary>
       <p>以下为可执行的冻结配置；字段名与标识符保留原始语法，不作翻译。</p>
       {artifacts.length > 1 && (
         <div className="easy-live-yaml-tabs" role="tablist" aria-label="Scaffold YAML">
           {artifacts.map((item) => {
-            const scaffold = item.label.split('-scaffold-').at(-1) || item.label;
+            const [arm, scaffold = item.label] = item.label.split('-scaffold-');
+            const armNumber = arm.match(/^arm-(\d+)$/)?.[1];
             return (
               <button
                 key={item.id}
@@ -452,6 +456,7 @@ function DesignYamlDisclosure({
                   void load(item);
                 }}
               >
+                {armNumber ? `方案 ${armNumber} · ` : ''}
                 {scaffold.toUpperCase()}
               </button>
             );
@@ -656,6 +661,11 @@ function GatePanel({
       ? decision.options.filter((item) => item.option_id === decision.default_option_id)
       : decision.options;
   const designPlanSummary = summarizeEasyDesignPlan(snapshot);
+  const designYamls = snapshot.artifacts.filter(
+    (artifact) =>
+      ['yaml', 'yml'].includes(artifact.format.toLowerCase()) &&
+      !artifact.label.startsWith('compiled-asset-'),
+  );
   const showRiskDisclosure = shouldShowGateRiskDisclosure(
     decision.gate,
     decision.warnings.length,
@@ -734,7 +744,9 @@ function GatePanel({
                 <strong>
                   {normalizeLiveScientificChinese(fallback.label)}
                 </strong>
-                <small>{normalizeLiveScientificChinese(fallback.description)}</small>
+                {fallback.description && (
+                  <small>{normalizeLiveScientificChinese(fallback.description)}</small>
+                )}
                 {item.design_labels && <em>热点残基：{item.design_labels.join(', ')}</em>}
                 {designPlanSummary && (
                   <div className="easy-live-design-plan-summary" aria-label="设计方案规模">
@@ -752,8 +764,12 @@ function GatePanel({
                         </li>
                       ))}
                     </ul>
-                    {designPlanSummary.yamlCount > 0 && (
-                      <small>合计 {designPlanSummary.yamlCount} 个可执行 YAML</small>
+                    {designPlanSummary.yamlCount > 0 && designYamls.length > 0 && (
+                      <DesignYamlDisclosure
+                        artifacts={designYamls}
+                        adapter={adapter}
+                        summary={`合计 ${designPlanSummary.yamlCount} 个可执行 YAML · 查看详情`}
+                      />
                     )}
                   </div>
                 )}

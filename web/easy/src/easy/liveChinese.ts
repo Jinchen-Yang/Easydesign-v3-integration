@@ -153,7 +153,7 @@ export function gateOptionFallback(
   if (decision.gate === 3)
     return {
       label: `设计方案${recommended}`,
-      description: blocked || '正在整理设计约束和验证计划。',
+      description: blocked,
     };
   if (decision.gate === 4)
     return {

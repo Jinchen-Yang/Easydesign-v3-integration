@@ -67,6 +67,13 @@ describe('Easy live Chinese presentation', () => {
       expect(fallback.label).not.toMatch(/Approve|Target|Site|Design|Pilot|Scale|Candidate/);
       expect(fallback.description).not.toMatch(/Approve|Target|Site|Design|Pilot|Scale|Candidate/);
     }
+    expect(
+      gateOptionFallback(
+        { ...decision, gate: 3 },
+        { option_id: 'choice', eligible: true, actions: ['approve'] },
+        0,
+      ).description,
+    ).toBe('');
   });
 
   it('normalizes workflow terms retained by scientific localization without changing acronyms', () => {

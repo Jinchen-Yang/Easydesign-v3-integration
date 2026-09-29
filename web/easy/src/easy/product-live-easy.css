@@ -169,6 +169,27 @@
   font-weight: 600;
 }
 
+.easy-live-design-plan-summary .easy-live-explanation {
+  margin: 0;
+}
+
+.easy-live-design-plan-summary .easy-live-explanation > summary {
+  color: #6553ce;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.easy-live-design-plan-summary .easy-live-explanation > p {
+  margin: 8px 0;
+  color: #777381;
+  font-size: 12px;
+}
+
+.easy-live-design-plan-summary .easy-live-explanation pre {
+  max-height: 320px;
+  overflow: auto;
+}
+
 .easy-live-gate details {
   margin: 14px 0;
   color: #6d6877;

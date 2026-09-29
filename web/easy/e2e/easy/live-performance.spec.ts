@@ -154,15 +154,47 @@ test('live project open and Site switching stay within the interactive budget', 
           sequence: 'AAA',
           sequence_sha256: 'b'.repeat(64),
           metrics: [],
-          artifacts: [{ ...artifact, candidate_id: row.id }],
+          artifacts: index === 0 ? [{ ...artifact, candidate_id: row.id }] : [],
           panel_role: phase === 'candidates' && index === 0 ? 'primary' : null,
           failure_reason: null,
           lineage: {},
-          structure_roles: { A: 'target', B: 'binder' },
+          structure_roles: index === 0 ? { A: 'target', B: 'binder' } : {},
         })),
         total: rows.length,
         offset: 0,
         limit: 100,
+      },
+    });
+  });
+  await page.route('**/api/v1/projects/performance-project/candidates/*?**', async (route) => {
+    const url = new URL(route.request().url());
+    const id = decodeURIComponent(url.pathname.split('/').at(-1) || '');
+    expect(url.searchParams.get('view')).toBe('full');
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            id,
+            arm: 'arm-1-scaffold-7eow',
+            backend_id: null,
+            scaffold: id.includes('8coh') ? '8coh' : '7eow',
+            native_status: 'pass',
+            evaluable: true,
+            competition_eligible: true,
+            independent_prediction: 'complete',
+            sequence: 'AAA',
+            sequence_sha256: 'b'.repeat(64),
+            metrics: [],
+            artifacts: [{ ...artifact, candidate_id: id }],
+            panel_role: id === 'candidate-1' ? 'primary' : null,
+            failure_reason: null,
+            lineage: {},
+            structure_roles: { A: 'target', B: 'binder' },
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 1,
       },
     });
   });
@@ -199,7 +231,9 @@ test('live project open and Site switching stay within the interactive budget', 
   await expect(page.getByText('打开专业版', { exact: true })).toHaveCount(0);
   const started = Date.now();
   await page.getByRole('button', { name: '打开', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Candidates', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: '候选分子', exact: true, level: 2 }),
+  ).toBeVisible();
   expect(Date.now() - started).toBeLessThan(1500);
   await expect(page.locator('.molecule[data-status="ready"]')).toBeVisible();
   // Software WebGL in CI is slower than a user's GPU-backed browser, but a cold
@@ -208,8 +242,8 @@ test('live project open and Site switching stay within the interactive budget', 
   expect(artifactRequests).toBe(1);
 
   const switched = Date.now();
-  await page.getByRole('button', { name: 'Site B', exact: true }).click();
-  await expect(page.getByText('Site B highlighted')).toBeVisible();
+  await page.getByRole('button', { name: /位点 B/ }).click();
+  await expect(page.getByText('已高亮位点 B')).toBeVisible();
   expect(Date.now() - switched).toBeLessThan(500);
   expect(artifactRequests).toBe(1);
   await expect(page.getByText('Loading verified coordinates…')).toHaveCount(0);
@@ -218,33 +252,33 @@ test('live project open and Site switching stay within the interactive budget', 
   await expect(page.getByRole('button', { name: /Top 1/ })).toContainText('主候选');
   await expect(page.getByText('primary', { exact: true })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Pilot', exact: true }).click();
+  await page.getByRole('button', { name: '小规模验证', exact: true }).click();
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Pilot');
   await expect(page.getByRole('region', { name: '真实执行进度' })).toContainText('2 / 2 条');
   await expect(page.getByText('骨架 7XL0')).toBeVisible();
   await expect(page.getByText('查看未通过或未完成的候选（1）')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Scale', exact: true }).click();
+  await page.getByRole('button', { name: '扩大验证', exact: true }).click();
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Scale');
   await expect(page.getByRole('region', { name: '真实执行进度' })).toContainText('2 / 2 条');
   await expect(page.getByText('骨架 8COH')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Candidates', exact: true }).click();
+  await page.getByRole('button', { name: '候选分子', exact: true }).click();
   await expect(page.locator('.rabbit-companion')).toHaveAttribute('data-stage', 'Candidates');
   await expect(page.getByRole('region', { name: '真实执行进度' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Top 1/ })).toContainText('主候选');
 
-  await page.getByRole('button', { name: 'Target', exact: true }).click();
+  await page.getByRole('button', { name: '靶点确认', exact: true }).click();
   await expect(page.getByRole('region', { name: '目标信息' })).toBeVisible();
   await expect(page.getByText('HISTORICAL STAGE · READ ONLY')).toHaveCount(0);
   await expect(page.getByText('返回当前阶段', { exact: true })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Site', exact: true }).click();
-  await page.getByText('为什么选择 Site A', { exact: true }).click();
+  await page.getByRole('button', { name: '位点选择', exact: true }).click();
+  await page.getByText('为什么选择位点 A', { exact: true }).click();
   await expect(page.getByText('经验证的胞外候选位点。', { exact: true })).toBeVisible();
   await expect(page.getByText('Verified fixture', { exact: true })).not.toBeVisible();
 
-  await page.getByRole('button', { name: 'Design', exact: true }).click();
+  await page.getByRole('button', { name: '方案设计', exact: true }).click();
   await page.getByText('为什么采用这个设计方案', { exact: true }).click();
   await expect(page.getByText('阻断经验证的胞外前庭区域。')).toBeVisible();
   await expect(page.getByText('Blocks the verified extracellular vestibule.')).not.toBeVisible();

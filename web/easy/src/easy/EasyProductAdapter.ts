@@ -95,6 +95,8 @@ export class EasyProductAdapter implements EasyProductPort {
   private projectsAt = 0;
   private commands = new Map<string, string>();
   private labCommands = new Map<string, string>();
+  private candidatePages = new Map<string, Promise<void>>();
+  private candidateDetails = new Map<string, Promise<Candidate | null>>();
   constructor(
     private transport: typeof fetch = (input, init) => fetch(input, init),
     private interval = 2000,
@@ -186,11 +188,14 @@ export class EasyProductAdapter implements EasyProductPort {
     if (this.refreshing) return this.refreshing;
     this.refreshing = this.observe().finally(() => {
       this.refreshing = undefined;
-      clearTimeout(this.timer);
-      if (!this.stopped)
-        this.timer = setTimeout(() => void this.refresh(), this.nextRefreshDelay());
+      this.scheduleRefresh();
     });
     return this.refreshing;
+  }
+  private scheduleRefresh() {
+    clearTimeout(this.timer);
+    if (!this.stopped)
+      this.timer = setTimeout(() => void this.refresh(), this.nextRefreshDelay());
   }
   private async observe() {
     const generation = this.generation;
@@ -214,12 +219,13 @@ export class EasyProductAdapter implements EasyProductPort {
       }
       const id = this.state.selectedProject;
       if (id) {
+        const previous = this.state.snapshot;
         const snapshot = await this.api<ProductSnapshot>(`/projects/${id}/workbench`);
         if (generation !== this.generation) return;
         const changed =
-          this.state.snapshot?.revision !== snapshot.revision ||
-          this.state.snapshot?.event_cursor !== snapshot.event_cursor ||
-          this.state.snapshot?.project.phase !== snapshot.project.phase;
+          previous?.revision !== snapshot.revision ||
+          previous?.event_cursor !== snapshot.event_cursor ||
+          previous?.project.phase !== snapshot.project.phase;
         const transitionFinished = Boolean(
           this.state.transitionPhase && snapshot.project.phase === this.state.transitionPhase,
         );
@@ -240,7 +246,21 @@ export class EasyProductAdapter implements EasyProductPort {
           // byte-for-byte unchanged.  Do not leave a stale transport error in
           // front of an otherwise healthy project.
           this.emit({ connection: 'connected', error: null });
-        if (changed) await this.candidatePage(this.state.candidates.offset);
+        const phaseChanged = previous?.project.phase !== snapshot.project.phase;
+        const executionFinished =
+          previous != null &&
+          ['running', 'incomplete'].includes(previous.project.status) &&
+          !['running', 'incomplete'].includes(snapshot.project.status);
+        // Candidate projection is the heaviest read in the Easy surface. It is
+        // deliberately not part of the progress-poll critical path: every
+        // BoltzGen event must be able to repaint the progress card immediately.
+        // Refresh the list only when its population can have changed, and do so
+        // in the background. Per-candidate structures are hydrated separately.
+        if (
+          changed &&
+          (phaseChanged || executionFinished || this.state.candidates.items.length === 0)
+        )
+          void this.candidatePage(this.state.candidates.offset).catch(() => undefined);
       }
     } catch (error) {
       this.emit({
@@ -304,12 +324,19 @@ export class EasyProductAdapter implements EasyProductPort {
     const snapshot = await this.api<ProductSnapshot>(`/projects/${id}/workbench`);
     if (generation !== this.generation) return;
     this.emit({ snapshot, connection: 'connected', error: null });
+    // load() may have scheduled its first idle heartbeat before a deep-linked
+    // project was selected. Recalculate now so a running project starts its
+    // normal live-progress cadence immediately rather than waiting 30 seconds.
+    this.scheduleRefresh();
     const phase =
       snapshot.project.phase === 'pilot'
         ? 'pilot'
         : snapshot.project.phase === 'scale'
           ? 'scale'
-          : 'candidates';
+          : ['candidates', 'handoff'].includes(snapshot.project.phase)
+            ? 'candidates'
+            : null;
+    if (!phase) return;
     // Reserve the phase before the deferred compact read. EasyLiveApp uses this
     // marker to avoid launching a duplicate request while the shell is already
     // visible and the candidate page is still loading.
@@ -317,9 +344,10 @@ export class EasyProductAdapter implements EasyProductPort {
     // The scientific shell is useful before the candidate page and 3D viewer
     // finish loading. Do not batch the user's Open click behind that heavier read.
     setTimeout(() => {
-      void this.candidatePage(0, phase).catch((error) =>
-        this.emit({ error: (error as Error).message, connection: 'reconnecting' }),
-      );
+      // Candidate rows and the 3D preview are secondary data. A transient
+      // compact-page failure must not replace a healthy workbench connection
+      // with a red global error; the next phase change/manual refresh retries it.
+      void this.candidatePage(0, phase).catch(() => undefined);
     }, 0);
   }
   clearProject() {
@@ -342,24 +370,89 @@ export class EasyProductAdapter implements EasyProductPort {
       this.emit({ candidates: emptyPage(), candidatePhase: phase, selectedCandidate: null });
       return;
     }
+    const key = `${generation}:${id}:${phase}:${offset}`;
+    const pending = this.candidatePages.get(key);
+    if (pending) return pending;
+    const request = this.loadCandidatePage(id, generation, offset, phase).finally(() => {
+      if (this.candidatePages.get(key) === request) this.candidatePages.delete(key);
+    });
+    this.candidatePages.set(key, request);
+    return request;
+  }
+  private async loadCandidatePage(
+    id: string,
+    generation: number,
+    offset: number,
+    phase: 'pilot' | 'scale' | 'candidates',
+  ) {
     const candidates = await this.api<Page<Candidate>>(
       `/projects/${id}/candidates?offset=${offset}&limit=100&view=summary&phase=${phase}`,
     );
     if (generation !== this.generation) return;
     const prior = this.state.candidatePhase === phase ? this.state.selectedCandidate?.id : null;
+    const chosen =
+      candidates.items.find((c) => c.id === prior) ??
+      candidates.items.find((c) => c.native_status === 'pass') ??
+      candidates.items[0] ??
+      null;
+    const retained =
+      chosen &&
+      this.state.candidatePhase === phase &&
+      this.state.selectedCandidate?.id === chosen.id &&
+      this.state.selectedCandidate.artifacts.length
+        ? this.state.selectedCandidate
+        : chosen;
     this.emit({
       candidates,
       candidatePhase: phase,
-      selectedCandidate:
-        candidates.items.find((c) => c.id === prior) ??
-        candidates.items.find((c) => c.native_status === 'pass') ??
-        candidates.items[0] ??
-        null,
+      selectedCandidate: retained,
     });
+    if (chosen && !retained?.artifacts.length)
+      void this.loadCandidateDetail(id, generation, chosen.id, phase);
   }
   async selectCandidate(id: string) {
     const candidate = this.state.candidates.items.find((c) => c.id === id);
-    if (candidate) this.emit({ selectedCandidate: candidate });
+    if (!candidate || !this.state.selectedProject || !this.state.candidatePhase) return;
+    this.emit({ selectedCandidate: candidate });
+    await this.loadCandidateDetail(
+      this.state.selectedProject,
+      this.generation,
+      id,
+      this.state.candidatePhase,
+    );
+  }
+  private async loadCandidateDetail(
+    project: string,
+    generation: number,
+    candidate: string,
+    phase: 'pilot' | 'scale' | 'candidates',
+  ) {
+    const key = `${generation}:${project}:${phase}:${candidate}`;
+    let request = this.candidateDetails.get(key);
+    if (!request) {
+      request = this.api<Page<Candidate>>(
+        `/projects/${project}/candidates/${encodeURIComponent(candidate)}?offset=0&limit=1&view=full&phase=${phase}`,
+      )
+        .then((page) => page.items[0] ?? null)
+        .finally(() => this.candidateDetails.delete(key));
+      this.candidateDetails.set(key, request);
+    }
+    try {
+      const detail = await request;
+      if (
+        detail &&
+        generation === this.generation &&
+        this.state.selectedProject === project &&
+        this.state.candidatePhase === phase &&
+        this.state.selectedCandidate?.id === candidate
+      )
+        this.emit({ selectedCandidate: detail });
+      return detail;
+    } catch {
+      // Candidate detail and the 3D preview are optional secondary data. A
+      // transient failure must not mark the live progress connection as lost.
+      return null;
+    }
   }
   async artifactText(url: string) {
     if (!/^\/api\/v1\/artifacts\/[0-9a-f]{64}$/.test(url))

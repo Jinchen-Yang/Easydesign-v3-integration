@@ -372,6 +372,7 @@ describe('Easy live adapter preserves Product API authority', () => {
 
   it('loads the Easy summary candidate view without the unused metric payload', async () => {
     const current = snapshot();
+    current.project = { ...project, phase: 'candidates', status: 'complete' };
     current.candidates.total = 1;
     const paths: string[] = [];
     const fetcher = vi.fn(async (url: string | URL | Request) => {
@@ -390,6 +391,110 @@ describe('Easy live adapter preserves Product API authority', () => {
       expect(paths).toContain(
         '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=candidates',
       ),
+    );
+  });
+
+  it('hydrates only the selected candidate after the compact list is visible', async () => {
+    const current = snapshot();
+    current.project = { ...project, phase: 'candidates', status: 'complete' };
+    current.candidates.total = 1;
+    const paths: string[] = [];
+    const summary = {
+      id: 'candidate-1',
+      arm: 'arm-1-scaffold-7eow',
+      backend_id: null,
+      scaffold: '7eow',
+      native_status: 'pass',
+      evaluable: true,
+      competition_eligible: true,
+      independent_prediction: 'complete',
+      sequence: null,
+      sequence_sha256: 'b'.repeat(64),
+      metrics: [],
+      artifacts: [],
+      panel_role: 'primary',
+      failure_reason: null,
+      lineage: {},
+      structure_roles: {},
+    };
+    const detail = {
+      ...summary,
+      artifacts: [
+        {
+          id: 'c'.repeat(64),
+          label: 'candidate-1.pdb',
+          url: `/api/v1/artifacts/${'c'.repeat(64)}`,
+          format: 'pdb',
+          sha256: 'c'.repeat(64),
+          size_bytes: 120,
+          role: 'structure',
+          candidate_id: 'candidate-1',
+        },
+      ],
+      structure_roles: { A: 'target', B: 'binder' },
+    };
+    let latest: Awaited<ReturnType<EasyProductAdapter['load']>> | undefined;
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      paths.push(path);
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      if (path.includes('/candidates/candidate-1?'))
+        return Response.json({ total: 1, offset: 0, limit: 1, items: [detail] });
+      return Response.json({ total: 1, offset: 0, limit: 100, items: [summary] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    adapter.subscribe((event) => {
+      latest = event.snapshot;
+    });
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await vi.waitFor(() => expect(latest?.selectedCandidate?.artifacts).toHaveLength(1));
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=candidates',
+    );
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates/candidate-1?offset=0&limit=1&view=full&phase=candidates',
+    );
+  });
+
+  it('never blocks a live progress refresh on a slow candidate projection', async () => {
+    let current = snapshot();
+    current.project = { ...project, phase: 'scale', status: 'running' };
+    let candidateStarted = false;
+    let releaseCandidate: ((response: Response) => void) | undefined;
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      if (path.includes('/candidates?')) {
+        candidateStarted = true;
+        return new Promise<Response>((resolve) => {
+          releaseCandidate = resolve;
+        });
+      }
+      return Response.json({ total: 0, offset: 0, limit: 1, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await vi.waitFor(() => expect(candidateStarted).toBe(true));
+    current = {
+      ...current,
+      revision: 'b'.repeat(64),
+      event_cursor: current.event_cursor + 1,
+    };
+    const outcome = await Promise.race([
+      adapter.refresh().then(() => 'refreshed'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('blocked'), 100)),
+    ]);
+    expect(outcome).toBe('refreshed');
+    releaseCandidate?.(
+      Response.json({ total: 0, offset: 0, limit: 100, items: [], revision: current.revision }),
     );
   });
 

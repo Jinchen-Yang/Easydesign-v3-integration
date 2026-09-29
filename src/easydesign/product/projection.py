@@ -480,10 +480,23 @@ def candidate_view(
 ) -> CandidateView:
     b, line = session.bridge, candidate.lineage
     native = native_for(candidate, owner)
-    values = {**native.metrics, **native.additional_metrics} if native else {}
-    original_metrics = {m.metric_id.removeprefix("boltzgen-"): m for m in candidate.metrics}
-    values = {**{name: m.value for name, m in original_metrics.items()}, **values}
-    decisions = {d.feature: d for d in native.decisions} if native else {}
+    # The Easy list needs identity/ranking/status only. Building hundreds of
+    # metric values for every row defeats the compact endpoint even if the
+    # response later omits them, so keep that work on the one-candidate detail
+    # path.
+    values = (
+        {}
+        if compact
+        else ({**native.metrics, **native.additional_metrics} if native else {})
+    )
+    original_metrics = (
+        {}
+        if compact
+        else {m.metric_id.removeprefix("boltzgen-"): m for m in candidate.metrics}
+    )
+    if not compact:
+        values = {**{name: m.value for name, m in original_metrics.items()}, **values}
+    decisions = {} if compact else ({d.feature: d for d in native.decisions} if native else {})
     metrics = []
     if not compact:
         for name, value in values.items():
@@ -518,36 +531,43 @@ def candidate_view(
                 )
             )
     if isinstance(owner, GlobalCandidatePool):
-        root, _ = b.run(line.source_run_id)
-        refs = line.artifact_refs
+        if compact:
+            root, refs = None, ()
+        else:
+            root, _ = b.run(line.source_run_id)
+            refs = line.artifact_refs
         independent = candidate.independent_prediction_status
         evaluable = candidate.validity == "valid-evaluated"
         eligible = candidate.competition_eligible
         reason = candidate.failure_reason
     else:
-        execution = b.project_latest("phase34-pilot-execution")
-        root, _ = b.run(execution["run_id"])
-        refs = (line.original_structure, line.refolded_structure)
+        if compact:
+            root, refs = None, ()
+        else:
+            execution = b.project_latest("phase34-pilot-execution")
+            root, _ = b.run(execution["run_id"])
+            refs = (line.original_structure, line.refolded_structure)
         independent = "not-requested" if native else "legacy-unspecified"
         evaluable = native.native_pass is not None if native else True
         eligible = native.native_pass is True if native else candidate.legacy_policy_pass
         reason = "Native evidence incomplete" if not evaluable else None
     artifacts: list[ArtifactView] = []
-    seen = set()
-    for ref in refs:
-        if ref.file_format.lower() not in {"pdb", "cif", "mmcif"} or ref.sha256 in seen:
-            continue
-        seen.add(ref.sha256)
-        artifacts.append(
-            catalog.register(
-                project=session.project,
-                evidence=line.sequence_sha256,
-                root=root,
-                ref=ref,
-                label=ref.artifact_id,
-                candidate_id=line.candidate_id,
+    if not compact:
+        seen = set()
+        for ref in refs:
+            if ref.file_format.lower() not in {"pdb", "cif", "mmcif"} or ref.sha256 in seen:
+                continue
+            seen.add(ref.sha256)
+            artifacts.append(
+                catalog.register(
+                    project=session.project,
+                    evidence=line.sequence_sha256,
+                    root=root,
+                    ref=ref,
+                    label=ref.artifact_id,
+                    candidate_id=line.candidate_id,
+                )
             )
-        )
     role: Literal["primary", "backup"] | None = (
         "primary"
         if line.candidate_id in panel.get("primary_candidate_ids", [])
@@ -572,14 +592,14 @@ def candidate_view(
         evaluable=evaluable,
         competition_eligible=eligible,
         independent_prediction=independent,
-        sequence=values.get("designed_chain_sequence"),
+        sequence=None if compact else values.get("designed_chain_sequence"),
         sequence_sha256=line.sequence_sha256,
         metrics=metrics,
         artifacts=artifacts,
         panel_role=role,
         failure_reason=reason,
         # Native evidence adapter verifies A=target / B=binder for these complexes.
-        structure_roles={"A": "target", "B": "binder"} if native else {},
+        structure_roles={"A": "target", "B": "binder"} if native and not compact else {},
         lineage={
             name: getattr(line, name, None)
             for name in (
@@ -616,17 +636,33 @@ def candidate_page(
         )
     if candidate_id:
         candidates = [c for c in candidates if c.lineage.candidate_id == candidate_id]
+    rows = candidates[offset : offset + limit]
+    items = [
+        candidate_view(session, candidate, owner, panel, catalog, compact=compact)
+        for candidate in rows
+    ]
+    if compact and items:
+        # The list remains compact, but include one immediately usable preview
+        # so opening a project does not need an extra network round-trip before
+        # the 3D panel can start. Other candidates hydrate on explicit selection.
+        preview_index = next(
+            (index for index, item in enumerate(items) if item.native_status == "pass"), 0
+        )
+        detail = candidate_view(
+            session,
+            rows[preview_index],
+            owner,
+            panel,
+            catalog,
+            compact=False,
+        )
+        items[preview_index] = detail.model_copy(update={"metrics": [], "sequence": None})
     return Page(
         revision=revision,
         total=len(candidates),
         offset=offset,
         limit=limit,
-        items=[
-            candidate_view(session, c, owner, panel, catalog, compact=compact).model_dump(
-                mode="json"
-            )
-            for c in candidates[offset : offset + limit]
-        ],
+        items=[item.model_dump(mode="json") for item in items],
     )
 
 

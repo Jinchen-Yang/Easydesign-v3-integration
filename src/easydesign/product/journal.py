@@ -284,9 +284,10 @@ class RequestJournal:
         encoded = json.dumps(projection, separators=(",", ":"), ensure_ascii=False)
         with self.db:
             changed = self.db.execute(
-                "UPDATE product_projects SET projection=? WHERE id=? AND deleted_at IS NULL AND "
+                "UPDATE product_projects SET projection=?,updated=? "
+                "WHERE id=? AND deleted_at IS NULL AND "
                 "COALESCE(projection,'')<>?",
-                (encoded, project, encoded),
+                (encoded, time.time(), project, encoded),
             ).rowcount
             if changed == 0 and self.db.execute(
                 "SELECT 1 FROM product_projects WHERE id=? AND deleted_at IS NULL", (project,)

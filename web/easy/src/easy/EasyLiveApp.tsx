@@ -1062,9 +1062,11 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       }
       const requested = params.get('project');
       if (requested) {
-        // A shared/deep link must not wait for every historical project card to
-        // project before the requested scientific workspace becomes visible.
-        await Promise.all([adapter.selectProject(requested), adapter.load()]);
+        // Start the polling loop first, then issue exactly one workbench read.
+        // Running both calls concurrently used to make load() observe the newly
+        // selected id and duplicate the cold scientific projection on refresh.
+        await adapter.load();
+        await adapter.selectProject(requested);
       } else {
         const loaded = await adapter.load();
         setState(loaded);

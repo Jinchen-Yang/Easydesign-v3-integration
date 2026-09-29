@@ -238,6 +238,47 @@ def test_easy_project_listing_reuses_the_persisted_lightweight_projection(
     assert service.projects(limit=5, surface="easy")["items"] == first["items"]
 
 
+def test_easy_project_listing_uses_global_projection_time_not_local_event_cursor(
+    bridge, tmp_path
+):
+    service = service_for(bridge, tmp_path)
+    older = service.create(
+        CreateProject(
+            request_id=str(uuid4()),
+            title="Older high-cursor design",
+            goal="Design an extracellular VHH.",
+            surface="easy",
+        )
+    )["project"]
+    newer = service.create(
+        CreateProject(
+            request_id=str(uuid4()),
+            title="Newer low-cursor design",
+            goal="Design another extracellular VHH.",
+            surface="easy",
+        )
+    )["project"]
+    service.projects(limit=5, surface="easy")
+    journal = service.journal()
+    try:
+        rows = {project: journal.project(project) for project in (older, newer)}
+        older_projection = {**rows[older]["projection"], "last_activity": 999}
+        newer_projection = {**rows[newer]["projection"], "last_activity": 1}
+        with journal.db:
+            journal.db.execute(
+                "UPDATE product_projects SET projection=?,updated=? WHERE id=?",
+                (json.dumps(older_projection), 100.0, older),
+            )
+            journal.db.execute(
+                "UPDATE product_projects SET projection=?,updated=? WHERE id=?",
+                (json.dumps(newer_projection), 200.0, newer),
+            )
+    finally:
+        journal.close()
+    listed = service.projects(limit=5, surface="easy")["items"]
+    assert [item["id"] for item in listed[:2]] == [newer, older]
+
+
 def test_easy_project_delete_is_recoverable_scoped_and_rejects_active_work(
     bridge, tmp_path
 ):
@@ -1655,7 +1696,9 @@ def test_native_candidate_product_projection_preserves_fail_and_missing(tmp_path
     assert compact.id == values[0].id
     assert compact.scaffold == rows[0].lineage.strategy_id.rsplit("-scaffold-", 1)[1]
     assert compact.sequence_sha256 == values[0].sequence_sha256
-    assert compact.artifacts == values[0].artifacts
+    assert compact.sequence is None
+    assert compact.artifacts == []
+    assert compact.structure_roles == {}
 
 
 def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):

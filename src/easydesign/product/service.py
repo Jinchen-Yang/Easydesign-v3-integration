@@ -408,7 +408,16 @@ class ProductService:
                         else "incompatible_session",
                     }
                 )
-        items.sort(key=lambda item: (-int(item["last_activity"]), item["id"]))
+        # Event cursors are local to each project and cannot order projects
+        # against one another (an old long project may have cursor 388 while a
+        # brand-new project has cursor 4). The lightweight registry timestamp is
+        # global and advances only when the persisted projection changes.
+        items.sort(
+            key=lambda item: (
+                -float(registered.get(item["id"], {}).get("updated", 0)),
+                item["id"],
+            )
+        )
         return {
             "total": len(items),
             "offset": offset,

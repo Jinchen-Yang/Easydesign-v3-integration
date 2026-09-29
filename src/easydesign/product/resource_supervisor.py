@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import logging
 import math
@@ -167,7 +168,9 @@ class ResourceSupervisor:
         self.startup_timeout_seconds = startup_timeout_seconds
         self._stop = threading.Event()
         self._tick_lock = threading.Lock()
-        self._lock = threading.RLock()
+        # Fixed storage for current and historical grants. Collisions only
+        # serialize unrelated preparations; they never drop an admission.
+        self._grant_locks = tuple(threading.RLock() for _ in range(128))
         self._thread: threading.Thread | None = None
         self._controller_lock: Any = None
 
@@ -214,7 +217,9 @@ class ResourceSupervisor:
 
     def launch(self, admission: Admission, service: ScopedProductService) -> None:
         """Commit executable intent; a queued request consumes no worker process."""
-        with self._lock:
+        # Direct callers need the same fence as HTTP callers: a visible config
+        # must not let tick claim this grant before the queued commit below.
+        with self._grant_lock(admission.id):
             current = self.ledger.get(admission.id)
             if (
                 current.worker_pid is not None
@@ -260,6 +265,10 @@ class ResourceSupervisor:
             }
             immutable_json(self._config_path(current), config)
             self.ledger.transition(current.id, "queued", reason="waiting_for_resources")
+
+    def _grant_lock(self, grant_id: str) -> threading.RLock:
+        index = hashlib.sha256(grant_id.encode()).digest()[0] % len(self._grant_locks)
+        return self._grant_locks[index]
 
     def _config_path(self, admission: Admission) -> Path:
         return self.context.runtime_root / "state/accounts/worker-config" / (admission.id + ".json")
@@ -313,13 +322,13 @@ class ResourceSupervisor:
         return context, ProductService(gateway, actor="account:" + admission.scientific_actor_id)
 
     def tick(self) -> None:
-        # The process/file ownership and a single poll's memo span the whole
-        # tick. HTTP enqueue may interleave only between reconciled admissions.
+        # Dispatch ownership and GPU observations span the whole tick. Only
+        # preparation/reconciliation of the same grant must exclude launch.
         with self._tick_lock, self._dispatch_lock():
             # One GPU observation per poll is shared by every queued admission.
             memo: list[Any] = []
             for admission in self.ledger.active():
-                with self._lock:
+                with self._grant_lock(admission.id):
                     try:
                         self._tick_one(admission, memo)
                     except ProductError as error:
@@ -332,8 +341,9 @@ class ResourceSupervisor:
                             )
                         else:
                             raise
-            with self._lock:
-                self._reconcile_final_designs()
+            # Still inside the tick/controller fence. Launch only changes
+            # reserved -> queued (both active), not scientific delivery facts.
+            self._reconcile_final_designs()
 
     @contextmanager
     def _dispatch_lock(self) -> Iterator[None]:

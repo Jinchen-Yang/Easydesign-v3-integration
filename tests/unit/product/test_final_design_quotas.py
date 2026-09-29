@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -1293,6 +1294,8 @@ def publish_scale_campaign(
                 contract=authority,
                 dependencies={"pilot": "2" * 64},
             )
+            if receipts == "not-started":
+                return  # A real authority with no campaign or delivered evidence yet.
             campaign = ScaleCampaignSpecification(
                 campaign_id="scale-" + tag * 20,
                 promotion_authority=authority,
@@ -1455,6 +1458,76 @@ def test_reconciliation_charges_complete_native_all_fail_without_pool(scale_work
     assert re.fullmatch(r"[0-9a-f]{64}", settled["campaign_sha256"] or "")
     balance = runtime.resources.final_designs_balance(alice.id)
     assert (balance["reserved"], balance["delivered"], balance["remaining"]) == (0, 2, 28)
+
+
+@pytest.mark.parametrize("receipts", ["not-started", "native-fail"])
+def test_launch_interleaves_with_real_settlement_without_refund_or_double_charge(
+    scale_workspace, monkeypatch, receipts
+):
+    control, runtime, admin, alice, team, context = scale_workspace
+    project_id = build_scale_campaign(context, team, alice, receipts=receipts)
+    request_id = "settlement-launch-window"
+    reservation, _ = runtime.resources.ensure_final_designs(
+        alice, team, project_id, request_id, KEY, 2, subject_id=alice.id
+    )
+    admission, _ = runtime.resources.reserve(
+        alice,
+        team,
+        request_id,
+        {"operation": "create"},
+        dispatch_channel="scoped_worker",
+    )
+    with runtime.bind(alice, team) as service:
+        journal = service.journal()
+        try:
+            journal.reserve(project_id, {"request_id": request_id, "operation": "create"})
+        finally:
+            journal.close()
+    reached, finish_settlement = threading.Event(), threading.Event()
+    method = "settle_final_designs" if receipts == "native-fail" else "note_final_designs_hold"
+    original = getattr(runtime.resources, method)
+
+    def paused_ledger_decision(*args, **kwargs):
+        # Keep real checksum-verified native facts and the real ledger operation;
+        # only pause at the decision's database boundary.
+        reached.set()
+        assert finish_settlement.wait(10), "Fixture settlement was not released"
+        return original(*args, **kwargs)
+
+    def launch():
+        with runtime.bind(alice, team) as service:
+            control.launch(admission, service)
+
+    monkeypatch.setattr(runtime.resources, method, paused_ledger_decision)
+    monkeypatch.setattr(
+        "easydesign.product.resource_supervisor.subprocess.Popen",
+        lambda *a, **k: pytest.fail("Scientific spawn"),
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reconciling = pool.submit(control.tick)
+        try:
+            assert reached.wait(10)
+            assert runtime.resources.final_designs_balance(alice.id)["reserved"] == 2
+            pool.submit(launch).result(timeout=3)
+            assert runtime.resources.get(admission.id).state == "queued"
+            assert not reconciling.done()
+        finally:
+            finish_settlement.set()
+        reconciling.result(timeout=10)
+    control.tick()  # Repeat observation must not charge or refund again.
+    row = runtime.resources.final_designs_row(team, project_id, KEY)
+    balance = runtime.resources.final_designs_balance(alice.id)
+    charged = [
+        event
+        for event in runtime.accounts.audit(admin)
+        if event["action"] == "final_designs.settle" and event["target_id"] == reservation["id"]
+    ]
+    if receipts == "not-started":
+        assert row["state"] == "reserved" and row["reason"] == "request_in_flight"
+        assert (balance["reserved"], balance["delivered"], len(charged)) == (2, 0, 0)
+    else:
+        assert row["state"] == "settled" and row["delivered"] == 2
+        assert (balance["reserved"], balance["delivered"], len(charged)) == (0, 2, 1)
 
 
 def test_reconciliation_holds_native_undetermined_evidence(scale_workspace):

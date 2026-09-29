@@ -13,6 +13,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -63,6 +64,243 @@ def create(runtime, user, request_id="durable-request-0001"):
         return service.create(
             CreateProject(request_id=request_id, title="Queue fixture", goal="A synthetic target")
         )
+
+
+def prepared_admission(runtime, user, request_id):
+    """A real durable intent, before launch and without a held command flock."""
+    with runtime.bind(user, user.id) as service:
+        admission, _ = runtime.resources.reserve(
+            user,
+            user.id,
+            request_id,
+            {"operation": "create"},
+            dispatch_channel="scoped_worker",
+        )
+        journal = service.journal()
+        try:
+            journal.reserve("fixture-project", {"request_id": request_id, "operation": "create"})
+        finally:
+            journal.close()
+    return admission
+
+
+def launch_direct(runtime, control, user, admission):
+    with runtime.bind(user, user.id) as service:
+        control.launch(admission, service)
+
+
+def test_unrelated_direct_launch_finishes_while_another_config_is_published(queue, monkeypatch):
+    runtime, control, _accounts, _admin, alice, bob = queue
+    from easydesign.product import resource_control, resource_supervisor
+
+    # Stable, different stripe inputs: no probabilistic UUID collision in this test.
+    identities = iter((UUID(int=1), UUID(int=2)))
+    monkeypatch.setattr(resource_control, "uuid4", lambda: next(identities))
+    first = prepared_admission(runtime, alice, "direct-first-request-01")
+    second = prepared_admission(runtime, bob, "direct-second-request-1")
+    published, finish_first = threading.Event(), threading.Event()
+    publish = resource_supervisor.immutable_json
+
+    def paused_publication(path, value):
+        publish(path, value)
+        if path.name == first.id + ".json" and path.parent.name == "worker-config":
+            published.set()
+            assert finish_first.wait(10), "Fixture launch was not released"
+
+    monkeypatch.setattr(resource_supervisor, "immutable_json", paused_publication)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("Scientific spawn"))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        preparing = pool.submit(launch_direct, runtime, control, alice, first)
+        try:
+            assert published.wait(10)
+            assert runtime.resources.get(first.id).state == "reserved"
+            independent = pool.submit(launch_direct, runtime, control, bob, second)
+            independent.result(timeout=3)
+            assert runtime.resources.get(second.id).state == "queued"
+            assert not preparing.done()
+        finally:
+            finish_first.set()
+        preparing.result(timeout=10)
+    assert runtime.resources.get(first.id).state == "queued"
+
+
+def test_direct_launch_fences_duplicate_and_tick_until_the_queued_commit(queue, monkeypatch):
+    runtime, control, _accounts, _admin, alice, _bob = queue
+    from easydesign.product import resource_supervisor
+
+    admission = prepared_admission(runtime, alice, "direct-same-grant-window")
+    published, finish_first = threading.Event(), threading.Event()
+    duplicate_started, tick_started = threading.Event(), threading.Event()
+    publish = resource_supervisor.immutable_json
+    active = runtime.resources.active
+    publications, spawns = [], []
+
+    def paused_publication(path, value):
+        publish(path, value)
+        if path.name == admission.id + ".json" and path.parent.name == "worker-config":
+            publications.append(path.read_bytes())
+            published.set()
+            assert finish_first.wait(10), "Fixture launch was not released"
+
+    def duplicate():
+        duplicate_started.set()
+        launch_direct(runtime, control, alice, admission)
+
+    def observed_active():
+        tick_started.set()
+        return active()
+
+    class Free:
+        def snapshots(self):
+            return (
+                GpuResourceSnapshot(
+                    device=0,
+                    name="fixture",
+                    uuid="GPU-fixture",
+                    memory_total_mib=40000,
+                    memory_used_mib=0,
+                    utilization_percent=0,
+                ),
+            )
+
+    class NoScientificProcess:
+        def __init__(self, argv, **kwargs):
+            spawns.append(argv)
+            self.pid = os.getpid()  # A live identity, without executing any worker/model.
+
+    control.probe = Free()
+    monkeypatch.setattr(resource_supervisor, "immutable_json", paused_publication)
+    monkeypatch.setattr(runtime.resources, "active", observed_active)
+    monkeypatch.setattr(subprocess, "Popen", NoScientificProcess)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        preparing = pool.submit(launch_direct, runtime, control, alice, admission)
+        try:
+            assert published.wait(10)
+            repeated = pool.submit(duplicate)
+            ticking = pool.submit(control.tick)
+            assert duplicate_started.wait(10) and tick_started.wait(10)
+            with pytest.raises(TimeoutError):
+                repeated.result(timeout=0.2)
+            with pytest.raises(TimeoutError):
+                ticking.result(timeout=0.2)
+            assert runtime.resources.get(admission.id).state == "reserved"
+            assert not spawns
+        finally:
+            finish_first.set()
+        preparing.result(timeout=10)
+        repeated.result(timeout=10)
+        ticking.result(timeout=10)
+    assert len(publications) == 1 and len(spawns) == 1
+    running = runtime.resources.get(admission.id)
+    assert running.state == "running" and running.worker_pid == os.getpid()
+    control.tick()
+    assert runtime.resources.get(admission.id).state == "running"
+    assert len(spawns) == 1
+
+
+@pytest.mark.parametrize("fail_first", [False, True])
+def test_stripe_collision_only_serializes_and_preparation_errors_release_the_lock(
+    queue, monkeypatch, fail_first
+):
+    runtime, control, _accounts, _admin, alice, bob = queue
+    from easydesign.product import resource_supervisor
+
+    first = prepared_admission(runtime, alice, "collision-first-request")
+    second = prepared_admission(runtime, bob, "collision-second-request")
+    # Deliberately force a collision, without replacing either public operation.
+    collision = threading.RLock()
+    monkeypatch.setattr(control, "_grant_locks", (collision,) * 128)
+    published, finish_first, second_started = (threading.Event() for _ in range(3))
+    publish = resource_supervisor.immutable_json
+    first_prepared = False
+
+    def paused_publication(path, value):
+        nonlocal first_prepared
+        publish(path, value)
+        if (
+            not first_prepared
+            and path.name == first.id + ".json"
+            and path.parent.name == "worker-config"
+        ):
+            first_prepared = True
+            published.set()
+            assert finish_first.wait(10), "Fixture launch was not released"
+            if fail_first:
+                raise OSError("fixture failure after publication")
+
+    def second_launch():
+        second_started.set()
+        launch_direct(runtime, control, bob, second)
+
+    monkeypatch.setattr(resource_supervisor, "immutable_json", paused_publication)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("Scientific spawn"))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        preparing = pool.submit(launch_direct, runtime, control, alice, first)
+        try:
+            assert published.wait(10)
+            colliding = pool.submit(second_launch)
+            assert second_started.wait(10)
+            with pytest.raises(TimeoutError):
+                colliding.result(timeout=0.2)
+            assert runtime.resources.get(second.id).state == "reserved"
+        finally:
+            finish_first.set()
+        if fail_first:
+            with pytest.raises(OSError, match="fixture failure"):
+                preparing.result(timeout=10)
+        else:
+            preparing.result(timeout=10)
+        colliding.result(timeout=10)
+        # A new thread can acquire the same stripe even after the first raises.
+        pool.submit(launch_direct, runtime, control, alice, first).result(timeout=10)
+    assert runtime.resources.get(first.id).state == "queued"
+    assert runtime.resources.get(second.id).state == "queued"
+
+
+@pytest.mark.parametrize("change", ["cancel", "revoke"])
+def test_direct_launch_does_not_undo_cancellation_or_revocation_while_preparing(
+    queue, monkeypatch, change
+):
+    runtime, control, accounts, admin, alice, _bob = queue
+    from easydesign.product import resource_supervisor
+
+    admission = prepared_admission(runtime, alice, "direct-authority-window")
+    published, finish_first = threading.Event(), threading.Event()
+    publish = resource_supervisor.immutable_json
+
+    def paused_publication(path, value):
+        publish(path, value)
+        if path.name == admission.id + ".json" and path.parent.name == "worker-config":
+            published.set()
+            assert finish_first.wait(10), "Fixture launch was not released"
+
+    monkeypatch.setattr(resource_supervisor, "immutable_json", paused_publication)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("Scientific spawn"))
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        preparing = pool.submit(launch_direct, runtime, control, alice, admission)
+        try:
+            assert published.wait(10)
+            if change == "cancel":
+                with runtime.bind(alice, alice.id) as service:
+                    service.cancel_queued(admission.request_id)
+            else:
+                accounts.update_user(admin, alice.id, status="suspended")
+        finally:
+            finish_first.set()
+        if change == "cancel":
+            with pytest.raises(ProductError) as terminal:
+                preparing.result(timeout=10)
+            assert terminal.value.code == "admission_terminal"
+        else:
+            preparing.result(timeout=10)
+    control.tick()
+    current = runtime.resources.get(admission.id)
+    expected = "queue_cancelled" if change == "cancel" else "authorization_revoked"
+    assert current.state == "cancelled" and current.worker_pid is None
+    assert current.reason == expected
+    with runtime.bind(admin, alice.id) as observer:
+        request = observer.request(admission.request_id)
+    assert request["state"] == "failed" and request["result"]["code"] == expected
 
 
 def test_unavailable_gpu_persists_queue_without_starting_a_process(queue, monkeypatch):

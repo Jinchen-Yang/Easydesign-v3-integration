@@ -4,34 +4,6 @@ import { AppShell } from '../src/shell/AppShell';
 import { applyLegacyRedirect } from '../src/shell/legacyRedirect';
 import { LANGUAGE_KEY } from '../src/shell/I18nProvider';
 
-// jsdom 不实现 matchMedia；演示工作台的兔兔组件在渲染期就会读取。
-if (typeof window.matchMedia !== 'function') {
-  window.matchMedia = ((query: string) => ({
-    matches: false, media: query, onchange: null,
-    addListener: () => {}, removeListener: () => {},
-    addEventListener: () => {}, removeEventListener: () => {},
-    dispatchEvent: () => false,
-  })) as unknown as typeof matchMedia;
-}
-// jsdom 也不实现 <dialog> 的 showModal/close；演示应用在挂载期调用。
-if (typeof HTMLDialogElement !== 'undefined' && !HTMLDialogElement.prototype.showModal) {
-  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
-  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) { this.removeAttribute('open'); };
-}
-// jsdom 的 canvas getContext 返回 null（未装 canvas 包）；给演示画布一个 no-op 上下文。
-HTMLCanvasElement.prototype.getContext = function getContextStub(
-  this: HTMLCanvasElement,
-): CanvasRenderingContext2D | null {
-  const canvas = this;
-  return new Proxy({}, {
-    get: (_target, property) => {
-      if (property === 'canvas') return canvas;
-      return () => undefined;
-    },
-    set: () => true,
-  }) as unknown as CanvasRenderingContext2D;
-} as unknown as HTMLCanvasElement['getContext'];
-
 /**
  * Shell-level boot checks. Under jsdom the real session API is unreachable
  * (relative fetch fails), which drives the network-error branch exactly like

@@ -57,10 +57,11 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
   private timer?: ReturnType<typeof setTimeout>;
   private stopped = false;
   private started = false;
+  private suspended = false;
   private readonly page = typeof document === 'undefined' ? undefined : document;
   private readonly visibilityChanged = () => {
     clearTimeout(this.timer);
-    if (this.started && !this.stopped && !this.page?.hidden) void this.refresh();
+    if (this.started && !this.stopped && !this.suspended && !this.page?.hidden) void this.refresh();
   };
   private refreshing?: Promise<void>;
   private generation = 0;
@@ -113,6 +114,16 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
     this.page?.removeEventListener('visibilitychange', this.visibilityChanged);
     this.listeners.clear();
   }
+  /** 会话过期时暂停轮询：状态与请求编号表全部保留，等待恢复登录。 */
+  pausePolling() {
+    this.suspended = true;
+    clearTimeout(this.timer);
+  }
+  resumePolling() {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (this.started && !this.stopped && !this.page?.hidden) void this.refresh();
+  }
   private async api<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await this.transport('/api/v1' + path, {
       ...init,
@@ -163,7 +174,7 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
   }
   private scheduleRefresh() {
     clearTimeout(this.timer);
-    if (this.started && !this.stopped && !this.page?.hidden && !this.refreshing) {
+    if (this.started && !this.stopped && !this.suspended && !this.page?.hidden && !this.refreshing) {
       // Spread simultaneous visitors without polling faster than the base cadence.
       const delay = this.nextRefreshDelay() * (1 + Math.random() * 0.2);
       this.timer = setTimeout(() => void this.refresh(), delay);

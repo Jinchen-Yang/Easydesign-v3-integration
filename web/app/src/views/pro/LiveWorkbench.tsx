@@ -423,7 +423,7 @@ export function LiveWorkbench({
               <Brand />
               <h1>会话需要重新登录</h1>
               <p>当前账号会话已过期或被撤销。工作区令牌不能替代账号登录。</p>
-              <a className="primary-button" href="/account/">
+              <a className="primary-button" href="#/account">
                 返回账号与团队 <ArrowRight size={15} />
               </a>
             </div>

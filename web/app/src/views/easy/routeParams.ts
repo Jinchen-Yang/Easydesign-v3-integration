@@ -28,6 +28,19 @@ export function workspaceHref(scope: string, view: WorkspaceView, project?: stri
     : `#/projects?${params}`;
 }
 
+type RouterNavigate = (to: string, options?: { replace?: boolean }) => void;
+let routerNavigate: RouterNavigate | null = null;
+
+/**
+ * HashRouter 只监听 popstate；replaceState 不触发任何事件。优先把路由器
+ * 的 navigate 绑进来（替换模式，与旧的"切项目不留历史"行为一致），没有
+ * 绑定时（路由器未挂载）退回 replaceState + 手动 popstate。
+ */
+export function bindRouterNavigate(navigate: RouterNavigate): () => void {
+  routerNavigate = navigate;
+  return () => { if (routerNavigate === navigate) routerNavigate = null; };
+}
+
 function currentScopeParam(): string | null {
   return hashQuery().get('scope') ?? new URLSearchParams(location.search).get('scope');
 }
@@ -36,22 +49,23 @@ function currentViewParam(): WorkspaceView {
   return hashQuery().get('view') === 'pro' ? 'pro' : 'easy';
 }
 
-/** 把当前地址规范化为 `#/projects/:id?scope&view`（project 为空则回 `#/projects`）。 */
+/** 把当前地址规范化为 `/projects/:id?scope&view`（project 为空则回 `/projects`）。 */
 export function writeProjectRoute(project: string | null): void {
-  const search = new URLSearchParams(location.search);
-  search.delete('project');
-  search.delete('token');
-  const searchPart = search.size ? `?${search}` : '';
-  const query = new URLSearchParams();
   const scope = currentScopeParam();
+  const view = currentViewParam();
+  stripLegacySearch();
+  const query = new URLSearchParams();
   if (scope) query.set('scope', scope);
-  query.set('view', currentViewParam());
-  const hash = project
-    ? `#/projects/${encodeURIComponent(project)}?${query}`
-    : `#/projects?${query}`;
-  history.replaceState({}, '', `${location.pathname}${searchPart}${hash}`);
-  // replaceState 不触发 hashchange；手动通知 Router 重读地址。
-  window.dispatchEvent(new HashChangeEvent('hashchange'));
+  query.set('view', view);
+  const to = project
+    ? `/projects/${encodeURIComponent(project)}?${query}`
+    : `/projects?${query}`;
+  if (routerNavigate !== null) {
+    routerNavigate(to, { replace: true });
+    return;
+  }
+  history.replaceState({}, '', `${location.pathname}#${to}`);
+  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 /** 清掉地址上的旧单机 token / 旧 project 参数（迁移期一次性清理）。 */

@@ -216,19 +216,19 @@ export function EasyApp({ adapter }: { adapter: EasyAdapter }) {
   }
   return (
     <div className="easy-app" lang={locale === 'zh' ? 'zh-CN' : 'en'}>
-      <a className="easy-skip" href="#design">
+      <a className="easy-skip" href="#/demo" onClick={(event) => { event.preventDefault(); document.getElementById('design')?.scrollIntoView({behavior: 'smooth'}); }}>
         {t('Skip to design input')}
       </a>
       <header className="easy-header">
-        <a className="easy-brand" href="#design" onClick={() => scroll(formRef.current)}>
+        <a className="easy-brand" href="#/demo" onClick={(event) => { event.preventDefault(); scroll(formRef.current); }}>
           <Brand />
           <span className="easy-edition">EASY</span>
         </a>
         <nav aria-label={t('Main navigation')}>
-          <a className="easy-nav-current" href="#design" onClick={() => scroll(formRef.current)}>
+          <a className="easy-nav-current" href="#/demo" onClick={(event) => { event.preventDefault(); scroll(formRef.current); }}>
             {t('Design')}
           </a>
-          <a href="#my-designs" onClick={() => scroll(historyRef.current)}>
+          <a href="#/demo" onClick={(event) => { event.preventDefault(); scroll(historyRef.current); }}>
             {t('My designs')}
           </a>
         </nav>
@@ -842,7 +842,7 @@ export function EasyApp({ adapter }: { adapter: EasyAdapter }) {
           </div>
         </section>
         <footer className="easy-footer">
-          <a href="#design" onClick={() => scroll(formRef.current)}>
+          <a href="#/demo" onClick={(event) => { event.preventDefault(); scroll(formRef.current); }}>
             {t('Back to top')} <ArrowUpRight size={12} />
           </a>
         </footer>

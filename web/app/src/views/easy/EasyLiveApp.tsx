@@ -24,6 +24,7 @@ import {
 } from './live-presentation';
 import type { EasyProductPort } from './EasyProductAdapter';
 import { readProjectRoute, stripLegacySearch, workspaceHref, writeProjectRoute } from './routeParams';
+import { draftRecovery, DRAFT_KEYS } from '../../data/draftRecovery';
 import { scopeProductUrl, surfaceRights } from '../../shared/account-client';
 import type {
   GateInput,
@@ -517,6 +518,16 @@ export function EasyLiveApp({
   const [state, setState] = useState<LiveState | null>(null);
   const [input, setInput] = useState<EasyInput>(() => emptyInput());
   const [file, setFile] = useState<File | null>(null);
+  const draftRestored = useRef(false);
+  // 设计输入实时暂存（仅创建表单）。文件本身不可序列化，只存元数据，
+  // 恢复时提示重新选择 —— 与执行指南的存储策略表一致。
+  useEffect(() => {
+    if (!draftRestored.current || readProjectRoute() !== null) return;
+    draftRecovery.saveLocal(DRAFT_KEYS.projectCreate, {
+      input,
+      file: file ? { name: file.name, size: file.size } : null,
+    });
+  }, [input, file]);
   const [token, setToken] = useState('');
   const [selectedSite, setSelectedSite] = useState<string | undefined>();
   const [viewedIndex, setViewedIndex] = useState<number | null>(null);
@@ -536,7 +547,17 @@ export function EasyLiveApp({
       } else {
         const loaded = await adapter.load();
         setState(loaded);
+        if (readProjectRoute() === null) {
+          const saved = draftRecovery.recover(DRAFT_KEYS.projectCreate);
+          const payload = saved.data as
+            | { input?: Partial<EasyInput>; file?: { name: string; size: number } | null }
+            | null;
+          if (saved.hasLocal && payload?.input) {
+            setInput((current) => ({ ...current, ...payload.input }));
+          }
+        }
       }
+      draftRestored.current = true;
     })().catch((reason) => setError((reason as Error).message));
     return () => {
       unsubscribe();
@@ -638,7 +659,10 @@ export function EasyLiveApp({
         file,
       );
       const created = await adapter.load();
-      if (created.selectedProject) writeProjectRoute(created.selectedProject);
+      if (created.selectedProject) {
+        writeProjectRoute(created.selectedProject);
+        draftRecovery.clearLocal(DRAFT_KEYS.projectCreate);
+      }
       setFile(null);
     } catch (reason) {
       setError((reason as Error).message);
@@ -647,6 +671,7 @@ export function EasyLiveApp({
 
   function newDesign() {
     adapter.clearProject();
+    draftRecovery.clearLocal(DRAFT_KEYS.projectCreate);
     setOrder(null);
     setSelectedSite(undefined);
     setViewedIndex(null);
@@ -673,7 +698,7 @@ export function EasyLiveApp({
         <Brand />
         <h1>会话需要重新登录</h1>
         <p>当前账号会话已过期或被撤销，正在返回账号页。</p>
-        <a className="easy-primary" href="/account/">
+        <a className="easy-primary" href="#/account">
           返回账号与团队
         </a>
         {error && <p className="easy-error">{error}</p>}
@@ -704,7 +729,7 @@ export function EasyLiveApp({
   return (
     <div className="easy-app easy-live-app">
       <header className="easy-header">
-        <a className="easy-brand" href="/easy/">
+        <a className="easy-brand" href={workspaceHref(access?.id ?? '', 'easy')}>
           <Brand /> <span className="easy-edition">EASY · LIVE</span>
         </a>
         <nav>

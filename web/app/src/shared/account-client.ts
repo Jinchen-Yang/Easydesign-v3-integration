@@ -166,6 +166,32 @@ export function surfaceRights(access?: SurfaceAccess | null, compute = true): Su
   return {canEdit, canExecute, canDiscuss: canEdit && compute, readOnly: !canEdit};
 }
 
+export interface SessionRef {
+  current: AccountSession | null;
+}
+
+/**
+ * Like scopedTransport, but the session is read from a ref at request time, so
+ * one transport — and the adapter built on it, with its idempotency
+ * request-id tables — survives a same-account re-login during expiry recovery.
+ */
+export function scopedTransportFromRef(ref: SessionRef, scope: AccountScope): typeof fetch {
+  return async (input, init) => {
+    const session = ref.current;
+    if (typeof input !== 'string' || session === null) {
+      throw new Error('Scoped requests require a relative URL and a live session');
+    }
+    const headers = new Headers(init?.headers);
+    headers.set('X-CSRF-Token', session.csrf_token);
+    const response = await fetch(scopedProductPath(scope.id, input), {...init, headers, credentials: 'same-origin'});
+    if (response.status === 401) {
+      notifySessionChange();
+      dispatchSessionExpired({ session, scope });
+    }
+    return response;
+  };
+}
+
 export function scopedTransport(session: AccountSession, scope: AccountScope): typeof fetch {
   // Capture this session/scope. An old tab must not act using a newly signed-in user's CSRF token.
   return async (input, init) => {

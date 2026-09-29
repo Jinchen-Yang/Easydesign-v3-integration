@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { HashRouter, Link, Routes, Route, useSearchParams } from 'react-router-dom';
+import { HashRouter, Link, Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { I18nProvider, useI18n } from './I18nProvider';
 import { SessionProvider, useSession } from './SessionProvider';
 import { SessionRecoveryModal } from './SessionRecoveryModal';
@@ -9,7 +9,7 @@ import { EasyApp } from '../views/easy/EasyApp';
 import { EasyDemoAdapter } from '../views/easy/EasyDemoAdapter';
 import { ProWorkspace } from '../views/pro/ProWorkspace';
 import { AccountApp } from '../views/account/AccountApp';
-import { workspaceHref } from '../views/easy/routeParams';
+import { bindRouterNavigate, workspaceHref } from '../views/easy/routeParams';
 import { fetchProjects } from '../data/projects';
 import '../styles/shell.css';
 
@@ -33,6 +33,7 @@ export function AppShell() {
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <HashRouter>
+            <RouterBridge />
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/projects" element={<ProjectRoute />} />
@@ -47,6 +48,13 @@ export function AppShell() {
       </QueryClientProvider>
     </I18nProvider>
   );
+}
+
+/** 把路由器的 navigate(replace) 绑给路由桥：程序化写址后路由器保持同步。 */
+function RouterBridge() {
+  const navigate = useNavigate();
+  useEffect(() => bindRouterNavigate(navigate), [navigate]);
+  return null;
 }
 
 function LanguageToggle() {

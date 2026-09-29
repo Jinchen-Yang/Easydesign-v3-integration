@@ -113,6 +113,14 @@ export function shouldOfferManualResume(
   return ['available', 'incomplete'].includes(snapshot.project.status);
 }
 
+export function visibleDesignActionError(
+  actionError: string,
+  _backgroundError: string | null,
+): string | null {
+  const message = actionError.trim();
+  return message || null;
+}
+
 export function isProductExecutionActive(
   snapshot: ProductSnapshot | null,
   pending: boolean,
@@ -1071,6 +1079,11 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const requestInFlight = Boolean(
     state?.pending || ['accepted', 'running'].includes(state?.pendingRequest?.state || ''),
   );
+  // Adapter errors describe background polling, connection recovery and deferred
+  // candidate reads.  The connection badge already represents that transient
+  // state.  Only failures caused by an explicit user action belong in the
+  // persistent design-form error slot.
+  const designActionError = visibleDesignActionError(error, state?.error || null);
   const active = isProductExecutionActive(
     snapshot,
     Boolean(state?.pending),
@@ -1343,7 +1356,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
               </label>
             )}
           </div>
-          {(error || state.error) && <p className="easy-error">{error || state.error}</p>}
+          {designActionError && <p className="easy-error">{designActionError}</p>}
           {issue && Boolean(input.text || input.file) && <p className="easy-validation">{issue}</p>}
         </section>
 

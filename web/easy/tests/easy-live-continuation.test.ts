@@ -3,6 +3,7 @@ import {
   canAutoContinue,
   isProductExecutionActive,
   shouldOfferManualResume,
+  visibleDesignActionError,
 } from '../src/easy/EasyLiveApp';
 import type { ProductSnapshot } from '../src/easy/product-contracts';
 import type { Decision, Site } from '../src/easy/product-contracts';
@@ -43,6 +44,17 @@ function snapshot(status: string, stage: string): ProductSnapshot {
 }
 
 describe('Easy live automatic continuation', () => {
+  it('keeps transient adapter failures out of the persistent design error slot', () => {
+    expect(visibleDesignActionError('', 'Temporary connection failure')).toBeNull();
+    expect(visibleDesignActionError('   ', 'Project is not registered')).toBeNull();
+  });
+
+  it('keeps an explicit user-action failure visible until the next action', () => {
+    expect(visibleDesignActionError('个人或团队额度不足', 'Temporary connection failure')).toBe(
+      '个人或团队额度不足',
+    );
+  });
+
   it('reconciles a verified successor worker after the original job was incomplete', () => {
     expect(canAutoContinue(snapshot('incomplete', 'pilot-reconcile'), false)).toBe(true);
   });

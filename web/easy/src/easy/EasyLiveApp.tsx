@@ -107,6 +107,19 @@ export function shouldOfferManualResume(
   return ['available', 'incomplete'].includes(snapshot.project.status);
 }
 
+export function isProductExecutionActive(
+  snapshot: ProductSnapshot | null,
+  pending: boolean,
+  requestState?: string,
+) {
+  return Boolean(
+    pending ||
+      ['accepted', 'running'].includes(requestState || '') ||
+      snapshot?.project.status === 'running' ||
+      snapshot?.project.status === 'incomplete',
+  );
+}
+
 function stageStatus(snapshot: ProductSnapshot | null, index: number) {
   if (!snapshot) return 'waiting';
   const phase = STEPS[index].toLowerCase();
@@ -1028,10 +1041,13 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
       .candidatePage(0, shownCandidatePhase)
       .catch((reason) => setError((reason as Error).message));
   }, [adapter, shownCandidatePhase, snapshot?.project.id, state?.candidatePhase]);
-  const active = Boolean(
-    state?.pending ||
-      snapshot?.project.status === 'running' ||
-      snapshot?.project.status === 'incomplete',
+  const requestInFlight = Boolean(
+    state?.pending || ['accepted', 'running'].includes(state?.pendingRequest?.state || ''),
+  );
+  const active = isProductExecutionActive(
+    snapshot,
+    Boolean(state?.pending),
+    state?.pendingRequest?.state,
   );
   const candidateArtifact = state?.selectedCandidate?.artifacts.find((item) =>
     ['pdb', 'cif', 'mmcif'].includes(item.format),
@@ -1365,11 +1381,23 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                       <p>第 5 关已记录；实验与真实下单仍未授权。</p>
                     </div>
                   </section>
-                ) : snapshot.decision ? (
+                ) : requestInFlight && snapshot.decision ? (
+                  <section
+                    className="easy-live-progress-card easy-live-approval-starting"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <LoaderCircle className="easy-spin" size={22} />
+                    <div>
+                      <h3>审批已提交</h3>
+                      <p>正在启动下一阶段，请稍候。</p>
+                    </div>
+                  </section>
+                ) : snapshot.decision && !active ? (
                   <GatePanel
                     key={snapshot.decision.id}
                     snapshot={snapshot}
-                    busy={state.pending}
+                    busy={requestInFlight}
                     connection={state.connection}
                     adapter={adapter}
                     onDecide={async (value) => {

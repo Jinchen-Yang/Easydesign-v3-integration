@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { canAutoContinue, shouldOfferManualResume } from '../src/easy/EasyLiveApp';
+import {
+  canAutoContinue,
+  isProductExecutionActive,
+  shouldOfferManualResume,
+} from '../src/easy/EasyLiveApp';
 import type { ProductSnapshot } from '../src/easy/product-contracts';
 
 function snapshot(status: string, stage: string): ProductSnapshot {
@@ -62,5 +66,13 @@ describe('Easy live automatic continuation', () => {
     const current = snapshot('incomplete', 'pilot-operational-evidence');
     current.capabilities.auto_continue = false;
     expect(shouldOfferManualResume(current, false)).toBe(true);
+  });
+
+  it('keeps the interface active after an approval request is accepted by the backend', () => {
+    const awaiting = snapshot('awaiting_scientist', 'site-card');
+    expect(isProductExecutionActive(awaiting, true)).toBe(true);
+    expect(isProductExecutionActive(awaiting, false, 'accepted')).toBe(true);
+    expect(isProductExecutionActive(awaiting, false, 'running')).toBe(true);
+    expect(isProductExecutionActive(awaiting, false, 'succeeded')).toBe(false);
   });
 });

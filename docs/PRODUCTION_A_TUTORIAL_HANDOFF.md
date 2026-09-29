@@ -1,7 +1,9 @@
 # A/B 新版部署、教程材料与科学执行器
 
-后续更新：2026-09-30，A/B 已升级为 `f2cc3c5`，新增注册确认密码及浏览器凭证识别，
-当前静态路径、验证和回退见 [PASSWORD_CONFIRMATION_RELEASE.md](PASSWORD_CONFIRMATION_RELEASE.md)。
+后续更新：2026-09-30，A/B 当前版本 `e43731a` 已修复演示页聊天连接误报，
+当前静态路径、验证和回退见 [CHAT_CONNECTION_FIX.md](CHAT_CONNECTION_FIX.md)。
+此前 `f2cc3c5` 新增注册确认密码及浏览器凭证识别，见
+[PASSWORD_CONFIRMATION_RELEASE.md](PASSWORD_CONFIRMATION_RELEASE.md)。
 
 下文记录 2026-09-29 的基础版本
 `2b7a3c2dfaa1647ae0030eb0ad67beb1fadbafe4`，其取代此前的 `a33317b`。

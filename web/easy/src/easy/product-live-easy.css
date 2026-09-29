@@ -670,6 +670,11 @@
 }
 
 .easy-history-actions {
+  /* The movable companion intentionally lives above ordinary content. Keep the
+     row controls one layer higher so a bottom-right bunny can never make a
+     user's own project impossible to open or delete on a compact viewport. */
+  position: relative;
+  z-index: 13;
   display: flex;
   align-items: center;
   justify-content: flex-end;

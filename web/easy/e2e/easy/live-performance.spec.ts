@@ -251,6 +251,10 @@ test('live project open and Site switching stay within the interactive budget', 
   await page.getByText(/查看详细 YAML/).click();
   await expect(page.getByText('schema_version: 1', { exact: false })).toBeVisible();
 
+  // At compact desktop widths the bottom-right companion overlaps the final
+  // table column geometrically. The project actions must remain the topmost
+  // interactive layer instead of becoming mouse-inaccessible behind it.
+  await page.setViewportSize({ width: 818, height: 938 });
   await page.locator('#my-designs').scrollIntoViewIfNeeded();
   await page.getByRole('button', { name: '删除', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '确认删除这个设计？' })).toBeVisible();

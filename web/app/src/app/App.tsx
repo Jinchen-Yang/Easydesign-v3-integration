@@ -1,4 +1,7 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState } from 'react';
+import { useInputDraft } from '../data/useInputDraft';
+import { DraftStatus } from '../data/DraftStatus';
 import {
   ArrowRight,
   ArrowUp,
@@ -41,6 +44,7 @@ export function Modal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation('pro');
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -82,7 +86,7 @@ export function Modal({
       >
         <header>
           <h2>{title}</h2>
-          <button className="icon-button" aria-label="Close dialog" onClick={onClose}>
+          <button className="icon-button" aria-label={t('Close dialog')} onClick={onClose}>
             <X size={18} />
           </button>
         </header>
@@ -101,6 +105,7 @@ export function Landing({
   mode = 'demo',
   attachment,
   canStart = true,
+  draftKey,
 }: {
   snapshot: Pick<WorkbenchSnapshot, 'started' | 'completed' | 'phase'> & {
     project: Pick<WorkbenchSnapshot['project'], 'exampleGoal' | 'title'>;
@@ -108,33 +113,49 @@ export function Landing({
   mode?: 'demo' | 'live';
   attachment?: React.ReactNode;
   canStart?: boolean;
-  onStart: (goal: string) => void;
+  draftKey?: string;
+  onStart: (goal: string) => void | Promise<void>;
   onResume: () => void;
   newDesign: boolean;
   focusInput: boolean;
 }) {
-  const [goal, setGoal] = useState(newDesign ? '' : snapshot.project.exampleGoal);
+  const { t } = useTranslation('pro');
+  const draft = useInputDraft(draftKey ?? null, newDesign ? '' : snapshot.project.exampleGoal);
+  const { value: goal, setValue: setGoal } = draft;
+  const [submitting, setSubmitting] = useState(false);
+  const start = async () => {
+    if (!canStart || submitting || !goal.trim()) return;
+    setSubmitting(true);
+    try {
+      await onStart(goal);
+      draft.complete('submitted', '');
+    } catch {
+      // Caller owns error presentation; retain input for deliberate retry.
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
     <main className="landing">
       <header className="landing-header">
-        <span>Research, thoughtfully designed.</span>
+        <span>{t('Research, thoughtfully designed.')}</span>
         <DemoBadge mode={mode} />
       </header>
       <div className="landing-center">
         <Brand />
-        <h1>{newDesign ? 'Start a new design' : 'What would you like to design?'}</h1>
+        <h1>{newDesign ? t('Start a new design') : t('What would you like to design?')}</h1>
         <p className="landing-subtitle">
-          Start with a question. Build a clear path to your next candidate.
+          {t('Start with a question. Build a clear path to your next candidate.')}
         </p>
         <form
           className="goal-composer"
           onSubmit={(e) => {
             e.preventDefault();
-            if (canStart && goal.trim()) onStart(goal);
+            void start();
           }}
         >
           <label htmlFor="research-goal" className="sr-only">
-            Your research goal
+            {t('Your research goal')}
           </label>
           <textarea
             id="research-goal"
@@ -144,66 +165,84 @@ export function Landing({
             rows={3}
             onChange={(e) => setGoal(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
-                if (canStart && goal.trim()) onStart(goal);
+                void start();
               }
             }}
-            placeholder="Describe the target, binder and outcome you have in mind…"
+            placeholder={t('Describe the target, binder and outcome you have in mind…')}
           />
           <div>
             <span>
-              <Atom size={15} /> Protein design
+              <Atom size={15} /> {t('Protein design')}
             </span>
             {attachment}
             <button
               className="landing-submit"
-              aria-label="Start design"
-              disabled={!canStart || !goal.trim()}
+              aria-label={t('Start design')}
+              disabled={!canStart || submitting || !goal.trim()}
             >
               <ArrowUp size={21} />
             </button>
           </div>
         </form>
+        {mode === 'live' && <DraftStatus status={draft.status} />}
         <div className="example-prompts">
           <button onClick={() => setGoal(snapshot.project.exampleGoal)}>
-            <FlaskConical size={14} /> Lysozyme · VHH <ArrowRight size={12} />
+            <FlaskConical size={14} /> {t('Lysozyme · VHH')}
+            <ArrowRight size={12} />
           </button>
           <button
             onClick={() =>
               setGoal(
                 mode === 'demo'
-                  ? 'Compare three accessible binding sites on hen egg-white lysozyme with a VHH demo.'
-                  : 'Compare three candidate binding sites on hen egg-white lysozyme for VHH design.',
+                  ? t(
+                      'Compare three accessible binding sites on hen egg-white lysozyme with a VHH demo.',
+                    )
+                  : t(
+                      'Compare three candidate binding sites on hen egg-white lysozyme for VHH design.',
+                    ),
               )
             }
           >
-            <Atom size={14} /> Compare binding sites <ArrowRight size={12} />
+            <Atom size={14} /> {t('Compare binding sites')}
+            <ArrowRight size={12} />
           </button>
           <button
             onClick={() =>
               setGoal(
                 mode === 'demo'
-                  ? 'Explore a small two-arm VHH pilot against lysozyme, then review six demo finalists.'
-                  : 'Explore a small two-arm VHH pilot against lysozyme, then review the candidate evidence.',
+                  ? t(
+                      'Explore a small two-arm VHH pilot against lysozyme, then review six demo finalists.',
+                    )
+                  : t(
+                      'Explore a small two-arm VHH pilot against lysozyme, then review the candidate evidence.',
+                    ),
               )
             }
           >
-            <Sparkles size={14} /> Explore a small pilot <ArrowRight size={12} />
+            <Sparkles size={14} /> {t('Explore a small pilot')}
+            <ArrowRight size={12} />
           </button>
         </div>
         <p className="landing-demo-note">
           {mode === 'demo'
             ? 'A guided lysozyme / VHH demo. Simulated results, real interaction.'
-            : 'Describe your goal and optionally attach a target structure to begin.'}
+            : t('Describe your goal and optionally attach a target structure to begin.')}
         </p>
         {snapshot.started && (
           <button className="resume-design" onClick={onResume}>
             <span>
-              <strong>Continue {snapshot.project.title}</strong>
+              <strong>
+                {t('Continue')} {snapshot.project.title}
+              </strong>
               <small>
-                {snapshot.completed ? 'Panel finalized' : `${snapshot.phase} review`} · Progress
-                saved
+                {snapshot.completed
+                  ? t('Panel finalized')
+                  : t('{{phase}} review', {
+                      phase: t(snapshot.phase[0].toUpperCase() + snapshot.phase.slice(1)),
+                    })}{' '}
+                {t('· Progress saved')}
               </small>
             </span>
             <ArrowRight size={16} />
@@ -212,17 +251,20 @@ export function Landing({
       </div>
       <footer className="landing-footer">
         <span>
-          GOAL <ChevronRight size={10} /> TARGET <ChevronRight size={10} /> SITE{' '}
-          <ChevronRight size={10} /> DESIGN <ChevronRight size={10} /> PILOT{' '}
-          <ChevronRight size={10} /> SCALE <ChevronRight size={10} /> CANDIDATES
+          {t('GOAL')}
+          <ChevronRight size={10} /> {t('TARGET')}
+          <ChevronRight size={10} /> {t('SITE')} <ChevronRight size={10} /> {t('DESIGN')}
+          <ChevronRight size={10} /> {t('PILOT')} <ChevronRight size={10} /> {t('SCALE')}
+          <ChevronRight size={10} /> {t('CANDIDATES')}
         </span>
-        <small>You stay in control at each decision.</small>
+        <small>{t('You stay in control at each decision.')}</small>
       </footer>
     </main>
   );
 }
 
 export function App({ adapter }: { adapter: WorkbenchAdapter }) {
+  const { t } = useTranslation('pro');
   const [snapshot, setSnapshot] = useState<WorkbenchSnapshot>();
   const [screen, setScreen] = useWorkbenchPage();
   const [newDesign, setNewDesign] = useState(false);
@@ -333,7 +375,9 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
   const closeContext = () => {
     setContextOpen(false);
     const trigger = contextTrigger.current;
-    (trigger?.isConnected ? trigger : contextToggle.current)?.focus({ preventScroll: true });
+    (trigger?.isConnected ? trigger : contextToggle.current)?.focus({
+      preventScroll: true,
+    });
   };
   const edit = (payload: WorkbenchEdit) => {
     if (snapshot) act(adapter.edit(snapshot.decision?.id ?? '', payload));
@@ -365,7 +409,7 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
     return (
       <div className="app-loading">
         <Brand />
-        <p>{error || 'Opening your research workspace…'}</p>
+        <p>{error || t('Opening your research workspace…')}</p>
       </div>
     );
   const inWorkbench = snapshot.started && screen === 'workspace' && !newDesign;
@@ -417,16 +461,16 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
           <header className="workspace-header">
             <button
               className="mobile-workflow icon-button"
-              aria-label="Toggle workflow"
+              aria-label={t('Toggle workflow')}
               onClick={() => setWorkflowOpen(!workflowOpen)}
             >
               <PanelLeft size={18} />
             </button>
             <div className="project-breadcrumb">
-              <span>Agent Workspace</span>
+              <span>{t('Agent Workspace')}</span>
               <ChevronRight size={13} />
               <select
-                aria-label="Current project"
+                aria-label={t('Current project')}
                 value={snapshot.project.id ?? ''}
                 onChange={(e) => selectProject(e.target.value)}
               >
@@ -438,21 +482,21 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
               </select>
             </div>
             <span className="save-indicator">
-              <span /> {snapshot.busy ? 'Demo running' : 'Local demo'}
+              <span /> {snapshot.busy ? t('Demo running') : t('Local demo')}
             </span>
             <div className="header-actions">
               <DemoBadge />
               <button className="header-button" onClick={() => act(adapter.replayDemo())}>
-                <RotateCcw size={13} /> Replay demo
+                <RotateCcw size={13} /> {t('Replay demo')}
               </button>
               <button className="header-button reset-button" onClick={reset}>
-                Reset
+                {t('Reset')}
               </button>
               {viewedPhase !== 'lab-order' && (
                 <button
                   ref={contextToggle}
                   className="mobile-context icon-button"
-                  aria-label="Open scientific context"
+                  aria-label={t('Open scientific context')}
                   aria-controls="scientific-context"
                   aria-expanded={contextOpen}
                   onClick={() => (contextOpen ? closeContext() : focus(viewedPhase))}
@@ -531,7 +575,7 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
         <div className="toast" role="alert">
           <span>{error || snapshot.notice}</span>
           {error && (
-            <button aria-label="Dismiss message" onClick={() => setError('')}>
+            <button aria-label={t('Dismiss message')} onClick={() => setError('')}>
               <X size={14} />
             </button>
           )}
@@ -539,20 +583,23 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
       )}
       {modal === 'delete' && deletingProject && (
         <Modal
-          title="Delete project?"
+          title={t('Delete project?')}
           onClose={() => {
             if (!deleting) setModal(null);
           }}
         >
           <p>
-            Delete <strong>{deletingProject.title}</strong> from this device? Its conversation, demo
-            results and lab draft will be removed. This cannot be undone.
+            {t('Delete')}
+            <strong>{deletingProject.title}</strong>{' '}
+            {t(
+              'from this device? Its conversation, demo results and lab draft will be removed. This cannot be undone.',
+            )}
           </p>
-          <p className="delete-scope">Server files and running GPU jobs are unaffected.</p>
+          <p className="delete-scope">{t('Server files and running GPU jobs are unaffected.')}</p>
           {deleteError && <p role="alert">{deleteError}</p>}
           <div className="modal-actions">
             <button className="secondary-button" disabled={deleting} onClick={() => setModal(null)}>
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               className="primary-button delete-confirm"
@@ -564,20 +611,20 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
                   setModal(null);
                   setDeletingProject(null);
                 } catch (e) {
-                  setDeleteError(e instanceof Error ? e.message : 'Could not delete project.');
+                  setDeleteError(e instanceof Error ? e.message : t('Could not delete project.'));
                 } finally {
                   setDeleting(false);
                 }
               }}
             >
               <Trash2 size={15} />
-              {deleting ? 'Deleting…' : 'Delete project'}
+              {deleting ? t('Deleting…') : t('Delete project')}
             </button>
           </div>
         </Modal>
       )}
       {modal === 'rename' && (
-        <Modal title="Rename project" onClose={() => setModal(null)}>
+        <Modal title={t('Rename project')} onClose={() => setModal(null)}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -588,7 +635,7 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
             }}
           >
             <label className="form-label">
-              Project name
+              {t('Project name')}
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -598,48 +645,55 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
             </label>
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setModal(null)}>
-                Cancel
+                {t('Cancel')}
               </button>
               <button className="primary-button" disabled={!draft.trim()}>
-                Save name <ArrowRight size={14} />
+                {t('Save name')}
+                <ArrowRight size={14} />
               </button>
             </div>
           </form>
         </Modal>
       )}
       {modal === 'help' && (
-        <Modal title="A clear path through protein design" onClose={() => setModal(null)}>
+        <Modal title={t('A clear path through protein design')} onClose={() => setModal(null)}>
           <p>
-            EasyDesign helps you move from a research goal to a candidate panel, with a scientist
-            conversation and the relevant context side by side.
+            {t(
+              'EasyDesign helps you move from a research goal to a candidate panel, with a scientist conversation and the relevant context side by side.',
+            )}
           </p>
           <div className="modal-demo">
             <DemoBadge />
             <p>
-              This standalone prototype uses fixed lysozyme/VHH data: 8 pilot candidates, 24 in
-              scale, and 6 finalists. No model or scientific job is called. Compute & Queue can
-              separately display read-only live GPU metrics when configured.
+              {t(
+                'This standalone prototype uses fixed lysozyme/VHH data: 8 pilot candidates, 24 in scale, and 6 finalists. No model or scientific job is called. Compute & Queue can separately display read-only live GPU metrics when configured.',
+              )}
             </p>
           </div>
           <p>
-            The molecule is the public PDB 1MEL reference. Site scores, candidate scores and
-            outcomes are simulated. Conversation shows concise research summaries and tool events
-            only.
+            {t(
+              'The molecule is the public PDB 1MEL reference. Site scores, candidate scores and outcomes are simulated. Conversation shows concise research summaries and tool events only.',
+            )}
           </p>
           <button className="primary-button" onClick={() => navigate('workspace')}>
-            Explore the workbench <ArrowRight size={14} />
+            {t('Explore the workbench')}
+            <ArrowRight size={14} />
           </button>
         </Modal>
       )}
       {modal === 'edit' && (
         <Modal
-          title={snapshot.phase === 'site' ? 'Choose a demo site' : 'Edit the design plan'}
+          title={snapshot.phase === 'site' ? t('Choose a demo site') : t('Edit the design plan')}
           onClose={() => setModal(null)}
         >
           <p>
             {snapshot.phase === 'site'
-              ? 'Select the site you want both design arms to explore. Residue groups are fixed demo fixtures.'
-              : 'Give your scaffold a useful label. The demo keeps two arms and a fixed 4 + 4 candidate budget.'}
+              ? t(
+                  'Select the site you want both design arms to explore. Residue groups are fixed demo fixtures.',
+                )
+              : t(
+                  'Give your scaffold a useful label. The demo keeps two arms and a fixed 4 + 4 candidate budget.',
+                )}
           </p>
           <form
             onSubmit={(e) => {
@@ -654,7 +708,7 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
           >
             {snapshot.phase === 'site' ? (
               <fieldset className="edit-sites">
-                <legend className="sr-only">Demo site</legend>
+                <legend className="sr-only">{t('Demo site')}</legend>
                 {snapshot.context.sites.map((s) => (
                   <label key={s.id}>
                     <input
@@ -664,15 +718,15 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
                       checked={draft === s.id}
                       onChange={() => setDraft(s.id)}
                     />
-                    <strong>{s.label}</strong>
+                    <strong>{t(s.label)}</strong>
                     <span>{s.residues.join(' · ')}</span>
-                    {s.recommended && <small>Recommended</small>}
+                    {s.recommended && <small>{t('Recommended')}</small>}
                   </label>
                 ))}
               </fieldset>
             ) : (
               <label className="form-label">
-                Scaffold label
+                {t('Scaffold label')}
                 <input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
@@ -683,10 +737,11 @@ export function App({ adapter }: { adapter: WorkbenchAdapter }) {
             )}
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setModal(null)}>
-                Cancel
+                {t('Cancel')}
               </button>
               <button className="primary-button" disabled={!draft.trim()}>
-                Save changes <ArrowRight size={14} />
+                {t('Save changes')}
+                <ArrowRight size={14} />
               </button>
             </div>
           </form>

@@ -1,3 +1,9 @@
+import { beforeAll } from 'vitest';
+import { loadAppNamespaces } from '../src/shell/I18nProvider';
+
+// Synchronous component tests opt into eager dictionaries; browser tests exercise lazy route readiness.
+beforeAll(() => loadAppNamespaces(['easy', 'pro', 'account']));
+
 /**
  * Shared jsdom polyfills for the app test suite. jsdom does not implement
  * matchMedia, <dialog> methods or a real canvas 2D context; the demo
@@ -32,12 +38,19 @@ if (typeof HTMLCanvasElement !== 'undefined') {
     this: HTMLCanvasElement,
   ): CanvasRenderingContext2D | null {
     const canvas = this;
-    return new Proxy({}, {
-      get: (_target, property) => {
-        if (property === 'canvas') return canvas;
-        return () => undefined;
+    return new Proxy(
+      {},
+      {
+        get: (_target, property) => {
+          if (property === 'canvas') return canvas;
+          return () => undefined;
+        },
+        set: () => true,
       },
-      set: () => true,
-    }) as unknown as CanvasRenderingContext2D;
+    ) as unknown as CanvasRenderingContext2D;
   } as unknown as HTMLCanvasElement['getContext'];
+}
+
+if (typeof HTMLElement.prototype.scrollTo !== 'function') {
+  HTMLElement.prototype.scrollTo = function scrollToStub() {};
 }

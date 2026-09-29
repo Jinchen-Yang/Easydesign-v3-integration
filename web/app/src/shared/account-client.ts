@@ -1,6 +1,6 @@
 // Value import from a leaf module: sessionEvents type-imports this file, so
 // the cycle stays type-only and erases at runtime.
-import { dispatchSessionExpired } from './sessionEvents';
+import { dispatchSessionExpired, dispatchSessionPermissions, needsPermissionRefresh } from './sessionEvents';
 import { appI18n } from '../shell/I18nProvider';
 
 const commonT = (key: string): string => appI18n.t(key, { ns: 'common' });
@@ -90,6 +90,7 @@ export async function accountApi<T>(path: string, session?: AccountSession | nul
     throw new AccountApiError('network_error', commonT('Network error; please try again later'), 0);
   }
   // A proxy or partial outage can return HTML/text; never leak a parse crash as the error.
+  if (response.status === 401 && session) dispatchSessionExpired({ session });
   const value: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = value as {error?: {code?: string; message?: string}} | null;
@@ -178,12 +179,23 @@ export interface SessionRef {
  * one transport — and the adapter built on it, with its idempotency
  * request-id tables — survives a same-account re-login during expiry recovery.
  */
+async function observeScopedPermissions(response: Response, session: AccountSession, scope: AccountScope) {
+  if (response.status !== 403 && response.status !== 404) return;
+  const value = await response.clone().json().catch(() => null);
+  const code = value?.error?.code;
+  if (typeof code === 'string' && needsPermissionRefresh(response.status, code))
+    dispatchSessionPermissions({ session, scope, status: response.status, code });
+}
+
 export function scopedTransportFromRef(ref: SessionRef, scope: AccountScope): typeof fetch {
+  const owner = ref.current?.user.id;
   return async (input, init) => {
     const session = ref.current;
     if (typeof input !== 'string' || session === null) {
       throw new Error('Scoped requests require a relative URL and a live session');
     }
+    if (session.user.id !== owner)
+      throw new AccountApiError('identity_changed', commonT('The active account changed. Reopen this workspace.'), 409);
     const headers = new Headers(init?.headers);
     headers.set('X-CSRF-Token', session.csrf_token);
     const response = await fetch(scopedProductPath(scope.id, input), {...init, headers, credentials: 'same-origin'});
@@ -191,6 +203,7 @@ export function scopedTransportFromRef(ref: SessionRef, scope: AccountScope): ty
       notifySessionChange();
       dispatchSessionExpired({ session, scope });
     }
+    await observeScopedPermissions(response, session, scope);
     return response;
   };
 }
@@ -209,6 +222,7 @@ export function scopedTransport(session: AccountSession, scope: AccountScope): t
       notifySessionChange();
       dispatchSessionExpired({ session, scope });
     }
+    await observeScopedPermissions(response, session, scope);
     return response;
   };
 }

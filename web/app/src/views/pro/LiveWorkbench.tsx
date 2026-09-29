@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   ArrowRight,
   Check,
@@ -16,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { Brand } from '../../components/Brand';
+import { WorkspaceAccessNotice } from '../../components/WorkspaceAccessNotice';
 import { DemoBadge } from '../../components/DemoBadge';
 import { Landing, Modal } from '../../app/App';
 import { ProjectSidebar, type WorkbenchPage } from '../../features/projects/ProjectSidebar';
@@ -37,7 +39,11 @@ import { scopeDecisionLinks, surfaceRights } from '../../shared/account-client';
 import type { GateInput, LiveState, ProductSnapshot } from './contracts';
 import { LiveContext } from './LiveContext';
 import { GateReview } from './GateReview';
+import { DRAFT_KEYS } from '../../data/draftRecovery';
+import { useInputDraft } from '../../data/useInputDraft';
+import { DraftStatus } from '../../data/DraftStatus';
 import { latestQueueCancellation } from './queue-presentation';
+import { readProjectRoute, writeProjectRoute } from '../easy/routeParams';
 import './live.css';
 const phaseOf = (phase: string): WorkflowPhase =>
   phase === 'handoff' ? 'candidates' : (phase as WorkflowPhase);
@@ -67,14 +73,21 @@ const stepTitles: Record<string, string> = {
   candidates: 'Review your candidate panel',
   handoff: 'Your panel is finalized',
 };
-function dialogue(v: ProductSnapshot, queueCancelled = false): ConversationItem[] {
+function dialogue(
+  v: ProductSnapshot,
+  t: TFunction<'pro'>,
+  queueCancelled = false,
+): ConversationItem[] {
   const phase = phaseOf(v.project.phase);
   const recommendedTarget =
     v.decision?.gate === 1
       ? v.decision.options.find((option) => option.option_id === v.decision?.default_option_id)
       : undefined;
   const currentDecisionText = recommendedTarget
-    ? `Target Intelligence recommends ${recommendedTarget.label || recommendedTarget.option_id} as the prepared structure and chain. Review it, then approve the target or change the structure.`
+    ? t(
+        'Target Intelligence recommends {{name}} as the prepared structure and chain. Review it, then approve the target or change the structure.',
+        { name: recommendedTarget.label || recommendedTarget.option_id },
+      )
     : v.decision?.question || v.current_action.message;
   // The asynchronous worker's generic wait is not a current scientific failure
   // once Runtime has produced a review or terminal disposition. Native history
@@ -97,7 +110,12 @@ function dialogue(v: ProductSnapshot, queueCancelled = false): ConversationItem[
       phase: phaseOf(m.phase || v.project.phase),
     }));
   if (!result.some((m) => m.kind === 'user' && m.text === v.project.goal))
-    result.unshift({ id: 'goal', phase: 'goal', kind: 'user', text: v.project.goal });
+    result.unshift({
+      id: 'goal',
+      phase: 'goal',
+      kind: 'user',
+      text: v.project.goal,
+    });
   if (!result.some((m) => m.phase === phase && m.kind === 'summary'))
     result.push({
       id: 'current',
@@ -105,11 +123,13 @@ function dialogue(v: ProductSnapshot, queueCancelled = false): ConversationItem[
       kind: 'summary',
       title:
         queueCancelled && !v.decision
-          ? 'Request cancelled before execution'
-          : stepTitles[v.project.phase] || 'Your research is in progress',
+          ? t('Request cancelled before execution')
+          : t(stepTitles[v.project.phase] || 'Your research is in progress'),
       text:
         queueCancelled && !v.decision
-          ? 'This request did not start computation. Scientific evidence is retained; it will not restart automatically.'
+          ? t(
+              'This request did not start computation. Scientific evidence is retained; it will not restart automatically.',
+            )
           : currentDecisionText,
       focus: phase,
     });
@@ -136,7 +156,7 @@ function dialogue(v: ProductSnapshot, queueCancelled = false): ConversationItem[
       id: `activity-${e.id}`,
       phase: phaseOf(e.phase || v.project.phase),
       kind: 'tool' as const,
-      title: (e.title || e.tool || e.type || 'Research evidence updated')
+      title: (e.title || e.tool || e.type || t('Research evidence updated'))
         .replace(/[_:-]/g, ' ')
         .replace(/^./, (c) => c.toUpperCase()),
       text: e.summary || e.text || '',
@@ -162,7 +182,12 @@ export function LiveWorkbench({
   computeAvailable = true,
 }: {
   adapter: LiveWorkbenchPort;
-  access?: { id?: string; can_edit: boolean; can_execute: boolean; role: string };
+  access?: {
+    id?: string;
+    can_edit: boolean;
+    can_execute: boolean;
+    role: string;
+  };
   computeAvailable?: boolean;
 }) {
   const { t } = useTranslation('pro');
@@ -171,7 +196,11 @@ export function LiveWorkbench({
   // 统一应用里 hash 属于路由器；Pro 内部页签只保留组件状态（?page= 仅作初始值）。
   const [page, setPage] = useState<WorkbenchPage>(() => {
     const initial = new URLSearchParams(location.hash.split('?')[1] ?? '').get('page');
-    return initial === 'workspace' || initial === 'compute' ? initial : 'projects';
+    return initial === 'workspace' || initial === 'compute' || initial === 'projects'
+      ? initial
+      : readProjectRoute()
+        ? 'workspace'
+        : 'projects';
   });
   const [projectsOpen, setProjectsOpen] = useState(
     () => window.matchMedia('(min-width: 1101px)').matches,
@@ -191,7 +220,25 @@ export function LiveWorkbench({
     [file, setFile] = useState<File | null>(null);
   const [modal, setModal] = useState<'help' | 'edit' | 'handoff' | 'rename' | null>(null);
   const [renamingProject, setRenamingProject] = useState('');
-  const [projectName, setProjectName] = useState('');
+  const [renameOriginal, setRenameOriginal] = useState('');
+  const scopeId = access?.id || 'single-user';
+  const renameDraft = useInputDraft(
+    renamingProject ? DRAFT_KEYS.scoped(scopeId, 'project', renamingProject, 'rename') : null,
+    renameOriginal,
+  );
+  const { value: projectName, setValue: setProjectName } = renameDraft;
+  const fileDraft = useInputDraft<{ name: string; size: number } | null>(
+    DRAFT_KEYS.scoped(scopeId, 'pro', 'create', 'file'),
+    null,
+    {
+      valid: (value): value is { name: string; size: number } | null =>
+        value === null ||
+        (typeof value === 'object' &&
+          typeof (value as { name?: unknown }).name === 'string' &&
+          typeof (value as { size?: unknown }).size === 'number'),
+    },
+  );
+  const needsFile = !!fileDraft.value && !file;
   const focusTrigger = useRef<HTMLElement | null>(null),
     contextToggle = useRef<HTMLButtonElement>(null);
   const run = (work: () => Promise<void>) => {
@@ -207,11 +254,12 @@ export function LiveWorkbench({
     const accountScoped = access !== undefined;
     if (legacyToken)
       history.replaceState(null, '', location.pathname + location.search + '#projects');
-    const project = new URLSearchParams(location.search).get('project');
+    const project = readProjectRoute();
     void (async () => {
       if (legacyToken && !accountScoped) await adapter.authenticate(legacyToken);
       if (project) {
-        if (!location.hash || legacyToken) setPage('workspace');
+        if (!new URLSearchParams(location.hash.split('?')[1] ?? '').has('page'))
+          setPage('workspace');
         // Open the requested workspace without waiting for every project card.
         await Promise.all([adapter.selectProject(project), adapter.load()]);
       } else setState(await adapter.load());
@@ -263,9 +311,7 @@ export function LiveWorkbench({
     closeProjects();
   };
   const open = (id: string) => {
-    const query = new URLSearchParams(location.search);
-    query.set('project', id);
-    history.replaceState(null, '', location.pathname + '?' + query + '#workspace');
+    writeProjectRoute(id);
     setNewDesign(false);
     setSite('');
     navigate('workspace');
@@ -285,23 +331,36 @@ export function LiveWorkbench({
       preventScroll: true,
     });
   };
-  const create = (goal: string) => {
+  const create = async (goal: string) => {
     if (!canExecute) {
-      setError(t('The current role cannot start compute; ask the project owner or a team admin to execute.'));
-      return;
+      setError(
+        t(
+          'The current role cannot start compute; ask the project owner or a team admin to execute.',
+        ),
+      );
+      throw new Error(
+        t(
+          'The current role cannot start compute; ask the project owner or a team admin to execute.',
+        ),
+      );
     }
-    run(async () => {
+    if (needsFile) throw new Error(t('Select the attachment again before submitting.'));
+    setError('');
+    try {
       await adapter.createProject(goal.slice(0, 80), goal, file);
+      fileDraft.complete('submitted', null);
+      setFile(null);
       setNewDesign(false);
       setPage('workspace');
       closeProjects();
-    });
+    } catch (reason) {
+      setError((reason as Error).message);
+      throw reason;
+    }
   };
   useEffect(() => {
     if (state?.selectedProject) {
-      const q = new URLSearchParams(location.search);
-      q.set('project', state.selectedProject);
-      history.replaceState(null, '', location.pathname + '?' + q + location.hash);
+      if (readProjectRoute() !== state.selectedProject) writeProjectRoute(state.selectedProject);
     }
   }, [state?.selectedProject]);
   const busy = !!state?.pending || state?.connection !== 'connected';
@@ -342,14 +401,16 @@ export function LiveWorkbench({
         role: event.role,
         status: event.type === 'specialist.completed' ? 'complete' : 'running',
         description:
-          event.type === 'specialist.completed' ? 'Review response received' : 'Review in progress',
+          event.type === 'specialist.completed'
+            ? t('Review response received')
+            : t('Review in progress'),
       });
     }
   }
   for (const item of v?.specialists || []) observedSpecialists.set(item.role, item);
   const specialists = [...observedSpecialists.values()].map((s) => ({
     name: specialistNames[s.role] || s.role,
-    role: s.description || 'Scientific review',
+    role: s.description || t('Scientific review'),
     status: (s.status === 'complete'
       ? 'complete'
       : s.status === 'running'
@@ -368,7 +429,7 @@ export function LiveWorkbench({
       detail:
         task.summary ||
         [task.specialist || task.role, task.progress?.label].filter(Boolean).join(' · ') ||
-        'Execution state recorded by the backend',
+        t('Execution state recorded by the backend'),
       status: task.status || 'pending',
       progress: task.progress,
     }));
@@ -379,34 +440,44 @@ export function LiveWorkbench({
   const rank = v?.scientific_context.sites.find((s) => s.id === option?.option_id)?.rank;
   const approveLabel = decision
     ? {
-        1: 'Approve target',
-        2: `Approve Site ${rank || option?.label || ''}`,
-        3: 'Approve design',
+        1: t('Approve target'),
+        2: t('Approve Site {{name}}', { name: rank || option?.label || '' }),
+        3: t('Approve design'),
         4:
           (
             {
-              PROMOTE_TO_SCALE: 'Promote pilot',
-              RUN_ANOTHER_PILOT: 'Prepare another pilot',
-              REVISE_DESIGN: 'Revise design',
-              REVISE_SITE: 'Revise site',
-              STOP: 'Stop campaign',
+              PROMOTE_TO_SCALE: t('Promote pilot'),
+              RUN_ANOTHER_PILOT: t('Prepare another pilot'),
+              REVISE_DESIGN: t('Revise design'),
+              REVISE_SITE: t('Revise site'),
+              STOP: t('Stop campaign'),
             } as Record<string, string>
-          )[option?.option_id || ''] || 'Approve pilot route',
-        5: 'Finalize candidate panel',
+          )[option?.option_id || ''] || t('Approve pilot route'),
+        5: t('Finalize candidate panel'),
       }[decision.gate]
     : '';
   const decide = async (input: GateInput) => {
-    if (!canExecute) throw new Error(t('The current role cannot approve or revise scientific Gates.'));
-    await adapter.decide(input);
-    setModal(null);
+    if (!canExecute)
+      throw new Error(t('The current role cannot approve or revise scientific Gates.'));
+    setError('');
+    try {
+      await adapter.decide(input);
+      setModal(null);
+    } catch (reason) {
+      setError((reason as Error).message);
+      throw reason;
+    }
   };
+  if (state?.connection === 'access-denied') return <WorkspaceAccessNotice message={state.error} refresh={() => adapter.refresh()}/>;
   return (
     <div
       className={`app live-workbench ${inWorkbench ? 'in-workbench' : ''} ${projectsOpen ? 'projects-expanded' : ''}`}
     >
       {access && !computeAvailable && (
         <p className="account-permission-note account-compute-note">
-          {t('This server has no scientific executor connected (account-management mode): browsing and collaborative editing are available; compute start, approval, and project conversations are temporarily unavailable.')}
+          {t(
+            'This server has no scientific executor connected (account-management mode): browsing and collaborative editing are available; compute start, approval, and project conversations are temporarily unavailable.',
+          )}
         </p>
       )}
       <ProjectSidebar
@@ -424,7 +495,11 @@ export function LiveWorkbench({
             <div className="landing-center">
               <Brand />
               <h1>{t('Please sign in again')}</h1>
-              <p>{t('The current account session has expired or been revoked. A workspace token cannot replace account sign-in.')}</p>
+              <p>
+                {t(
+                  'The current account session has expired or been revoked. A workspace token cannot replace account sign-in.',
+                )}
+              </p>
               <a className="primary-button" href="#/account">
                 {t('Back to account and teams')} <ArrowRight size={15} />
               </a>
@@ -434,7 +509,7 @@ export function LiveWorkbench({
           <main className="landing">
             <div className="landing-center">
               <Brand />
-              <h1>Connect to your research workspace</h1>
+              <h1>{t('Connect to your research workspace')}</h1>
               <form
                 className="goal-composer"
                 onSubmit={(e) => {
@@ -446,7 +521,7 @@ export function LiveWorkbench({
                 }}
               >
                 <label className="form-label">
-                  Access token
+                  {t('Access token')}
                   <input
                     type="password"
                     autoComplete="off"
@@ -455,7 +530,8 @@ export function LiveWorkbench({
                   />
                 </label>
                 <button className="primary-button">
-                  Connect <ArrowRight size={15} />
+                  {t('Connect')}
+                  <ArrowRight size={15} />
                 </button>
               </form>
             </div>
@@ -464,21 +540,28 @@ export function LiveWorkbench({
       ) : !state || state.connection === 'loading' ? (
         <div className="app-loading">
           <Brand />
-          <p>Opening your research workspace…</p>
+          <p>{t('Opening your research workspace…')}</p>
         </div>
       ) : page === 'projects' ? (
         <>
           <ProjectsPage
             mode="live"
+            draftKey={DRAFT_KEYS.scoped(scopeId, 'pro', 'projects', 'query')}
             snapshot={{ projects }}
             canCreate={canExecute}
             createDisabledReason={
               access
                 ? access.role === 'observer'
-                  ? t('Administrator read-only access: you cannot create projects, approve Gates, or start compute.')
+                  ? t(
+                      'Administrator read-only access: you cannot create projects, approve Gates, or start compute.',
+                    )
                   : !computeAvailable
-                    ? t('This server has no scientific executor connected (account-management mode): creating projects is temporarily unavailable; team draft collaboration remains available.')
-                    : t('Team members cannot start compute; collaborate on team drafts and let a team admin create the project.')
+                    ? t(
+                        'This server has no scientific executor connected (account-management mode): creating projects is temporarily unavailable; team draft collaboration remains available.',
+                      )
+                    : t(
+                        'Team members cannot start compute; collaborate on team drafts and let a team admin create the project.',
+                      )
                 : undefined
             }
             onNew={() => {
@@ -491,8 +574,8 @@ export function LiveWorkbench({
             onRename={
               canEdit
                 ? (project) => {
+                    setRenameOriginal(project.title);
                     setRenamingProject(project.id);
-                    setProjectName(project.title);
                     setModal('rename');
                   }
                 : undefined
@@ -504,13 +587,13 @@ export function LiveWorkbench({
                 disabled={!state.projects.offset}
                 onClick={() => run(() => adapter.projectPage(state.projects.offset - 20))}
               >
-                Previous
+                {t('Previous')}
               </button>
               <button
                 disabled={state.projects.offset + 20 >= state.projects.total}
                 onClick={() => run(() => adapter.projectPage(state.projects.offset + 20))}
               >
-                Next
+                {t('Next')}
               </button>
             </div>
           )}
@@ -524,6 +607,7 @@ export function LiveWorkbench({
       ) : !inWorkbench ? (
         <Landing
           key={draftRevision}
+          draftKey={DRAFT_KEYS.scoped(scopeId, 'pro', 'create', 'goal')}
           mode="live"
           snapshot={{
             started: !!state?.selectedProject,
@@ -531,48 +615,75 @@ export function LiveWorkbench({
             phase,
             project: {
               title: v?.project.title || 'your project',
-              exampleGoal:
+              exampleGoal: t(
                 'Design a VHH binder against hen egg-white lysozyme and prioritize a compact accessible epitope.',
+              ),
             },
           }}
           newDesign={newDesign}
           focusInput={newDesign}
           onStart={create}
-          canStart={canExecute && !state?.pending}
+          canStart={canExecute && !state?.pending && !needsFile}
           onResume={() => setNewDesign(false)}
           attachment={
-            <label className="attach-target" title="Optionally attach a target structure seed">
-              <Paperclip size={15} />
-              {file ? file.name : 'Attach target (optional)'}
-              <input
-                aria-label="Target structure · PDB / mmCIF"
-                type="file"
-                accept=".pdb,.cif,.mmcif"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-              />
-            </label>
+            <>
+              <label
+                className="attach-target"
+                title={t('Optionally attach a target structure seed')}
+              >
+                <Paperclip size={15} />
+                {file ? file.name : t('Attach target (optional)')}
+                <input
+                  aria-label={t('Target structure · PDB / mmCIF')}
+                  type="file"
+                  accept=".pdb,.cif,.mmcif"
+                  onChange={(e) => {
+                    const selectedFile = e.target.files?.[0] || null;
+                    setFile(selectedFile);
+                    fileDraft.setValue(
+                      selectedFile ? { name: selectedFile.name, size: selectedFile.size } : null,
+                    );
+                  }}
+                />
+              </label>
+              {needsFile && (
+                <span role="status">
+                  {t(
+                    'Attachment {{name}} ({{size}} bytes) must be selected again after refresh.',
+                    fileDraft.value!,
+                  )}
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => fileDraft.setValue(null)}
+                  >
+                    {t('Remove attachment')}
+                  </button>
+                </span>
+              )}
+            </>
           }
         />
       ) : !v ? (
         <div className="app-loading">
           <Brand />
-          <p>Opening your research workspace…</p>
+          <p>{t('Opening your research workspace…')}</p>
         </div>
       ) : (
         <div className="workspace">
           <header className="workspace-header">
             <button
               className="mobile-workflow icon-button"
-              aria-label="Toggle workflow"
+              aria-label={t('Toggle workflow')}
               onClick={() => setWorkflowOpen((o) => !o)}
             >
               <PanelLeft size={18} />
             </button>
             <div className="project-breadcrumb">
-              <span>Agent Workspace</span>
+              <span>{t('Agent Workspace')}</span>
               <ChevronRight size={13} />
               <select
-                aria-label="Current project"
+                aria-label={t('Current project')}
                 value={v.project.id}
                 onChange={(e) => open(e.target.value)}
               >
@@ -589,21 +700,21 @@ export function LiveWorkbench({
             <span className="save-indicator">
               <span />
               {state?.connection === 'reconnecting'
-                ? 'Reconnecting…'
+                ? t('Reconnecting…')
                 : answering
-                  ? 'Answering…'
-                  : 'Saved'}
+                  ? t('Answering…')
+                  : t('Saved')}
             </span>
             <div className="header-actions">
               <DemoBadge mode="live" />
               <button className="header-button" onClick={() => run(() => adapter.refresh())}>
                 <RefreshCw size={13} />
-                Refresh
+                {t('Refresh')}
               </button>
               <button
                 ref={contextToggle}
                 className="mobile-context icon-button"
-                aria-label="Open scientific context"
+                aria-label={t('Open scientific context')}
                 aria-expanded={contextOpen}
                 aria-controls="scientific-context"
                 hidden={labOrderOpen}
@@ -634,6 +745,8 @@ export function LiveWorkbench({
             />
             {labOrderOpen && v.lab_order ? (
               <LiveLabOrderPage
+                key={v.project.id}
+                draftKey={DRAFT_KEYS.scoped(scopeId, 'project', v.project.id, 'lab-order')}
                 order={v.lab_order}
                 busy={busy || !canExecute}
                 error={error}
@@ -645,9 +758,10 @@ export function LiveWorkbench({
               <div className="research-main">
                 <Conversation
                   key={v.project.id}
+                  draftKey={DRAFT_KEYS.scoped(scopeId, 'project', v.project.id, 'conversation')}
                   mode="live"
                   snapshot={{
-                    messages: dialogue(v, queueCancelled),
+                    messages: dialogue(v, t, queueCancelled),
                     completed: completed || stopped,
                     phase,
                     busy: !queueCancelled && v.project.status === 'running',
@@ -671,6 +785,7 @@ export function LiveWorkbench({
                   }}
                 />
                 <LiveContext
+                  draftKey={DRAFT_KEYS.scoped(scopeId, 'project', v.project.id, 'candidate-view')}
                   snapshot={v}
                   state={state!}
                   adapter={adapter}
@@ -686,14 +801,16 @@ export function LiveWorkbench({
                     <div className="decision-copy">
                       <strong>
                         {queuedRequest.result.queue.state === 'starting'
-                          ? 'Starting executor'
-                          : 'Waiting for execution resources'}
+                          ? t('Starting executor')
+                          : t('Waiting for execution resources')}
                       </strong>
                       <p>
                         {queuedRequest.result.queue.position != null
-                          ? `Queue position: ${queuedRequest.result.queue.position}. `
+                          ? t('Queue position: {{position}}.', {
+                              position: queuedRequest.result.queue.position,
+                            })
                           : ''}
-                        Request saved; do not submit again.
+                        {t('Request saved; do not submit again.')}
                       </p>
                     </div>
                     {queuedRequest.result.queue.cancellable && (
@@ -701,7 +818,7 @@ export function LiveWorkbench({
                         disabled={busy || !canEdit}
                         onClick={() => run(() => adapter.cancelRequest(queuedRequest.id))}
                       >
-                        Cancel queued request
+                        {t('Cancel queued request')}
                       </button>
                     )}
                   </section>
@@ -709,7 +826,11 @@ export function LiveWorkbench({
                 <footer
                   className={`decision-bar ${completed ? 'completed' : ''}`}
                   role="region"
-                  aria-label={decision ? `Gate ${decision.gate} decision` : 'Research status'}
+                  aria-label={
+                    decision
+                      ? t('Gate {{number}} decision', { number: decision.gate })
+                      : t('Research status')
+                  }
                 >
                   <span className="decision-icon">
                     <Check size={17} />
@@ -717,37 +838,47 @@ export function LiveWorkbench({
                   <div className="decision-copy">
                     <strong>
                       {decision?.gate === 2
-                        ? `Continue with Site ${rank || ''}?`
+                        ? t('Continue with Site {{name}}?', {
+                            name: rank || '',
+                          })
                         : completed
-                          ? 'Panel finalized'
+                          ? t('Panel finalized')
                           : stopped
-                            ? 'Campaign stopped'
+                            ? t('Campaign stopped')
                             : queueCancelled && !decision
-                              ? 'Queue cancelled'
+                              ? t('Queue cancelled')
                               : v.lifecycle === 'failed'
-                                ? 'Target research needs a retry'
+                                ? t('Target research needs a retry')
                                 : decision?.gate === 1
-                                  ? 'Approve the automatically selected target?'
+                                  ? t('Approve the automatically selected target?')
                                   : decision?.gate === 3
-                                    ? 'Ready to start the pilot?'
+                                    ? t('Ready to start the pilot?')
                                     : decision
-                                      ? 'Ready for your review'
-                                      : stepTitles[v.project.phase] || 'Research in progress'}
+                                      ? t('Ready for your review')
+                                      : t(stepTitles[v.project.phase] || 'Research in progress')}
                     </strong>
                     <span>
                       {queueCancelled && !decision
-                        ? 'This request did not start computation; scientific evidence is retained.'
+                        ? t(
+                            'This request did not start computation; scientific evidence is retained.',
+                          )
                         : v.project.validation_only
-                          ? 'Validation only · not authorized for experiment'
+                          ? t('Validation only · not authorized for experiment')
                           : stopped
-                            ? 'Scientific evidence is retained; no further computation is scheduled.'
+                            ? t(
+                                'Scientific evidence is retained; no further computation is scheduled.',
+                              )
                             : v.lifecycle === 'failed'
-                              ? 'Verified evidence and recovery state were retained.'
+                              ? t('Verified evidence and recovery state were retained.')
                               : decision?.gate === 1
-                                ? `${option?.label || 'The recommended structure and chain'} is already selected. Change it only if needed.`
+                                ? t('{{name}} is already selected. Change it only if needed.', {
+                                    name: option?.label || t('The recommended structure and chain'),
+                                  })
                                 : decision
-                                  ? 'Review the scientific context before continuing.'
-                                  : 'Your conversations, decisions and results stay with this project.'}
+                                  ? t('Review the scientific context before continuing.')
+                                  : t(
+                                      'Your conversations, decisions and results stay with this project.',
+                                    )}
                     </span>
                   </div>
                   {decision ? (
@@ -761,7 +892,7 @@ export function LiveWorkbench({
                           }}
                         >
                           <Columns2 size={14} />
-                          Compare
+                          {t('Compare')}
                         </button>
                       )}
                       <button
@@ -771,10 +902,10 @@ export function LiveWorkbench({
                       >
                         <PencilLine size={14} />
                         {decision.gate === 1
-                          ? 'Change structure'
+                          ? t('Change structure')
                           : decision.gate === 4
-                            ? 'Revise'
-                            : 'Edit'}
+                            ? t('Revise')
+                            : t('Edit')}
                       </button>
                       <button
                         className="primary-button"
@@ -791,7 +922,10 @@ export function LiveWorkbench({
                         onClick={() =>
                           option?.actions.includes('approve')
                             ? run(() =>
-                                decide({ action: 'approve', selected_option_id: option.option_id }),
+                                decide({
+                                  action: 'approve',
+                                  selected_option_id: option.option_id,
+                                }),
                               )
                             : setModal('edit')
                         }
@@ -806,7 +940,8 @@ export function LiveWorkbench({
                       disabled={busy || !canExecute}
                       onClick={() => run(() => adapter.retryRequest(failedCreate.id))}
                     >
-                      Retry Target Intelligence <ArrowRight size={15} />
+                      {t('Retry Target Intelligence')}
+                      <ArrowRight size={15} />
                     </button>
                   ) : v.capabilities.resume ? (
                     <button
@@ -814,7 +949,8 @@ export function LiveWorkbench({
                       disabled={busy || !canExecute}
                       onClick={() => run(() => adapter.resume())}
                     >
-                      Continue research <ArrowRight size={15} />
+                      {t('Continue research')}
+                      <ArrowRight size={15} />
                     </button>
                   ) : completed ? (
                     <button
@@ -825,29 +961,30 @@ export function LiveWorkbench({
                         setContextOpen(false);
                       }}
                     >
-                      Open simulated Lab Order <ArrowRight size={15} />
+                      {t('Open simulated Lab Order')}
+                      <ArrowRight size={15} />
                     </button>
                   ) : null}
                 </footer>
               </div>
             )}
             {tasksOpen && (
-              <aside className="task-inspector" aria-label="Agent Tasks" aria-modal="true">
+              <aside className="task-inspector" aria-label={t('Agent Tasks')} aria-modal="true">
                 <header>
                   <div>
-                    <span className="eyebrow">LIVE EXECUTION</span>
-                    <h2>Agent Tasks</h2>
+                    <span className="eyebrow">{t('LIVE EXECUTION')}</span>
+                    <h2>{t('Agent Tasks')}</h2>
                     <p>
                       {
                         agentTasks.filter((task) => ['complete', 'completed'].includes(task.status))
                           .length
                       }{' '}
-                      of {agentTasks.length} completed
+                      {t('of')} {agentTasks.length} {t('completed')}
                     </p>
                   </div>
                   <button
                     className="icon-button"
-                    aria-label="Close Agent Tasks"
+                    aria-label={t('Close Agent Tasks')}
                     onClick={() => setTasksOpen(false)}
                   >
                     <X size={17} />
@@ -867,13 +1004,13 @@ export function LiveWorkbench({
                             </small>
                           )}
                         </div>
-                        <span>{task.status}</span>
+                        <span>{t(task.status[0].toUpperCase() + task.status.slice(1))}</span>
                       </article>
                     ))
                   ) : (
                     <div className="task-inspector-empty">
                       <ClipboardList size={22} />
-                      <p>No task authority has been produced yet.</p>
+                      <p>{t('No task authority has been produced yet.')}</p>
                     </div>
                   )}
                 </div>
@@ -885,24 +1022,26 @@ export function LiveWorkbench({
       {(error || state?.error) && (
         <div className="toast" role="alert">
           <span>{error || state?.error}</span>
-          <button aria-label="Dismiss message" onClick={() => setError('')}>
+          <button aria-label={t('Dismiss message')} onClick={() => setError('')}>
             <X size={14} />
           </button>
         </div>
       )}
       {modal === 'edit' && decision && (
-        <Modal title="Review your decision" onClose={() => setModal(null)}>
+        <Modal title={t('Review your decision')} onClose={() => setModal(null)}>
           <GateReview
+            key={decision.id}
+            draftKey={DRAFT_KEYS.scoped(scopeId, 'project', v!.project.id, 'gate', decision.id)}
             decision={decision}
             selectedOptionId={option?.option_id}
             busy={busy || !v?.capabilities.decide || !canExecute}
             onSelect={setSite}
-            onSubmit={(input) => run(() => decide(input))}
+            onSubmit={decide}
           />
         </Modal>
       )}
       {modal === 'rename' && (
-        <Modal title="Rename project" onClose={() => setModal(null)}>
+        <Modal title={t('Rename project')} onClose={() => setModal(null)}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -912,12 +1051,13 @@ export function LiveWorkbench({
               }
               run(async () => {
                 await adapter.renameProject(renamingProject, projectName);
+                renameDraft.complete('saved');
                 setModal(null);
               });
             }}
           >
             <label className="form-label">
-              Project name
+              {t('Project name')}
               <input
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
@@ -925,29 +1065,34 @@ export function LiveWorkbench({
                 required
               />
             </label>
+            <DraftStatus status={renameDraft.status} />
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setModal(null)}>
-                Cancel
+                {t('Cancel')}
               </button>
               <button className="primary-button" disabled={!projectName.trim()}>
-                Save name <ArrowRight size={14} />
+                {t('Save name')}
+                <ArrowRight size={14} />
               </button>
             </div>
           </form>
         </Modal>
       )}
       {modal === 'help' && (
-        <Modal title="About EasyDesign" onClose={() => setModal(null)}>
+        <Modal title={t('About EasyDesign')} onClose={() => setModal(null)}>
           <p>
-            A guided research workspace. Ask Design Scientist about the evidence, compare options in
-            Scientific Context, and use the decision bar when you are ready to continue.
+            {t(
+              'A guided research workspace. Ask Design Scientist about the evidence, compare options in Scientific Context, and use the decision bar when you are ready to continue.',
+            )}
           </p>
         </Modal>
       )}
       {modal === 'handoff' && (
-        <Modal title="Panel finalized" onClose={() => setModal(null)}>
+        <Modal title={t('Panel finalized')} onClose={() => setModal(null)}>
           <p>
-            Your final panel and its evidence are saved. No laboratory order has been submitted.
+            {t(
+              'Your final panel and its evidence are saved. No laboratory order has been submitted.',
+            )}
           </p>
           {v?.artifacts
             .filter((a) => a.format === 'json')
@@ -970,57 +1115,58 @@ function Compute({
   onOpen: (id: string) => void;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useTranslation('pro');
   const v = state?.snapshot;
   const [status, setStatus] = useState('all');
   const jobs = (v?.jobs || []).filter((j) => status === 'all' || status === j.status);
   return (
-    <main className="platform-page" aria-label="Compute & Queue">
+    <main className="platform-page" aria-label={t('Compute & Queue')}>
       <header className="platform-header">
-        <span>A clear view of the work in progress.</span>
+        <span>{t('A clear view of the work in progress.')}</span>
         <DemoBadge mode="live" />
       </header>
       <div className="platform-content">
         <div className="platform-title-row">
           <div>
-            <span className="eyebrow">RESOURCES & ACTIVITY</span>
-            <h1>Compute & Queue</h1>
-            <p>Follow your runs across projects, from pilot to scale.</p>
+            <span className="eyebrow">{t('RESOURCES & ACTIVITY')}</span>
+            <h1>{t('Compute & Queue')}</h1>
+            <p>{t('Follow your runs across projects, from pilot to scale.')}</p>
           </div>
         </div>
         <LiveResources />
-        <section className="compute-connection" aria-label="Project activity connection">
+        <section className="compute-connection" aria-label={t('Project activity connection')}>
           <span className="compute-icon">
             <Cpu size={25} />
           </span>
           <div>
-            <h2>{v ? v.project.title : 'Your research workspace'}</h2>
+            <h2>{v ? v.project.title : t('Your research workspace')}</h2>
             <p>
               {v?.project.validation_only
-                ? 'Validation only · not authorized for experiment'
-                : 'Execution status from your research project.'}
+                ? t('Validation only · not authorized for experiment')
+                : t('Execution status from your research project.')}
             </p>
           </div>
           <span className="connection-label">
-            {state?.connection === 'connected' ? 'Connected' : 'Reconnecting'}
+            {state?.connection === 'connected' ? t('Connected') : t('Reconnecting')}
           </span>
         </section>
         <div className="run-section-heading">
           <div>
-            <h2>Research runs</h2>
-            <p>Pilot and Scale activity from the selected project.</p>
+            <h2>{t('Research runs')}</h2>
+            <p>{t('Pilot and Scale activity from the selected project.')}</p>
           </div>
           <span className="count-label">{v?.jobs.length || 0}</span>
         </div>
         <div className="run-filters">
           <label>
-            Project
+            {t('Project')}
             <select
-              aria-label="Filter runs by project"
+              aria-label={t('Filter runs by project')}
               value={v?.project.id || ''}
               onChange={(e) => onSelect(e.target.value)}
             >
               <option value="" disabled>
-                Choose a project
+                {t('Choose a project')}
               </option>
               {v && !state?.projects.items.some((p) => p.id === v.project.id) && (
                 <option value={v.project.id}>{v.project.title}</option>
@@ -1033,15 +1179,17 @@ function Compute({
             </select>
           </label>
           <label>
-            Status
+            {t('Status')}
             <select
-              aria-label="Filter runs by status"
+              aria-label={t('Filter runs by status')}
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
-              <option value="all">All statuses</option>
+              <option value="all">{t('All statuses')}</option>
               {[...new Set(v?.jobs.map((j) => j.status))].map((s) => (
-                <option key={s}>{s}</option>
+                <option key={s} value={s}>
+                  {t(s[0].toUpperCase() + s.slice(1))}
+                </option>
               ))}
             </select>
           </label>
@@ -1051,11 +1199,11 @@ function Compute({
             <table className="runs-table">
               <thead>
                 <tr>
-                  <th>Run / project</th>
-                  <th>Status</th>
-                  <th>Recovery</th>
+                  <th>{t('Run / project')}</th>
+                  <th>{t('Status')}</th>
+                  <th>{t('Recovery')}</th>
                   <th>
-                    <span className="sr-only">Open</span>
+                    <span className="sr-only">{t('Open')}</span>
                   </th>
                 </tr>
               </thead>
@@ -1063,20 +1211,27 @@ function Compute({
                 {jobs.map((j) => (
                   <tr key={j.id}>
                     <td>
-                      <strong>{j.phase[0].toUpperCase() + j.phase.slice(1)} exploration</strong>
+                      <strong>
+                        {t('{{phase}} exploration', {
+                          phase: t(j.phase[0].toUpperCase() + j.phase.slice(1)),
+                        })}
+                      </strong>
                       <span>{v?.project.title}</span>
                     </td>
                     <td>
                       <span className="project-status">
                         <i />
-                        {j.status}
+                        {t(j.status[0].toUpperCase() + j.status.slice(1))}
                       </span>
                     </td>
-                    <td>{j.resumable ? 'Available to resume' : '—'}</td>
+                    <td>{j.resumable ? t('Available to resume') : '—'}</td>
                     <td>
                       <button
                         className="icon-button"
-                        aria-label={`Open ${j.phase} project ${v?.project.title}`}
+                        aria-label={t('Open {{phase}} project {{name}}', {
+                          phase: t(j.phase[0].toUpperCase() + j.phase.slice(1)),
+                          name: v?.project.title || '',
+                        })}
                         onClick={() => v && onOpen(v.project.id)}
                       >
                         <ArrowRight size={17} />
@@ -1090,11 +1245,11 @@ function Compute({
         ) : (
           <div className="platform-empty queue-empty">
             <Layers size={27} />
-            <h2>Room for your next run</h2>
-            <p>Once you approve a design in Agent Workspace, its pilot will appear here.</p>
+            <h2>{t('Room for your next run')}</h2>
+            <p>{t('Once you approve a design in Agent Workspace, its pilot will appear here.')}</p>
           </div>
         )}
-        <p className="platform-footnote">Approvals remain in Agent Workspace.</p>
+        <p className="platform-footnote">{t('Approvals remain in Agent Workspace.')}</p>
       </div>
     </main>
   );

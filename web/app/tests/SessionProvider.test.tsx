@@ -8,6 +8,7 @@ import {
 import {
   AccountApiError, type AccountScope, type AccountSession,
 } from '../src/shared/account-client';
+import { dispatchSessionPermissions } from '../src/shared/sessionEvents';
 import { createDraftRecovery } from '../src/data/draftRecovery';
 
 function memoryStorage(): Storage {
@@ -400,6 +401,165 @@ describe('SessionProvider 过期与恢复（痛点⑤）', () => {
     expect(view.calls.logout).toBe(1);
     expect(view.drafts.recover('draft:project:create').hasLocal).toBe(false);
     expect(view.drafts.identity).toBe('guest');
+    view.unmount();
+  });
+});
+
+describe('in-place permission refresh', () => {
+  it('adds a new team without a checking transition and adopts revoked scope permissions', async () => {
+    let session = sessionFixture();
+    const view = setup({ handlers: { probe: async () => session } });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    session = { ...session, scopes: [{ ...scopeFixture('scope-u1'), role: 'member', can_execute: false }, { ...scopeFixture('team-1'), kind: 'team' }] };
+    await act(() => view.result.current.refreshSession());
+    const state = view.result.current.state;
+    expect(state.kind).toBe('authenticated');
+    if (state.kind !== 'authenticated') throw new Error('lost session');
+    expect(state.session.scopes).toHaveLength(2);
+    expect(state.scope.can_execute).toBe(false);
+    view.unmount();
+  });
+  it('ignores a permission response arriving after logout', async () => {
+    const view = setup();
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    let finish!: (session: AccountSession) => void;
+    view.api.probe = () => new Promise(resolve => { finish = resolve; });
+    let pending!: Promise<void>;
+    act(() => { pending = view.result.current.refreshSession(); });
+    await act(() => view.result.current.logout());
+    await act(async () => { finish(sessionFixture()); await pending; });
+    expect(view.result.current.state.kind).toBe('guest');
+    view.unmount();
+  });
+  it('a refresh 401 enters recovery without clearing local input', async () => {
+    const view = setup();
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    view.api.probe = () => Promise.reject(new AccountApiError('unauthorized', 'expired', 401));
+    await act(async () => { await expect(view.result.current.refreshSession()).rejects.toThrow('expired'); });
+    expect(view.result.current.state.kind).toBe('expired');
+    view.unmount();
+  });
+});
+
+describe('session operation races', () => {
+  it('cancelling an in-flight recovery invalidates its late login result', async () => {
+    const view = setup();
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    let finish!: (value: AccountSession) => void;
+    view.api.login = () => new Promise(resolve => { finish = resolve; });
+    act(() => fireSessionExpired({ session: sessionFixture() }));
+    let pending!: Promise<void>;
+    act(() => { pending = view.result.current.recoverSession('password'); });
+    act(() => view.result.current.dismissRecovery());
+    await act(async () => { finish(sessionFixture()); await pending; });
+    expect(view.result.current.state.kind).toBe('guest');
+    expect(localStorage.getItem('easydesign-recovery-path')).toBeNull();
+    view.unmount();
+  });
+
+  it('a stale initial probe cannot replace a newer login or its draft identity', async () => {
+    let finishProbe!: (value: AccountSession) => void;
+    const view = setup({ handlers: { probe: () => new Promise(resolve => { finishProbe = resolve; }) } });
+    await act(async () => { await view.result.current.login('other', 'password'); });
+    expect(view.drafts.identity).toBe('u2');
+    await act(async () => { finishProbe(sessionFixture()); });
+    const state = view.result.current.state;
+    expect(state.kind === 'authenticated' && state.session.user.id).toBe('u2');
+    expect(view.drafts.identity).toBe('u2');
+    view.unmount();
+  });
+
+  it('only the latest login may update account, drafts and return path', async () => {
+    const pending: Record<string, (value: AccountSession) => void> = {};
+    const view = setup({ handlers: {
+      probe: async () => { throw new AccountApiError('unauthorized', 'guest', 401); },
+      login: username => new Promise(resolve => { pending[username] = resolve; }),
+    } });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('guest'));
+    let first!: Promise<void>, second!: Promise<void>;
+    act(() => { first = view.result.current.login('first', 'password'); });
+    act(() => { second = view.result.current.login('second', 'password'); });
+    await act(async () => { pending.second(sessionFixture('u2', 'second')); await second; });
+    view.drafts.saveLocal('new-account-input', 'keep');
+    await act(async () => { pending.first(sessionFixture('u1', 'first')); await first; });
+    const state = view.result.current.state;
+    expect(state.kind === 'authenticated' && state.session.user.id).toBe('u2');
+    expect(view.drafts.identity).toBe('u2');
+    expect(view.drafts.recover('new-account-input').data).toBe('keep');
+    view.unmount();
+  });
+
+  it('a late logout cannot clear a newer recovered account', async () => {
+    const view = setup();
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    let finishLogout!: () => void;
+    view.api.logout = () => new Promise(resolve => { finishLogout = resolve; });
+    let pending!: Promise<void>;
+    act(() => { pending = view.result.current.logout(); });
+    act(() => fireSessionExpired({ session: sessionFixture() }));
+    await act(async () => { await view.result.current.login('other', 'password'); });
+    view.drafts.saveLocal('new-account-input', 'keep');
+    await act(async () => { finishLogout(); await pending; });
+    const state = view.result.current.state;
+    expect(state.kind === 'authenticated' && state.session.user.id).toBe('u2');
+    expect(view.drafts.recover('new-account-input').data).toBe('keep');
+    view.unmount();
+  });
+
+  it('a 401 from a prior login token does not expire the recovered session', async () => {
+    const view = setup();
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    act(() => fireSessionExpired({ session: sessionFixture() }));
+    view.api.login = async () => ({ ...sessionFixture(), csrf_token: 'fresh-login-token' });
+    await act(async () => { await view.result.current.recoverSession('password'); });
+    act(() => fireSessionExpired({ session: sessionFixture() }));
+    expect(view.result.current.state.kind).toBe('authenticated');
+    view.unmount();
+  });
+});
+
+
+describe('server-driven permission refresh', () => {
+  it('confirms removed membership via accounts/me and returns to an authorized scope without login', async () => {
+    const personal = sessionFixture();
+    const team = { ...scopeFixture('team-1'), kind: 'team' as const, role: 'admin' as const };
+    const original = { ...personal, scopes: [...personal.scopes, team] };
+    let canonical = original;
+    window.history.replaceState({}, '', '/app/#/projects/p1?scope=team-1&view=pro');
+    const view = setup({ handlers: { probe: async () => canonical } });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    canonical = personal;
+    act(() => dispatchSessionPermissions({ session: original, scope: team, status: 404, code: 'not_found' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/projects?scope=scope-u1&view=pro'));
+    const state = view.result.current.state;
+    expect(state.kind === 'authenticated' && state.scope.id).toBe('scope-u1');
+    expect(view.calls.login).toEqual([]);
+    view.unmount();
+  });
+  it('retains the selected project after a permission downgrade or missing resource when membership remains', async () => {
+    const original = sessionFixture();
+    let canonical = original;
+    window.history.replaceState({}, '', '/app/#/projects/p1?scope=scope-u1&view=easy');
+    const view = setup({ handlers: { probe: async () => canonical } });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    canonical = { ...original, scopes: [{ ...original.scopes[0], role: 'member', can_execute: false }] };
+    act(() => dispatchSessionPermissions({ session: original, scope: original.scopes[0], status: 403, code: 'team_admin_required' }));
+    await waitFor(() => {
+      const state = view.result.current.state;
+      expect(state.kind === 'authenticated' && state.scope.can_execute).toBe(false);
+    });
+    expect(window.location.hash).toBe('#/projects/p1?scope=scope-u1&view=easy');
+    expect(view.calls.login).toEqual([]);
+    view.unmount();
+  });
+  it('ignores permission responses from a previous account or login token', async () => {
+    const view = setup();
+    await waitFor(() => expect(view.result.current.state.kind).toBe('authenticated'));
+    const before = view.calls.probe;
+    const old = { ...sessionFixture(), csrf_token: 'old-token' };
+    act(() => dispatchSessionPermissions({ session: old, scope: old.scopes[0], status: 404, code: 'not_found' }));
+    expect(view.calls.probe).toBe(before);
+    expect(view.result.current.state.kind).toBe('authenticated');
     view.unmount();
   });
 });

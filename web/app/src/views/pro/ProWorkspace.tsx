@@ -9,7 +9,7 @@ import {
 import { LiveWorkbenchAdapter } from '../../adapters/LiveWorkbenchAdapter';
 import type { LiveWorkbenchPort } from '../../adapters/LiveWorkbenchAdapter';
 import { LiveWorkbench } from './LiveWorkbench';
-import { workspaceHref } from '../easy/routeParams';
+import { WorkspaceBar } from '../../shell/WorkspaceBar';
 import { SignInPrompt } from '../../shell/SignInPrompt';
 import '../workspaceStyles';
 import './live.css';
@@ -25,7 +25,7 @@ const defaultAdapterFactory = (transport: typeof fetch): LiveWorkbenchPort =>
 export function ProWorkspace(
   { adapterFactory = defaultAdapterFactory }: { adapterFactory?: (transport: typeof fetch) => LiveWorkbenchPort } = {},
 ) {
-  const { t } = useTranslation('pro');
+  const { t } = useTranslation(['pro', 'account']);
   const { state } = useSession();
   const [searchParams] = useSearchParams();
   const scopeId = searchParams.get('scope');
@@ -86,16 +86,9 @@ export function ProWorkspace(
     return <main className="account-pro-status">{t('Unable to confirm sign-in state for now.')}</main>;
   }
 
-  const easyUrl = workspaceHref(scope.id, 'easy', selectedProject);
   return (
     <div className="account-pro-root">
-      <div className="account-pro-bar"><strong>{session.user.display_name}</strong><span>{scope.name}</span>
-        <span>{scope.role === 'observer' ? t('Administrator read-only · audited') : scope.can_execute ? t('Scientific approver') : t('Collaborating member')}</span>
-        {config && !config.compute_available && <span className="account-compute-off">{t('No scientific executor connected')}</span>}
-        <select aria-label={t('Switch workspace')} value={scope.id} onChange={(event) => { location.hash = workspaceHref(event.target.value, 'pro'); }}>
-          {session.scopes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select><a href="#/account">{t('Account, teams and resources')}</a><a href={easyUrl}>{t('Easy version')}</a>
-      </div>
+      <WorkspaceBar session={session} scope={scope} view="pro" project={selectedProject} computeAvailable={config ? config.compute_available : true}/>
       <LiveWorkbench
         key={`${session.user.id}:${scope.id}`}
         adapter={adapter}

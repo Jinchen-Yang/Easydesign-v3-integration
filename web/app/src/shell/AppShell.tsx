@@ -4,6 +4,7 @@ import { HashRouter, Link, Routes, Route, useNavigate, useSearchParams } from 'r
 import { I18nProvider, useI18n } from './I18nProvider';
 import { SessionProvider, useSession } from './SessionProvider';
 import { SessionRecoveryModal } from './SessionRecoveryModal';
+import { AccountPanelProvider } from './AccountPanel';
 import { bindRouterNavigate, workspaceHref } from '../views/easy/routeParams';
 import { fetchProjects } from '../data/projects';
 import '../styles/shell.css';
@@ -41,6 +42,7 @@ export function AppShell() {
         <SessionProvider>
           <HashRouter>
             <RouterBridge />
+            <AccountPanelProvider>
             <Suspense fallback={<RouteLoading />}>
               <Routes>
                 <Route path="/" element={<HomePage />} />
@@ -51,6 +53,7 @@ export function AppShell() {
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Suspense>
+            </AccountPanelProvider>
           </HashRouter>
           <SessionRecoveryModal />
         </SessionProvider>
@@ -179,12 +182,7 @@ function ProjectRoute() {
 }
 
 function AccountRoute() {
-  const { t } = useI18n();
-  return (
-    <ShellFrame title={t('nav.account')}>
-      <AccountApp />
-    </ShellFrame>
-  );
+  return <AccountApp />;
 }
 
 /** 显式演示路由：与首页访客视图同一组件，已登录也可随时回看演示。 */

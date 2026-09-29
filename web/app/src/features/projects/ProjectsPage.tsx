@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useInputDraft } from '../../data/useInputDraft';
 import { ArrowRight, FolderOpen, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import {
   PHASES,
@@ -24,6 +25,7 @@ export function ProjectsPage({
   onDelete,
   canCreate = true,
   createDisabledReason,
+  draftKey,
 }: {
   mode?: 'demo' | 'live';
   snapshot: Pick<WorkbenchSnapshot, 'projects'>;
@@ -38,41 +40,51 @@ export function ProjectsPage({
    */
   canCreate?: boolean;
   createDisabledReason?: string;
+  draftKey?: string;
 }) {
-  const [query, setQuery] = useState('');
+  const { t } = useTranslation('pro');
+  const { value: query, setValue: setQuery } = useInputDraft(draftKey ?? null, '');
   const projects = snapshot.projects.filter((project) =>
     `${project.title} ${project.goal}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
   const createTitle = canCreate ? undefined : createDisabledReason;
   return (
-    <main className="platform-page" aria-label="Projects">
+    <main className="platform-page" aria-label={t('Projects')}>
       <header className="platform-header">
-        <span>Research, thoughtfully organized.</span>
+        <span>{t('Research, thoughtfully organized.')}</span>
         <DemoBadge mode={mode} />
       </header>
       <div className="platform-content">
         <div className="platform-title-row">
           <div>
-            <span className="eyebrow">YOUR RESEARCH</span>
-            <h1>Projects</h1>
-            <p>A space for every question. A clear path to your next candidate.</p>
+            <span className="eyebrow">{t('YOUR RESEARCH')}</span>
+            <h1>{t('Projects')}</h1>
+            <p>{t('A space for every question. A clear path to your next candidate.')}</p>
           </div>
-          <button className="primary-button" onClick={onNew} disabled={!canCreate} title={createTitle}>
-            <Plus size={16} /> New project
+          <button
+            className="primary-button"
+            onClick={onNew}
+            disabled={!canCreate}
+            title={createTitle}
+          >
+            <Plus size={16} /> {t('New project')}
           </button>
         </div>
         {!canCreate && createDisabledReason && (
-          <p className="platform-create-note" role="note">{createDisabledReason}</p>
+          <p className="platform-create-note" role="note">
+            {createDisabledReason}
+          </p>
         )}
         {snapshot.projects.length === 0 ? (
           <section className="platform-empty first-project">
             <span className="empty-orbit">
               <FolderOpen size={28} />
             </span>
-            <h2>Give your next idea a home.</h2>
+            <h2>{t('Give your next idea a home.')}</h2>
             <p>
-              Keep your research goal, agent conversation and scientific context together in one
-              project.
+              {t(
+                'Keep your research goal, agent conversation and scientific context together in one project.',
+              )}
             </p>
             <button
               className="text-button"
@@ -80,28 +92,31 @@ export function ProjectsPage({
               disabled={!canCreate}
               title={createTitle}
             >
-              Create your first project <ArrowRight size={15} />
+              {t('Create your first project')}
+              <ArrowRight size={15} />
             </button>
             <small>
               {!canCreate && createDisabledReason
                 ? createDisabledReason
                 : mode === 'demo'
-                  ? 'Start with the guided lysozyme / VHH demo.'
-                  : 'Start with a target and your research goal.'}
+                  ? t('Start with the guided lysozyme / VHH demo.')
+                  : t('Start with a target and your research goal.')}
             </small>
           </section>
         ) : (
           <>
             <div className="project-list-toolbar">
               <span>
-                {snapshot.projects.length} {snapshot.projects.length === 1 ? 'project' : 'projects'}{' '}
-                <i /> {mode === 'demo' ? 'Saved on this device' : 'Saved in your workspace'}
+                {t(snapshot.projects.length === 1 ? '{{count}} project' : '{{count}} projects', {
+                  count: snapshot.projects.length,
+                })}{' '}
+                <i /> {mode === 'demo' ? t('Saved on this device') : t('Saved in your workspace')}
               </span>
               <label className="project-search">
                 <Search size={15} />
                 <input
-                  aria-label="Search projects"
-                  placeholder="Search projects…"
+                  aria-label={t('Search projects')}
+                  placeholder={t('Search projects…')}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -118,8 +133,10 @@ export function ProjectsPage({
                       {onDelete && (
                         <button
                           className="icon-button project-delete"
-                          title="Delete project"
-                          aria-label={`Delete project ${project.title}`}
+                          title={t('Delete project')}
+                          aria-label={t('Delete project {{name}}', {
+                            name: project.title,
+                          })}
                           onClick={() => onDelete(project)}
                         >
                           <Trash2 size={16} />
@@ -128,15 +145,20 @@ export function ProjectsPage({
                     </div>
                     <span className={`project-status status-${project.status}`}>
                       <i />
-                      {labels[project.status]}
+                      {t(labels[project.status])}
                     </span>
                   </div>
                   <h2>{project.title}</h2>
                   <p className="project-card-goal">{project.goal}</p>
-                  <div className="project-journey" aria-label={`${project.phase} stage`}>
+                  <div
+                    className="project-journey"
+                    aria-label={t('{{phase}} stage', {
+                      phase: t(project.phase[0].toUpperCase() + project.phase.slice(1)),
+                    })}
+                  >
                     {PHASES.map((phase, index) => (
                       <span
-                        title={phase}
+                        title={t(phase[0].toUpperCase() + phase.slice(1))}
                         key={phase}
                         className={
                           project.status === 'complete' || index <= PHASES.indexOf(project.phase)
@@ -147,15 +169,17 @@ export function ProjectsPage({
                     ))}
                   </div>
                   <div className="project-card-stage">
-                    <span>Current stage</span>
-                    <strong>{project.phase}</strong>
+                    <span>{t('Current stage')}</span>
+                    <strong>{t(project.phase[0].toUpperCase() + project.phase.slice(1))}</strong>
                   </div>
                   <footer>
                     {onRename && (
                       <button
                         className="icon-button"
-                        aria-label={`Rename project ${project.title}`}
-                        title="Rename project"
+                        aria-label={t('Rename project {{name}}', {
+                          name: project.title,
+                        })}
+                        title={t('Rename project')}
                         onClick={() => onRename(project)}
                       >
                         <Pencil size={15} />
@@ -163,10 +187,13 @@ export function ProjectsPage({
                     )}
                     <button
                       className="text-button"
-                      aria-label={`Open project ${project.title}`}
+                      aria-label={t('Open project {{name}}', {
+                        name: project.title,
+                      })}
                       onClick={() => onOpen(project.id)}
                     >
-                      Open workspace <ArrowRight size={14} />
+                      {t('Open workspace')}
+                      <ArrowRight size={14} />
                     </button>
                   </footer>
                 </article>
@@ -175,17 +202,17 @@ export function ProjectsPage({
             {projects.length === 0 && (
               <div className="platform-empty">
                 <Search size={26} />
-                <h2>No matching projects</h2>
-                <p>Try a different name or research goal.</p>
+                <h2>{t('No matching projects')}</h2>
+                <p>{t('Try a different name or research goal.')}</p>
                 <button className="text-button" onClick={() => setQuery('')}>
-                  Clear search
+                  {t('Clear search')}
                 </button>
               </div>
             )}
           </>
         )}
         <p className="platform-footnote">
-          Your conversations, decisions and results stay with their project.
+          {t('Your conversations, decisions and results stay with their project.')}
         </p>
       </div>
     </main>

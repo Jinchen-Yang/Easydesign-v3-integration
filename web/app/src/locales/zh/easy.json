@@ -389,5 +389,18 @@
   "The current native backend supports only canonical UniProt accessions; for isoforms, upload the corresponding structure file instead.": "当前原生后端仅支持 canonical UniProt accession；isoform 请改用对应结构文件上传。",
   "The complete design goal must not exceed 4,000 characters; shorten it before submitting — the system never truncates goals.": "完整设计目标不能超过 4,000 个字符，请缩短后再提交；系统不会截断目标。",
   "Start (intro lead)": "开始",
-  "design (intro highlight)": "设计"
+  "design (intro highlight)": "设计",
+  "Loading verified coordinates…": "正在加载已核验坐标…",
+  "Retry structure": "重新加载结构",
+  "Unsupported structure format": "不支持的结构格式",
+  "Verified structure is unavailable": "已核验结构暂不可用",
+  "Structure integrity check failed": "结构完整性校验失败",
+  "No readable atoms": "未找到可读取的原子",
+  "Declared chain missing from structure": "结构中缺少声明的链",
+  "Structure evidence is not available yet.": "结构证据尚未就绪。",
+  "Interactive structure — drag to rotate, scroll to zoom": "交互式结构：拖动旋转，滚动缩放",
+  "Target + partners": "靶标与相互作用伙伴",
+  "Target chain highlighted": "已高亮靶标链",
+  "Candidate complex": "候选复合物",
+  "English": "English"
 }

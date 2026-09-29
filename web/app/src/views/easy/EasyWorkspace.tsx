@@ -10,7 +10,7 @@ import { AccountTransportContext } from './AccountTransportContext';
 import { EasyLiveApp } from './EasyLiveApp';
 import { EasyProductAdapter } from './EasyProductAdapter';
 import type { EasyProductPort } from './EasyProductAdapter';
-import { workspaceHref } from './routeParams';
+import { WorkspaceBar } from '../../shell/WorkspaceBar';
 import { SignInPrompt } from '../../shell/SignInPrompt';
 import './easyStyles';
 import '../workspaceStyles';
@@ -31,7 +31,7 @@ const defaultAdapterFactory = (transport: typeof fetch): EasyProductPort =>
 export function EasyWorkspace(
   { adapterFactory = defaultAdapterFactory }: { adapterFactory?: (transport: typeof fetch) => EasyProductPort } = {},
 ) {
-  const { t } = useTranslation('easy');
+  const { t } = useTranslation(['easy', 'account']);
   const { state } = useSession();
   const [searchParams] = useSearchParams();
   const scopeId = searchParams.get('scope');
@@ -100,15 +100,7 @@ export function EasyWorkspace(
 
   return (
     <AccountTransportContext.Provider value={{ transport: contextTransport!, scope }}>
-      <div className="account-workspace-bar">
-        <strong>{session.user.display_name}</strong><span>{scope.name}</span>
-        <span>{scope.role === 'observer' ? t('Administrator read-only · audited') : scope.can_execute ? t('Can execute scientific approval') : t('Team collaborator')}</span>
-        {config && !config.compute_available && <span className="account-compute-off">{t('No scientific executor connected')}</span>}
-        <label>{t('Switch workspace')}<select aria-label={t('Switch workspace')} value={scope.id} onChange={(event) => { location.hash = workspaceHref(event.target.value, 'easy'); }}>
-          {session.scopes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select></label>
-        <a href="#/account">{t('Account, teams and resources')}</a>
-      </div>
+      <WorkspaceBar session={session} scope={scope} view="easy" computeAvailable={config ? config.compute_available : true}/>
       <EasyLiveApp
         key={`${session.user.id}:${scope.id}`}
         adapter={adapter}

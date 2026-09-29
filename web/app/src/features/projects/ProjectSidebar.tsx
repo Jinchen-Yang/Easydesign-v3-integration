@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useRef } from 'react';
 import { CircleHelp, FolderOpen, Sparkles, Cpu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Brand } from '../../components/Brand';
@@ -25,6 +26,7 @@ export function ProjectSidebar({
   onNavigate: (page: WorkbenchPage) => void;
   onHelp: () => void;
 }) {
+  const { t } = useTranslation('pro');
   const panel = useRef<HTMLElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const close = () => {
@@ -36,7 +38,7 @@ export function ProjectSidebar({
       {expanded && (
         <button
           className="project-sidebar-backdrop"
-          aria-label="Close project sidebar"
+          aria-label={t('Close project sidebar')}
           tabIndex={-1}
           onClick={close}
         />
@@ -44,7 +46,7 @@ export function ProjectSidebar({
       <aside
         ref={panel}
         className={`app-rail project-rail ${expanded ? 'expanded' : ''}`}
-        aria-label="App navigation"
+        aria-label={t('App navigation')}
         onKeyDown={(e) => {
           if (expanded && e.key === 'Escape') {
             e.preventDefault();
@@ -70,7 +72,7 @@ export function ProjectSidebar({
         <div className="project-rail-header">
           <button
             className="rail-brand"
-            aria-label="EasyDesign home"
+            aria-label={t('EasyDesign home')}
             onClick={() => onNavigate('projects')}
           >
             <Brand compact={!expanded} />
@@ -80,25 +82,25 @@ export function ProjectSidebar({
             className="project-sidebar-toggle"
             aria-expanded={expanded}
             aria-controls="platform-navigation"
-            aria-label={expanded ? 'Collapse project sidebar' : 'Expand project sidebar'}
-            title={expanded ? 'Collapse project sidebar' : 'Expand project sidebar'}
+            aria-label={expanded ? t('Collapse project sidebar') : t('Expand project sidebar')}
+            title={expanded ? t('Collapse project sidebar') : t('Expand project sidebar')}
             onClick={onToggle}
           >
             {expanded ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
           </button>
         </div>
-        <nav className="rail-group" id="platform-navigation" aria-label="Main navigation">
+        <nav className="rail-group" id="platform-navigation" aria-label={t('Main navigation')}>
           {destinations.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              aria-label={label}
-              title={label}
+              aria-label={t(label)}
+              title={t(label)}
               className={page === id ? 'active' : ''}
               aria-current={page === id ? 'page' : undefined}
               onClick={() => onNavigate(id)}
             >
               <Icon size={19} />
-              {expanded && <span>{label}</span>}
+              {expanded && <span>{t(label)}</span>}
             </button>
           ))}
         </nav>
@@ -106,25 +108,28 @@ export function ProjectSidebar({
           {expanded && (
             <p className="project-storage-note">
               {mode === 'demo'
-                ? 'Demo projects · Saved on this device'
-                : 'Research projects · Saved in your workspace'}
+                ? t('Demo projects · Saved on this device')
+                : t('Research projects · Saved in your workspace')}
             </p>
           )}
           <button
-            aria-label={mode === 'demo' ? 'About this demo' : 'About EasyDesign'}
-            title={mode === 'demo' ? 'About this demo' : 'About EasyDesign'}
+            aria-label={mode === 'demo' ? t('About this demo') : t('About EasyDesign')}
+            title={mode === 'demo' ? t('About this demo') : t('About EasyDesign')}
             onClick={onHelp}
           >
             <CircleHelp size={19} />
-            {expanded && <span>{mode === 'demo' ? 'About this demo' : 'About EasyDesign'}</span>}
+            {expanded && (
+              <span>{mode === 'demo' ? t('About this demo') : t('About EasyDesign')}</span>
+            )}
           </button>
           <div className="researcher-profile">
-            <span className="user-avatar" title="Local researcher">
+            <span className="user-avatar" title={t('Local researcher')}>
               R
             </span>
             {expanded && (
               <span>
-                Research workspace<small>{mode === 'demo' ? 'Local demo' : 'Live workspace'}</small>
+                {t('Research workspace')}
+                <small>{mode === 'demo' ? t('Local demo') : t('Live workspace')}</small>
               </span>
             )}
           </div>

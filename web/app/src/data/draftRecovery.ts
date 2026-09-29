@@ -17,6 +17,9 @@ import { draftsApi, type ProjectDraft } from '../shared/account-client';
 
 /** Logical key vocabulary — never store raw project data under other keys. */
 export const DRAFT_KEYS = {
+  /** Scope and revision segments are encoded independently to avoid collisions. */
+  scoped: (scopeId: string, ...segments: (string | number)[]) =>
+    `draft:scope:${[scopeId, ...segments].map((part) => encodeURIComponent(String(part))).join(':')}`,
   projectCreate: 'draft:project:create',
   projectGate: (projectId: string) => `draft:project:${projectId}:gate`,
   projectFiles: (projectId: string) => `draft:project:${projectId}:files`,
@@ -102,6 +105,10 @@ export function createDraftRecovery(
   const transport = options.transport;
   const remoteByKey = new Map<string, ProjectDraft>();
   let identity = GUEST_IDENTITY;
+  let identityVersion = 0;
+  const ownerKey = 'easydesign:draft-owner';
+  let previousOwner: string | null = null;
+  try { previousOwner = storage.getItem(ownerKey); } catch { /* Storage may be unavailable. */ }
 
   const prefix = () => `easydesign:draft:${identity}`;
   const storageKey = (key: string) => `${prefix()}:${key}`;
@@ -137,8 +144,9 @@ export function createDraftRecovery(
 
     async saveRemote(draft) {
       if (!transport) throw new Error('saveRemote requires a scoped transport');
+      const startedVersion = identityVersion;
       const saved = await draftsApi.save(transport, draft.payload, draft.id, draft.revision);
-      remoteByKey.set(remoteKey(saved.draft.id), saved.draft);
+      if (identityVersion === startedVersion) remoteByKey.set(remoteKey(saved.draft.id), saved.draft);
     },
 
     syncRemote(drafts) {
@@ -177,7 +185,15 @@ export function createDraftRecovery(
 
     setIdentity(accountId) {
       const next = accountId ?? GUEST_IDENTITY;
+      // Reloading the tab must not leave a prior account's drafts behind for a
+      // later login. Guest drafts are intentionally kept in their own namespace.
+      if (previousOwner && previousOwner !== next && previousOwner !== GUEST_IDENTITY) {
+        purgePrefix(previousOwner);
+      }
+      previousOwner = next;
+      try { storage.setItem(ownerKey, next); } catch { /* Best-effort recovery. */ }
       if (next === identity) return;
+      identityVersion += 1;
       // 换账号（账号 → 账号）或登出（账号 → 访客）：旧账号草稿必须清空，
       // 绝不让上一位用户的工作恢复到新会话。访客命名空间始终保留。
       if (identity !== GUEST_IDENTITY) purgePrefix(identity);

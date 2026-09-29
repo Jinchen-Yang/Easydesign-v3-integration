@@ -1,5 +1,8 @@
+import { useTranslation } from 'react-i18next';
 import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
+import { useInputDraft } from '../../data/useInputDraft';
+import { DraftStatus } from '../../data/DraftStatus';
 import type { Decision, GateAction, GateInput } from './contracts';
 const display = (value: unknown): string =>
   value === null || value === undefined
@@ -11,7 +14,9 @@ const display = (value: unknown): string =>
       : String(value);
 const label = (key: string) => key.replaceAll('_', ' ').replaceAll('-', ' ').replaceAll('.', ' ');
 function Facts({ value }: { value: unknown }) {
-  if (value === null || value === undefined) return <span className="muted">Not available</span>;
+  const { t } = useTranslation('pro');
+  if (value === null || value === undefined)
+    return <span className="muted">{t('Not available')}</span>;
   if (Array.isArray(value))
     return (
       <ul className="live-facts">
@@ -35,7 +40,7 @@ function Facts({ value }: { value: unknown }) {
         ))}
       </dl>
     );
-  return <span>{display(value)}</span>;
+  return <span>{typeof value === 'boolean' ? t(value ? 'Yes' : 'No') : display(value)}</span>;
 }
 export function GateReview({
   decision,
@@ -44,43 +49,88 @@ export function GateReview({
   busy,
   onSubmit,
   onSelect,
+  draftKey,
 }: {
   decision: Decision;
   selectedOptionId?: string;
   initialAction?: GateAction;
   busy: boolean;
-  onSubmit: (input: GateInput) => void;
+  onSubmit: (input: GateInput) => Promise<void>;
   onSelect: (id: string) => void;
+  draftKey?: string;
 }) {
-  const [selected, setSelected] = useState(selectedOptionId || decision.default_option_id),
-    [action, setAction] = useState<GateAction>(initialAction);
-  const [instruction, setInstruction] = useState(''),
-    [reason, setReason] = useState(''),
-    [ack, setAck] = useState('');
-  const [target, setTarget] = useState(decision.revision_targets[0]);
+  const { t } = useTranslation('pro');
+  const input = useInputDraft(
+    draftKey ?? null,
+    {
+      selected: selectedOptionId || decision.default_option_id,
+      action: initialAction,
+      instruction: '',
+      reason: '',
+      ack: '',
+      target: decision.revision_targets[0] || '',
+    },
+    {
+      valid: (
+        value,
+      ): value is {
+        selected: string;
+        action: GateAction;
+        instruction: string;
+        reason: string;
+        ack: string;
+        target: string;
+      } => {
+        if (!value || typeof value !== 'object') return false;
+        const v = value as Record<string, unknown>;
+        return (
+          ['selected', 'action', 'instruction', 'reason', 'ack', 'target'].every(
+            (key) => typeof v[key] === 'string',
+          ) &&
+          decision.options.some((option) => option.option_id === v.selected) &&
+          ['approve', 'revise', 'reject', 'override'].includes(v.action as string)
+        );
+      },
+    },
+  );
+  const { selected, action, instruction, reason, ack, target } = input.value;
+  const update = (patch: Partial<typeof input.value>) =>
+    input.setValue((current) => ({ ...current, ...patch }));
+  const [submitting, setSubmitting] = useState(false);
   const option = decision.options.find((o) => o.option_id === selected);
   const actions = option?.actions || (['revise', 'reject'] as GateAction[]);
   const effective = actions.includes(action) ? action : actions[0];
-  const fields: Record<string, string> = { instruction, reason, acknowledgement: ack };
+  const fields: Record<string, string> = {
+    instruction,
+    reason,
+    acknowledgement: ack,
+  };
   const complete = (decision.required_fields[effective] || []).every((field) =>
     Boolean(fields[field]?.trim()),
   );
   return (
-    <section className="live-gate" aria-label={`Gate ${decision.gate} decision`}>
-      <div className="eyebrow">SCIENTIST DECISION · GATE {decision.gate}</div>
+    <section
+      className="live-gate"
+      aria-label={t('Gate {{number}} decision', { number: decision.gate })}
+    >
+      <div className="eyebrow">
+        {t('SCIENTIST DECISION · GATE')} {decision.gate}
+      </div>
       <h2>
         {decision.gate === 1
-          ? 'Review the automatically selected target structure'
+          ? t('Review the automatically selected target structure')
           : decision.question}
       </h2>
       <p>
         {decision.gate === 1
-          ? 'Approve the recommended structure and chain, or choose a different option.'
+          ? t('Approve the recommended structure and chain, or choose a different option.')
           : decision.action_summary}
       </p>
       <fieldset disabled={busy}>
         <legend>
-          {decision.gate === 1 ? 'Change the automatically selected structure' : 'Choose an option'}
+          {decision.gate === 1
+            ? t('Change the automatically selected structure')
+            : t('Choose an option')}
         </legend>
         <div className="live-options">
           {decision.options.map((o) => (
@@ -94,7 +144,7 @@ export function GateReview({
                 value={o.option_id}
                 checked={selected === o.option_id}
                 onChange={() => {
-                  setSelected(o.option_id);
+                  update({ selected: o.option_id });
                   onSelect(o.option_id);
                 }}
               />
@@ -104,12 +154,16 @@ export function GateReview({
                   {o.label || o.option_id}
                 </strong>
                 <span>{o.description}</span>
-                {o.design_labels && <small>Design residues: {o.design_labels.join(', ')}</small>}
+                {o.design_labels && (
+                  <small>
+                    {t('Design residues:')} {o.design_labels.join(', ')}
+                  </small>
+                )}
                 <small>
-                  {o.eligible ? 'Selectable' : 'Blocked'}
-                  {o.confidence ? ` · Confidence ${o.confidence}` : ''}
+                  {o.eligible ? t('Selectable') : t('Blocked')}
+                  {o.confidence ? ` · ${t('Confidence {{value}}', { value: o.confidence })}` : ''}
                   {decision.gate === 1 && o.option_id === decision.default_option_id
-                    ? ' · Automatically recommended'
+                    ? ` · ${t('Automatically recommended')}`
                     : ''}
                 </small>
               </span>
@@ -120,7 +174,9 @@ export function GateReview({
       {(decision.warnings.length > 0 || decision.limitations.length > 0) && (
         <details>
           <summary>
-            Risks & limitations ({decision.warnings.length + decision.limitations.length})
+            {t('Risks & limitations ({{count}})', {
+              count: decision.warnings.length + decision.limitations.length,
+            })}
           </summary>
           <Facts value={[...decision.warnings, ...decision.limitations]} />
         </details>
@@ -128,7 +184,8 @@ export function GateReview({
       {option && (
         <details>
           <summary>
-            Option evidence & scientific review · {decision.review_status || 'Review unavailable'}
+            {t('Option evidence & scientific review ·')}{' '}
+            {decision.review_status || t('Review unavailable')}
           </summary>
           <Facts
             value={Object.fromEntries(
@@ -138,39 +195,47 @@ export function GateReview({
         </details>
       )}
       <details>
-        <summary>Decision evidence and execution scope</summary>
+        <summary>{t('Decision evidence and execution scope')}</summary>
         <Facts value={decision.summary} />
         {decision.summary_is_excerpt && (
-          <p>This is a display excerpt. Full details remain in the review document.</p>
+          <p>{t('This is a display excerpt. Full details remain in the review document.')}</p>
         )}
         {decision.details_url && (
           <a href={decision.details_url} download={`gate-${decision.gate}-review.json`}>
-            Download complete review
+            {t('Download complete review')}
           </a>
         )}
       </details>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSubmit({
+          if (busy || submitting || !complete || !effective || !option?.eligible) return;
+          setSubmitting(true);
+          void onSubmit({
             action: effective,
             selected_option_id: selected,
             ...(effective === 'revise' ? { instruction, revision_target: target } : {}),
             ...(effective === 'override' ? { reason, acknowledgement: ack } : {}),
-          });
+          })
+            .then(() => input.complete('submitted'))
+            .catch(() => {
+              // The parent displays the API error. In particular, 401 recovery
+              // only restores these inputs; it never retries this decision.
+            })
+            .finally(() => setSubmitting(false));
         }}
       >
         <label>
-          Decision
+          {t('Decision')}
           <select
-            aria-label="Decision action"
+            aria-label={t('Decision action')}
             disabled={busy}
             value={effective}
-            onChange={(e) => setAction(e.target.value as GateAction)}
+            onChange={(e) => update({ action: e.target.value as GateAction })}
           >
             {actions.map((a) => (
               <option key={a} value={a}>
-                {a.toUpperCase()}
+                {t(a[0].toUpperCase() + a.slice(1))}
               </option>
             ))}
           </select>
@@ -178,8 +243,12 @@ export function GateReview({
         {effective === 'revise' && (
           <>
             <label>
-              Return to
-              <select value={target} onChange={(e) => setTarget(e.target.value)}>
+              {t('Return to')}
+              <select
+                disabled={busy || submitting}
+                value={target}
+                onChange={(e) => update({ target: e.target.value })}
+              >
                 {decision.revision_targets.map((t) => (
                   <option key={t} value={t}>
                     {label(t)}
@@ -188,12 +257,13 @@ export function GateReview({
               </select>
             </label>
             <label>
-              Scientist instruction
+              {t('Scientist instruction')}
               <textarea
                 required
                 maxLength={1500}
                 value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
+                disabled={busy || submitting}
+                onChange={(e) => update({ instruction: e.target.value })}
               />
             </label>
           </>
@@ -201,27 +271,38 @@ export function GateReview({
         {effective === 'override' && (
           <>
             <label>
-              Reason
+              {t('Reason')}
               <textarea
                 required
                 maxLength={1500}
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                disabled={busy || submitting}
+                onChange={(e) => update({ reason: e.target.value })}
               />
             </label>
             <label>
-              Acknowledgement
+              {t('Acknowledgement')}
               <textarea
                 required
                 maxLength={1500}
                 value={ack}
-                onChange={(e) => setAck(e.target.value)}
+                disabled={busy || submitting}
+                onChange={(e) => update({ ack: e.target.value })}
               />
             </label>
           </>
         )}
-        <button className="primary-button" disabled={busy || !complete || !effective} type="submit">
-          {busy ? 'Submitting…' : `Submit ${effective?.toUpperCase()}`}
+        <DraftStatus status={input.status} />
+        <button
+          className="primary-button"
+          disabled={busy || submitting || !complete || !effective || !option?.eligible}
+          type="submit"
+        >
+          {busy
+            ? t('Submitting…')
+            : t('Submit {{action}}', {
+                action: t(effective[0].toUpperCase() + effective.slice(1)),
+              })}
           <ArrowRight size={15} />
         </button>
       </form>

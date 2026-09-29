@@ -46,5 +46,18 @@
   "The operation could not be completed for now": "操作暂时无法完成",
   "There is no session pending recovery": "当前没有待恢复的会话",
   "The service could not return valid data for now; refresh and try again later.": "服务暂时无法返回有效数据，请稍后刷新重试。",
-  "The project list could not be loaded for now": "项目列表暂时无法加载"
+  "The project list could not be loaded for now": "项目列表暂时无法加载",
+  "Choose a target structure before starting the design.": "开始设计前请选择靶标结构。",
+  "This input type is not supported by the live backend.": "实时后端尚不支持此输入类型。",
+  "Refresh the current Scientist Gate.": "请刷新当前科学决策 Gate。",
+  "This action is not currently available.": "此操作当前不可用。",
+  "Please wait for the current answer.": "请等待当前回答完成。",
+  "Select a project first.": "请先选择项目。",
+  "Please wait for the current request.": "请等待当前请求完成。",
+  "Refresh the current simulated order.": "请刷新当前模拟订单。",
+  "Account and workspace settings": "账号与工作区设置",
+  "Checking session…": "正在检查会话…",
+  "This workspace is no longer active.": "当前工作区已关闭，请重新打开。",
+  "The active account changed. Reopen this workspace.": "登录账号已切换，请重新打开工作区。",
+  "Workspace access is unavailable.": "暂时无法访问此工作区。"
 }

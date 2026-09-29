@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Brand } from '../../components/Brand';
+import { WorkspaceAccessNotice } from '../../components/WorkspaceAccessNotice';
 import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
 import { fileTypes, inputLabel, readInputFile } from './inputs';
 import { productGoal, validateLiveInput } from './live-input';
@@ -25,7 +26,10 @@ import {
 } from './live-presentation';
 import type { EasyProductPort } from './EasyProductAdapter';
 import { readProjectRoute, stripLegacySearch, workspaceHref, writeProjectRoute } from './routeParams';
-import { draftRecovery, DRAFT_KEYS } from '../../data/draftRecovery';
+import { DRAFT_KEYS } from '../../data/draftRecovery';
+import { useInputDraft } from '../../data/useInputDraft';
+import { DraftStatus } from '../../data/DraftStatus';
+import { FileDraftNotice } from '../../data/FileDraftNotice';
 import { scopeProductUrl, surfaceRights } from '../../shared/account-client';
 import type {
   GateInput,
@@ -537,18 +541,25 @@ export function EasyLiveApp({
   const locale = i18n.language === 'en' ? ('en' as const) : ('zh' as const);
   const { canExecute } = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState | null>(null);
-  const [input, setInput] = useState<EasyInput>(() => emptyInput());
+  const inputDraft = useInputDraft<EasyInput>(
+    DRAFT_KEYS.scoped(access?.id || 'single-user', 'easy', 'create'), emptyInput,
+    {
+      valid: (value): value is EasyInput => {
+        if (!value || typeof value !== 'object') return false;
+        const record = value as EasyInput;
+        return INPUT_TYPES.some((type) => type.id === record.type) &&
+          ['text', 'name', 'goal', 'species'].every((key) => typeof record[key as keyof EasyInput] === 'string') &&
+          (record.file === null || (!!record.file && typeof record.file.name === 'string' && typeof record.file.size === 'number'));
+      },
+      // The selected File and its content are never persisted. A restored file
+      // reference requires an explicit selection before any scientific request.
+      serialize: (value) => ({ ...value, text: value.file ? '' : value.text,
+        file: value.file ? { name: value.file.name, size: value.file.size } : null }),
+    },
+  );
+  const { value: input, setValue: setInput } = inputDraft;
   const [file, setFile] = useState<File | null>(null);
-  const draftRestored = useRef(false);
-  // 设计输入实时暂存（仅创建表单）。文件本身不可序列化，只存元数据，
-  // 恢复时提示重新选择 —— 与执行指南的存储策略表一致。
-  useEffect(() => {
-    if (!draftRestored.current || readProjectRoute() !== null) return;
-    draftRecovery.saveLocal(DRAFT_KEYS.projectCreate, {
-      input,
-      file: file ? { name: file.name, size: file.size } : null,
-    });
-  }, [input, file]);
+  const needsFile = !!input.file && !file;
   const [token, setToken] = useState('');
   const [selectedSite, setSelectedSite] = useState<string | undefined>();
   const [viewedIndex, setViewedIndex] = useState<number | null>(null);
@@ -568,17 +579,7 @@ export function EasyLiveApp({
       } else {
         const loaded = await adapter.load();
         setState(loaded);
-        if (readProjectRoute() === null) {
-          const saved = draftRecovery.recover(DRAFT_KEYS.projectCreate);
-          const payload = saved.data as
-            | { input?: Partial<EasyInput>; file?: { name: string; size: number } | null }
-            | null;
-          if (saved.hasLocal && payload?.input) {
-            setInput((current) => ({ ...current, ...payload.input }));
-          }
-        }
       }
-      draftRestored.current = true;
     })().catch((reason) => setError((reason as Error).message));
     return () => {
       unsubscribe();
@@ -669,7 +670,7 @@ export function EasyLiveApp({
   const candidates = state?.candidates.items || [];
 
   async function start() {
-    if (issue || !state || !canExecute) return;
+    if (issue || needsFile || !state || !canExecute) return;
     setError('');
     try {
       const goal = productGoal(input);
@@ -679,10 +680,10 @@ export function EasyLiveApp({
         input,
         file,
       );
+      inputDraft.complete('submitted', emptyInput());
       const created = await adapter.load();
       if (created.selectedProject) {
         writeProjectRoute(created.selectedProject);
-        draftRecovery.clearLocal(DRAFT_KEYS.projectCreate);
       }
       setFile(null);
     } catch (reason) {
@@ -692,7 +693,6 @@ export function EasyLiveApp({
 
   function newDesign() {
     adapter.clearProject();
-    draftRecovery.clearLocal(DRAFT_KEYS.projectCreate);
     setOrder(null);
     setSelectedSite(undefined);
     setViewedIndex(null);
@@ -713,6 +713,7 @@ export function EasyLiveApp({
         <LoaderCircle className="easy-spin" /> {t('Connecting to EasyDesign…')}
       </div>
     );
+  if (state.connection === 'access-denied') return <WorkspaceAccessNotice message={state.error} refresh={() => adapter.refresh()}/>;
   if (state.connection === 'authentication-required')
     return access ? (
       <main className="easy-live-login">
@@ -902,7 +903,7 @@ export function EasyLiveApp({
             </div>
             <button
               className="easy-primary easy-start"
-              disabled={state.pending || !!issue || !canExecute}
+              disabled={state.pending || !!issue || needsFile || !canExecute}
               onClick={() => void start()}
             >
               {state.pending ? <LoaderCircle className="easy-spin" size={16} /> : t('Start design')}{' '}
@@ -927,6 +928,8 @@ export function EasyLiveApp({
               </label>
             )}
           </div>
+          {needsFile && input.file && <FileDraftNotice file={input.file} onRemove={() => setInput((current) => ({ ...current, file: null }))} />}
+          <DraftStatus status={inputDraft.status} />
           {(error || state.error) && <p className="easy-error">{error || state.error}</p>}
           {issue && Boolean(input.text || input.file) && <p className="easy-validation">{issue}</p>}
         </section>

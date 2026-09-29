@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useRef } from 'react';
 import {
   ArrowUpRight,
@@ -27,10 +28,11 @@ function Sequence({
   sequence: string;
   label?: string;
 }) {
+  const { t } = useTranslation('pro');
   return (
     <div className="sequence">
       <div>
-        <span className="eyebrow">{label}</span>
+        <span className="eyebrow">{t(label)}</span>
         <span>{sequence.length} aa</span>
       </div>
       <code title={sequence}>{sequence}</code>
@@ -38,9 +40,10 @@ function Sequence({
   );
 }
 function MetricRow({ label, value }: { label: string; value: number }) {
+  const { t } = useTranslation('pro');
   return (
     <div className="metric-row">
-      <span>{label}</span>
+      <span>{t(label)}</span>
       <span className="metric-track">
         <span style={{ width: percent(value) }} />
       </span>
@@ -49,18 +52,19 @@ function MetricRow({ label, value }: { label: string; value: number }) {
   );
 }
 function CandidateMetrics({ candidate }: { candidate: Candidate }) {
+  const { t } = useTranslation('pro');
   return (
     <div className="candidate-metrics">
       <div>
-        <span>Interface</span>
+        <span>{t('Interface')}</span>
         <strong>{candidate.interface.toFixed(2)}</strong>
       </div>
       <div>
-        <span>Confidence</span>
+        <span>{t('Confidence')}</span>
         <strong>{candidate.confidence.toFixed(2)}</strong>
       </div>
       <div>
-        <span>{candidate.clash === undefined ? 'Developability' : 'Clash'}</span>
+        <span>{candidate.clash === undefined ? t('Developability') : t('Clash')}</span>
         <strong>{(candidate.clash ?? candidate.developability ?? 0).toFixed(2)}</strong>
       </div>
     </div>
@@ -82,6 +86,7 @@ export function ScientificContext({
   onEdit: (edit: WorkbenchEdit) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation('pro');
   const panel = useRef<HTMLElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const previousRequest = useRef(revealRequest);
@@ -105,7 +110,7 @@ export function ScientificContext({
       ref={panel}
       id="scientific-context"
       className={`scientific-context phase-${phase}`}
-      aria-label="Scientific Context"
+      aria-label={t('Scientific Context')}
       tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && window.matchMedia('(max-width: 1180px)').matches) {
@@ -116,13 +121,13 @@ export function ScientificContext({
     >
       <header className="context-header">
         <div>
-          <span className="eyebrow">SCIENTIFIC CONTEXT</span>
-          <span className="context-phase">{phase.charAt(0).toUpperCase() + phase.slice(1)}</span>
+          <span className="eyebrow">{t('SCIENTIFIC CONTEXT')}</span>
+          <span className="context-phase">{t(phase.charAt(0).toUpperCase() + phase.slice(1))}</span>
         </div>
         <DemoBadge />
         <button
           className="context-close icon-button"
-          aria-label="Close scientific context"
+          aria-label={t('Close scientific context')}
           onClick={onClose}
         >
           <X size={16} />
@@ -135,33 +140,34 @@ export function ScientificContext({
               <span className="object-icon">
                 <Target size={24} />
               </span>
-              <h2>A focused research goal</h2>
+              <h2>{t('A focused research goal')}</h2>
               <p>{snapshot.project.goal}</p>
             </div>
             <div className="definition-list">
               <div>
-                <span>Target</span>
-                <strong>Lysozyme</strong>
+                <span>{t('Target')}</span>
+                <strong>{t('Lysozyme')}</strong>
               </div>
               <div>
-                <span>Binder type</span>
+                <span>{t('Binder type')}</span>
                 <strong>VHH</strong>
               </div>
               <div>
-                <span>Objective</span>
-                <strong>Accessible epitope</strong>
+                <span>{t('Objective')}</span>
+                <strong>{t('Accessible epitope')}</strong>
               </div>
               <div>
-                <span>Mode</span>
-                <strong>UI Demo Fixture</strong>
+                <span>{t('Mode')}</span>
+                <strong>{t('UI Demo Fixture')}</strong>
               </div>
             </div>
             <div className="source-placeholder">
               <Layers size={18} />
-              <strong>Your research starts here</strong>
+              <strong>{t('Your research starts here')}</strong>
               <p>
-                This demo includes a public structure reference. Uploaded sources will be supported
-                in a future version.
+                {t(
+                  'This demo includes a public structure reference. Uploaded sources will be supported in a future version.',
+                )}
               </p>
             </div>
           </>
@@ -170,7 +176,9 @@ export function ScientificContext({
           <>
             <div className="context-title">
               <div className="title-with-icon">
-                <h2>{phase === 'target' ? 'Hen egg-white lysozyme' : 'Choose a binding site'}</h2>
+                <h2>
+                  {phase === 'target' ? t('Hen egg-white lysozyme') : t('Choose a binding site')}
+                </h2>
                 <span className="object-icon small">
                   <Dna size={17} />
                 </span>
@@ -178,7 +186,7 @@ export function ScientificContext({
               <p>
                 {phase === 'target'
                   ? 'A compact reference for your VHH design.'
-                  : 'Three demo sites on the same target surface.'}
+                  : t('Three demo sites on the same target surface.')}
               </p>
             </div>
             <MolecularViewer
@@ -191,7 +199,7 @@ export function ScientificContext({
               <>
                 <div className="identity-grid">
                   <div>
-                    <span>PDB reference</span>
+                    <span>{t('PDB reference')}</span>
                     <a href="https://www.rcsb.org/structure/1MEL" target="_blank" rel="noreferrer">
                       1MEL <ArrowUpRight size={12} />
                     </a>
@@ -207,32 +215,33 @@ export function ScientificContext({
                     </a>
                   </div>
                   <div>
-                    <span>Target chain</span>
+                    <span>{t('Target chain')}</span>
                     <strong>
-                      {c.structure.targetChain} <small>author · C label</small>
+                      {c.structure.targetChain} <small>{t('author · C label')}</small>
                     </strong>
                   </div>
                   <div>
-                    <span>Reference</span>
-                    <strong>Lysozyme / VHH</strong>
+                    <span>{t('Reference')}</span>
+                    <strong>{t('Lysozyme / VHH')}</strong>
                   </div>
                 </div>
                 <Sequence sequence={c.structure.targetSequence} />
                 <div className="quiet-note">
                   <Check size={14} />
                   <p>
-                    Reference identity is available. Your approval moves the demo to site
-                    comparison.
+                    {t(
+                      'Reference identity is available. Your approval moves the demo to site comparison.',
+                    )}
                   </p>
                 </div>
               </>
             ) : (
               <>
                 <div className="section-label">
-                  <h3>Candidate sites</h3>
-                  <span className="simulated-label">Simulated scores</span>
+                  <h3>{t('Candidate sites')}</h3>
+                  <span className="simulated-label">{t('Simulated scores')}</span>
                 </div>
-                <div className="site-tabs" role="group" aria-label="Candidate sites">
+                <div className="site-tabs" role="group" aria-label={t('Candidate sites')}>
                   {c.sites.map((s) => (
                     <button
                       key={s.id}
@@ -248,15 +257,15 @@ export function ScientificContext({
                 </div>
                 <div className="selected-site-heading">
                   <strong>{site.label}</strong>
-                  {site.recommended && <span className="recommendation">Recommended</span>}
+                  {site.recommended && <span className="recommendation">{t('Recommended')}</span>}
                 </div>
                 <div className="site-metrics">
-                  <MetricRow label="Accessibility" value={site.accessibility} />
-                  <MetricRow label="Geometry" value={site.geometry} />
-                  <MetricRow label="Evidence" value={site.evidence} />
+                  <MetricRow label={t('Accessibility')} value={site.accessibility} />
+                  <MetricRow label={t('Geometry')} value={site.geometry} />
+                  <MetricRow label={t('Evidence')} value={site.evidence} />
                 </div>
                 <div className="residues">
-                  <span className="eyebrow">DEMO RESIDUES</span>
+                  <span className="eyebrow">{t('DEMO RESIDUES')}</span>
                   <div>
                     {site.residues.map((r) => (
                       <span key={r}>
@@ -267,14 +276,14 @@ export function ScientificContext({
                 </div>
                 {compare && (
                   <div className="comparison-table">
-                    <h3>Compare all three sites</h3>
+                    <h3>{t('Compare all three sites')}</h3>
                     <table>
                       <thead>
                         <tr>
-                          <th>Site</th>
-                          <th>Access.</th>
-                          <th>Geometry</th>
-                          <th>Evidence</th>
+                          <th>{t('Site')}</th>
+                          <th>{t('Access.')}</th>
+                          <th>{t('Geometry')}</th>
+                          <th>{t('Evidence')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -291,7 +300,7 @@ export function ScientificContext({
                   </div>
                 )}
                 <p className="scientific-disclaimer">
-                  Residue groups and scores are demo fixtures, not validated epitopes.
+                  {t('Residue groups and scores are demo fixtures, not validated epitopes.')}
                 </p>
               </>
             )}
@@ -300,29 +309,31 @@ export function ScientificContext({
         {phase === 'design' && (
           <>
             <div className="context-title">
-              <h2>A deliberate first pilot</h2>
-              <p>One scaffold. Two complementary approaches.</p>
+              <h2>{t('A deliberate first pilot')}</h2>
+              <p>{t('One scaffold. Two complementary approaches.')}</p>
             </div>
             <div className="approved-site">
               <span className="small-check">
                 <Check size={13} />
               </span>
               <div>
-                <span className="eyebrow">APPROVED SITE</span>
-                <strong>Site {c.approvedSite ?? c.selectedSite}</strong>
+                <span className="eyebrow">{t('APPROVED SITE')}</span>
+                <strong>
+                  {t('Site')} {c.approvedSite ?? c.selectedSite}
+                </strong>
               </div>
-              <span>Lysozyme</span>
+              <span>{t('Lysozyme')}</span>
             </div>
             <div className="scaffold-card">
               <Dna size={34} strokeWidth={1.2} />
-              <span className="eyebrow">BINDER SCAFFOLD</span>
+              <span className="eyebrow">{t('BINDER SCAFFOLD')}</span>
               <h3>{c.scaffold}</h3>
-              <p>Single-domain antibody · VHH</p>
+              <p>{t('Single-domain antibody · VHH')}</p>
               <DemoBadge short />
             </div>
             <div className="section-label">
-              <h3>Design arms</h3>
-              <span>8 candidates total</span>
+              <h3>{t('Design arms')}</h3>
+              <span>{t('8 candidates total')}</span>
             </div>
             <div className="design-arms">
               {c.arms.map((a, i) => (
@@ -332,25 +343,25 @@ export function ScientificContext({
                     <strong>{a.label}</strong>
                     <p>
                       {i === 0
-                        ? 'Concentrate on the selected hotspot.'
-                        : 'Explore the surrounding interface.'}
+                        ? t('Concentrate on the selected hotspot.')
+                        : t('Explore the surrounding interface.')}
                     </p>
                   </div>
                   <span className="arm-budget">
                     {a.count}
-                    <small>candidates</small>
+                    <small>{t('candidates')}</small>
                   </span>
                 </div>
               ))}
             </div>
             <div className="budget-strip">
-              <span>Pilot budget</span>
+              <span>{t('Pilot budget')}</span>
               <strong>
                 4 + 4 <span>=</span> 8
               </strong>
             </div>
             <p className="scientific-disclaimer">
-              This plan plays a simulated pilot. It does not submit a compute job.
+              {t('This plan plays a simulated pilot. It does not submit a compute job.')}
             </p>
           </>
         )}
@@ -358,27 +369,27 @@ export function ScientificContext({
           <>
             <div className="context-title">
               <div className="title-with-icon">
-                <h2>Small pilot, clear comparison</h2>
+                <h2>{t('Small pilot, clear comparison')}</h2>
                 <span className="count-label">8</span>
               </div>
-              <p>Two arms · eight simulated candidates</p>
+              <p>{t('Two arms · eight simulated candidates')}</p>
             </div>
             <div className="pass-summary">
               <strong>
-                {currentBusy ? 'Reviewing' : '6 of 8 pass'}
+                {currentBusy ? t('Reviewing') : t('6 of 8 pass')}
                 <span>
                   {currentBusy
-                    ? 'Preparing the fixed pilot results'
-                    : '2 filtered · 75% demo pass rate'}
+                    ? t('Preparing the fixed pilot results')
+                    : t('2 filtered · 75% demo pass rate')}
                 </span>
               </strong>
-              <div className="pass-segments" aria-label="6 passing and 2 filtered">
+              <div className="pass-segments" aria-label={t('6 passing and 2 filtered')}>
                 {c.pilotCandidates.map((candidate) => (
                   <span key={candidate.id} className={currentBusy ? 'pending' : candidate.status} />
                 ))}
               </div>
             </div>
-            <div className="pilot-grid" aria-label="Pilot candidates">
+            <div className="pilot-grid" aria-label={t('Pilot candidates')}>
               {c.pilotCandidates.map((candidate) => (
                 <button
                   key={candidate.id}
@@ -388,45 +399,51 @@ export function ScientificContext({
                 >
                   <strong>{candidate.id}</strong>
                   <span className={`result-status ${candidate.status}`}>
-                    {currentBusy ? 'Pending' : candidate.status === 'pass' ? 'Pass' : 'Filtered'}
+                    {currentBusy
+                      ? t('Pending')
+                      : candidate.status === 'pass'
+                        ? t('Pass')
+                        : t('Filtered')}
                   </span>
                 </button>
               ))}
             </div>
             <div className="section-label">
               <h3>
-                {selected.id} <span>reference view</span>
+                {selected.id} <span>{t('reference view')}</span>
               </h3>
-              <span className="simulated-label">Demo fixture</span>
+              <span className="simulated-label">{t('Demo fixture')}</span>
             </div>
             <MolecularViewer reference={c.structure} mode="complex" candidateId={selected.id} />
             <CandidateMetrics candidate={selected} />
             <div className="length-row">
-              <span>Reference residues shown</span>
+              <span>{t('Reference residues shown')}</span>
               <strong>{selected.length} aa</strong>
             </div>
             <p className="scientific-disclaimer">
-              Scores and outcomes are simulated. All candidates share the 1MEL reference complex.
+              {t(
+                'Scores and outcomes are simulated. All candidates share the 1MEL reference complex.',
+              )}
             </p>
           </>
         )}
         {phase === 'scale' && (
           <>
             <div className="context-title">
-              <h2>A broader view of the possibilities</h2>
-              <p>Three small batches. A fixed, focused scope.</p>
+              <h2>{t('A broader view of the possibilities')}</h2>
+              <p>{t('Three small batches. A fixed, focused scope.')}</p>
             </div>
             <div className="scale-counter">
               <strong>
                 {c.scale.completedBatches * 8}
                 <span> / 24</span>
               </strong>
-              <span>simulated candidates reviewed</span>
+              <span>{t('simulated candidates reviewed')}</span>
             </div>
             <div
               className="scale-progress"
               role="progressbar"
-              aria-label="Scale progress"
+              aria-label={t('Scale progress')}
               aria-valuenow={c.scale.completedBatches * 8}
               aria-valuemin={0}
               aria-valuemax={24}
@@ -440,28 +457,30 @@ export function ScientificContext({
                     {i < c.scale.completedBatches ? <Check size={15} /> : <Layers size={15} />}
                   </span>
                   <div>
-                    <strong>Batch {i + 1}</strong>
-                    <span>8 candidates</span>
+                    <strong>
+                      {t('Batch')} {i + 1}
+                    </strong>
+                    <span>{t('8 candidates')}</span>
                   </div>
                   <span>
                     {i < c.scale.completedBatches
                       ? '6 pass · 2 filtered'
                       : i === c.scale.completedBatches
-                        ? 'In review'
-                        : 'Waiting'}
+                        ? t('In review')
+                        : t('Waiting')}
                   </span>
                 </div>
               ))}
             </div>
             <div className="section-label">
-              <h3>Candidate distribution</h3>
-              <span className="simulated-label">Simulated</span>
+              <h3>{t('Candidate distribution')}</h3>
+              <span className="simulated-label">{t('Simulated')}</span>
             </div>
             <div className="scale-dots">
               {Array.from({ length: 24 }, (_, i) => (
                 <span
                   key={i}
-                  title={`Demo candidate ${i + 1}`}
+                  title={t('Demo candidate {{number}}', { number: i + 1 })}
                   className={
                     i < c.scale.completedBatches * 8 ? (i % 8 < 6 ? 'pass' : 'filtered') : 'pending'
                   }
@@ -473,35 +492,39 @@ export function ScientificContext({
             <div className="scale-legend">
               <span>
                 <i className="pass" />
-                {c.scale.completedBatches * 6} pass
+                {c.scale.completedBatches * 6} {t('pass')}
               </span>
               <span>
                 <i className="filtered" />
-                {c.scale.completedBatches * 2} filtered
+                {c.scale.completedBatches * 2} {t('filtered')}
               </span>
             </div>
-            <p className="scientific-disclaimer">All 24 outcomes are deterministic UI fixtures.</p>
+            <p className="scientific-disclaimer">
+              {t('All 24 outcomes are deterministic UI fixtures.')}
+            </p>
           </>
         )}
         {phase === 'candidates' && (
           <>
             <div className="context-title">
               <div className="title-with-icon">
-                <h2>{snapshot.completed ? 'Your finalized panel' : 'Six finalists to explore'}</h2>
+                <h2>
+                  {snapshot.completed ? t('Your finalized panel') : t('Six finalists to explore')}
+                </h2>
                 <span className="count-label">6</span>
               </div>
               <p>
                 {snapshot.completed
                   ? 'A complete demo journey, ready to revisit.'
-                  : 'Compare the panel and star your favorites.'}
+                  : t('Compare the panel and star your favorites.')}
               </p>
             </div>
             <div className="candidate-view-header">
               <strong>{selected.id}</strong>
-              <span>Shared 1MEL reference</span>
+              <span>{t('Shared 1MEL reference')}</span>
               <div>
                 <button
-                  aria-label="Previous candidate"
+                  aria-label={t('Previous candidate')}
                   onClick={() =>
                     selectCandidate(candidates[(candidates.indexOf(selected) + 5) % 6].id)
                   }
@@ -509,7 +532,7 @@ export function ScientificContext({
                   <ChevronLeft size={15} />
                 </button>
                 <button
-                  aria-label="Next candidate"
+                  aria-label={t('Next candidate')}
                   onClick={() =>
                     selectCandidate(candidates[(candidates.indexOf(selected) + 1) % 6].id)
                   }
@@ -521,12 +544,12 @@ export function ScientificContext({
             <MolecularViewer reference={c.structure} mode="complex" candidateId={selected.id} />
             <CandidateMetrics candidate={selected} />
             <div className="sequence-preview">
-              <span>Demo sequence preview</span>
+              <span>{t('Demo sequence preview')}</span>
               <code>{selected.sequencePreview}</code>
             </div>
             <div className="section-label">
-              <h3>Finalist panel</h3>
-              <span className="simulated-label">Simulated metrics</span>
+              <h3>{t('Finalist panel')}</h3>
+              <span className="simulated-label">{t('Simulated metrics')}</span>
             </div>
             <div className="finalists-grid">
               {c.finalists.map((candidate) => (
@@ -537,7 +560,7 @@ export function ScientificContext({
                 >
                   <button
                     className="candidate-select"
-                    aria-label={`Select ${candidate.id}`}
+                    aria-label={t('Select {{name}}', { name: candidate.id })}
                     aria-pressed={selected.id === candidate.id}
                     onClick={() => selectCandidate(candidate.id)}
                   >
@@ -547,20 +570,23 @@ export function ScientificContext({
                     </span>
                     <code>{candidate.sequencePreview}</code>
                     <span className="candidate-card-extra">
-                      <span title="Simulated interface score">
-                        Int. <b>{candidate.interface.toFixed(2)}</b>
+                      <span title={t('Simulated interface score')}>
+                        {t('Int.')}
+                        <b>{candidate.interface.toFixed(2)}</b>
                       </span>
-                      <span title="Simulated confidence score">
-                        Conf. <b>{candidate.confidence.toFixed(2)}</b>
+                      <span title={t('Simulated confidence score')}>
+                        {t('Conf.')}
+                        <b>{candidate.confidence.toFixed(2)}</b>
                       </span>
-                      <span title="Simulated developability score">
-                        Dev. <b>{candidate.developability?.toFixed(2)}</b>
+                      <span title={t('Simulated developability score')}>
+                        {t('Dev.')}
+                        <b>{candidate.developability?.toFixed(2)}</b>
                       </span>
                     </span>
                   </button>
                   <button
                     className="star-button"
-                    aria-label={`Star ${candidate.id}`}
+                    aria-label={t('Star {{name}}', { name: candidate.id })}
                     aria-pressed={c.shortlisted.includes(candidate.id)}
                     onClick={() => onEdit({ type: 'shortlist', candidateId: candidate.id })}
                   >
@@ -574,14 +600,14 @@ export function ScientificContext({
             </div>
             {compare && (
               <div className="comparison-table">
-                <h3>Panel comparison · Demo</h3>
+                <h3>{t('Panel comparison · Demo')}</h3>
                 <table>
                   <thead>
                     <tr>
-                      <th>Candidate</th>
-                      <th>Interface</th>
-                      <th>Conf.</th>
-                      <th>Develop.</th>
+                      <th>{t('Candidate')}</th>
+                      <th>{t('Interface')}</th>
+                      <th>{t('Conf.')}</th>
+                      <th>{t('Develop.')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -598,8 +624,9 @@ export function ScientificContext({
               </div>
             )}
             <p className="scientific-disclaimer">
-              Demo candidates, not generated proteins. The 1MEL complex is a shared visualization
-              placeholder.
+              {t(
+                'Demo candidates, not generated proteins. The 1MEL complex is a shared visualization placeholder.',
+              )}
             </p>
           </>
         )}

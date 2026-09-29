@@ -50,9 +50,21 @@ describe('AppShell 统一壳（阶段 3）', () => {
   });
 
   it('#/account 渲染账号门户（登录表单可见）', async () => {
+    const originalFetch = window.fetch;
+    window.fetch = async () => Response.json({ error: { code: 'unauthorized' } }, { status: 401 });
+    try {
+      window.location.hash = '#/account';
+      render(<AppShell />);
+      expect(await screen.findByRole('heading', { name: '登录 EasyDesign' })).toBeTruthy();
+    } finally { window.fetch = originalFetch; }
+  });
+
+  it('account network failure offers retry without assuming the visitor is signed out', async () => {
     window.location.hash = '#/account';
     render(<AppShell />);
-    expect(await screen.findByRole('heading', { name: '登录 EasyDesign' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: '暂时无法确认登录状态，请重试。' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.queryByLabelText('密码')).toBeNull();
   });
 
   it('#/demo 渲染演示工作台，专业版链接指向应用内路由（死链已修）', async () => {

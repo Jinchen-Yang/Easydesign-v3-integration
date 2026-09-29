@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   ArrowUp,
@@ -15,6 +16,8 @@ import type {
   WorkbenchSnapshot,
   WorkflowPhase,
 } from '../../adapters/WorkbenchAdapter';
+import { useInputDraft } from '../../data/useInputDraft';
+import { DraftStatus } from '../../data/DraftStatus';
 
 /** Render common answer formatting as React text, never model-supplied HTML. */
 function AnswerText({ text }: { text: string }) {
@@ -57,16 +60,17 @@ function ToolCard({
   item: ConversationItem;
   onFocus: (phase: WorkflowPhase) => void;
 }) {
+  const { t } = useTranslation('pro');
   const [open, setOpen] = useState(false);
   const status = item.status || 'complete';
   const state =
     status === 'failed'
-      ? { icon: <CircleAlert size={11} />, label: 'Failed' }
+      ? { icon: <CircleAlert size={11} />, label: t('Failed') }
       : status === 'running'
-        ? { icon: <span className="tiny-loader" />, label: 'Running' }
+        ? { icon: <span className="tiny-loader" />, label: t('Running') }
         : status === 'blocked'
-          ? { icon: <Clock3 size={11} />, label: 'Awaiting review' }
-          : { icon: <Check size={11} />, label: 'Completed' };
+          ? { icon: <Clock3 size={11} />, label: t('Awaiting review') }
+          : { icon: <Check size={11} />, label: t('Completed') };
   return (
     <div className={`tool-card ${status} ${open ? 'open' : ''}`}>
       <button className="tool-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -74,8 +78,8 @@ function ToolCard({
           <FileSearch size={16} />
         </span>
         <span className="tool-copy">
-          <strong>{item.title}</strong>
-          <span>{item.text}</span>
+          <strong>{mode === 'demo' ? t(item.title || '') : item.title}</strong>
+          <span>{mode === 'demo' ? t(item.text) : item.text}</span>
         </span>
         <span className={`tool-complete ${status}`}>
           {state.icon} {state.label}
@@ -84,9 +88,9 @@ function ToolCard({
       </button>
       {open && (
         <div className="tool-detail">
-          <p>{item.detail}</p>
+          <p>{mode === 'demo' ? t(item.detail || '') : item.detail}</p>
           <span className="simulated-label">
-            {mode === 'demo' ? 'Demo fixture' : 'Research activity'}
+            {mode === 'demo' ? t('Demo fixture') : t('Research activity')}
           </span>
           {item.focus && (
             <button
@@ -94,7 +98,8 @@ function ToolCard({
               aria-controls="scientific-context"
               onClick={() => onFocus(item.focus!)}
             >
-              View scientific context <ArrowUpRight size={12} />
+              {t('View scientific context')}
+              <ArrowUpRight size={12} />
             </button>
           )}
         </div>
@@ -114,6 +119,7 @@ export function Conversation({
   onSend,
   onSkip,
   onRetry,
+  draftKey,
 }: {
   mode?: 'demo' | 'live';
   disabled?: boolean;
@@ -126,15 +132,18 @@ export function Conversation({
   onSend: (text: string) => void | Promise<void>;
   onSkip: () => void;
   onRetry?: (id: string) => void;
+  draftKey?: string;
 }) {
-  const [text, setText] = useState('');
+  const { t } = useTranslation('pro');
+  const draft = useInputDraft(draftKey ?? null, '');
+  const { value: text, setValue: setText } = draft;
   const [submitting, setSubmitting] = useState(false);
   const send = async () => {
     if (!text.trim() || disabled || sending || submitting) return;
     setSubmitting(true);
     try {
       await onSend(text);
-      setText('');
+      draft.complete('submitted', '');
     } catch {
       /* Parent displays the error; preserve draft. */
     } finally {
@@ -147,31 +156,31 @@ export function Conversation({
     if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [snapshot.messages.length, viewedPhase]);
   return (
-    <section className="conversation" aria-label="Design Scientist conversation">
+    <section className="conversation" aria-label={t('Design Scientist conversation')}>
       <header className="conversation-header">
         <span className="scientist-avatar">
           <Sparkles size={18} />
         </span>
         <div>
-          <h1>Design Scientist</h1>
-          <span>Your research, one clear step at a time</span>
+          <h1>{t('Design Scientist')}</h1>
+          <span>{t('Your research, one clear step at a time')}</span>
         </div>
         <span
           className="online-dot"
-          title={mode === 'demo' ? 'Demo available' : 'Design Scientist'}
+          title={mode === 'demo' ? t('Demo available') : t('Design Scientist')}
         />
       </header>
       <div className="conversation-scroll" ref={scroll}>
         <div className="conversation-content">
           <div className="phase-caption">
-            <span>{viewedPhase.charAt(0).toUpperCase() + viewedPhase.slice(1)}</span>
+            <span>{t(viewedPhase.charAt(0).toUpperCase() + viewedPhase.slice(1))}</span>
             <i />
-            {snapshot.completed ? 'Completed journey' : 'Research workspace'}
+            {snapshot.completed ? t('Completed journey') : t('Research workspace')}
           </div>
           {messages.map((item) =>
             item.kind === 'user' ? (
               <div className="user-message" key={item.id}>
-                <span className="message-by">YOU</span>
+                <span className="message-by">{t('YOU')}</span>
                 <p>{item.text}</p>
               </div>
             ) : item.kind === 'tool' ? (
@@ -179,22 +188,24 @@ export function Conversation({
             ) : item.kind === 'summary' ? (
               <article className="scientist-message" key={item.id}>
                 <span className="message-by">
-                  <Sparkles size={12} /> EASYDESIGN
+                  <Sparkles size={12} /> {t('EASYDESIGN')}
                 </span>
-                <h2>{item.title}</h2>
-                {mode === 'live' ? <AnswerText text={item.text} /> : <p>{item.text}</p>}
+                <h2>{mode === 'demo' ? t(item.title || '') : item.title}</h2>
+                {mode === 'live' ? <AnswerText text={item.text} /> : <p>{t(item.text)}</p>}
                 {item.focus && (
                   <button
                     className="context-link"
                     aria-controls="scientific-context"
                     onClick={() => onFocus(item.focus!)}
                   >
-                    Explore{' '}
+                    {t('Explore')}{' '}
                     {item.focus === 'candidates'
-                      ? 'the panel'
+                      ? t('the panel')
                       : item.focus === 'goal'
-                        ? 'the goal'
-                        : `${item.focus} context`}{' '}
+                        ? t('the goal')
+                        : t('{{phase}} context', {
+                            phase: t(item.focus[0].toUpperCase() + item.focus.slice(1)),
+                          })}{' '}
                     <ArrowUpRight size={13} />
                   </button>
                 )}
@@ -205,7 +216,7 @@ export function Conversation({
                 <p>{item.text}</p>
                 {item.retry_request_id && onRetry && (
                   <button className="text-button" onClick={() => onRetry(item.retry_request_id!)}>
-                    Retry answer
+                    {t('Retry answer')}
                   </button>
                 )}
               </div>
@@ -216,17 +227,21 @@ export function Conversation({
               <span className="tiny-loader" />
               <span>
                 {sending || submitting ? (
-                  'Design Scientist is answering…'
+                  t('Design Scientist is answering…')
                 ) : (
                   <>
-                    Preparing your{' '}
-                    {snapshot.phase === 'goal' ? 'research plan' : `${snapshot.phase} review`}
+                    {t('Preparing your')}{' '}
+                    {snapshot.phase === 'goal'
+                      ? t('research plan')
+                      : t('{{phase}} review', {
+                          phase: t(snapshot.phase[0].toUpperCase() + snapshot.phase.slice(1)),
+                        })}
                   </>
                 )}
               </span>
               {mode === 'demo' && (
                 <button onClick={onSkip}>
-                  <SkipForward size={12} /> Skip animation
+                  <SkipForward size={12} /> {t('Skip animation')}
                 </button>
               )}
             </div>
@@ -238,12 +253,15 @@ export function Conversation({
             !snapshot.completed &&
             viewedPhase === snapshot.phase && (
               <p className="awaiting-copy">
-                <span /> Ready for your review below
+                <span /> {t('Ready for your review below')}
               </p>
             )}
           {viewedPhase !== snapshot.phase && (
             <button className="return-step" onClick={() => onFocus(snapshot.phase)}>
-              Return to {snapshot.phase} <ArrowUpRight size={13} />
+              {t('Return to {{phase}}', {
+                phase: t(snapshot.phase[0].toUpperCase() + snapshot.phase.slice(1)),
+              })}{' '}
+              <ArrowUpRight size={13} />
             </button>
           )}
         </div>
@@ -256,7 +274,7 @@ export function Conversation({
         }}
       >
         <label className="sr-only" htmlFor="followup">
-          Message Design Scientist
+          {t('Message Design Scientist')}
         </label>
         <textarea
           id="followup"
@@ -270,28 +288,29 @@ export function Conversation({
               void send();
             }
           }}
-          placeholder="Ask about this step or add a note…"
+          placeholder={t('Ask about this step or add a note…')}
           rows={2}
         />
         <div className="composer-bottom">
           <span>
             <span className="subtle-dot" />{' '}
-            {mode === 'demo' ? 'Demo conversation' : 'Design Scientist'}
+            {mode === 'demo' ? t('Demo conversation') : t('Design Scientist')}
           </span>
           <button
             className="send-button"
-            aria-label="Send message"
+            aria-label={t('Send message')}
             disabled={disabled || sending || submitting || !text.trim()}
           >
             <ArrowUp size={17} />
           </button>
         </div>
       </form>
+      {mode === 'live' && <DraftStatus status={draft.status} />}
       <p className="conversation-footnote">
         {error ||
           (mode === 'demo'
-            ? 'Research summaries and tool events · Simulated for UI development'
-            : 'Research summaries and tool events · Your decisions stay yours')}
+            ? t('Research summaries and tool events · Simulated for UI development')
+            : t('Research summaries and tool events · Your decisions stay yours'))}
       </p>
     </section>
   );

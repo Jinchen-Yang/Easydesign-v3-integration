@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSession } from './SessionProvider';
 import { useI18n } from './I18nProvider';
 
@@ -14,26 +14,37 @@ export function SessionRecoveryModal() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const dialog = useRef<HTMLDialogElement>(null);
+  const generation = useRef(0);
+  useEffect(() => {
+    if (state.kind !== 'expired') { generation.current++; setPassword(''); setError(''); setBusy(false); return; }
+    const node = dialog.current;
+    if (node && !node.open) {
+      if (typeof node.showModal === 'function') node.showModal();
+      else node.setAttribute('open', '');
+    }
+  }, [state.kind]);
 
   if (state.kind !== 'expired') return null;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy || password.length === 0) return;
+    const request = ++generation.current;
     setBusy(true);
     setError('');
     try {
       await recoverSession(password);
       // Success unmounts this modal through the state change.
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t('recovery.failed'));
+      if (generation.current === request) setError(reason instanceof Error ? reason.message : t('recovery.failed'));
     } finally {
-      setBusy(false);
+      if (generation.current === request) setBusy(false);
     }
   }
 
   return (
-    <div className="session-recovery-overlay" role="dialog" aria-modal="true" aria-label={t('recovery.title')}>
+    <dialog ref={dialog} className="session-recovery-dialog" aria-label={t('recovery.title')} onCancel={event => { event.preventDefault(); dismissRecovery(); }}>
       <div className="session-recovery-modal">
         <h2>{t('recovery.title')}</h2>
         <p>{t('recovery.description')}</p>
@@ -57,6 +68,6 @@ export function SessionRecoveryModal() {
         {error !== '' && <p className="session-recovery-error" role="alert">{error}</p>}
         <p className="recovery-hint">{t('recovery.hint')}</p>
       </div>
-    </div>
+    </dialog>
   );
 }

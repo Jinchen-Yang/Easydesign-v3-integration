@@ -108,7 +108,7 @@ describe('会话过期：工作区保活与适配器稳定', () => {
     fireEvent.change(input, { target: { value: '设计针对鸡卵清溶菌酶的 VHH 结合分子' } });
 
     // 设计输入进入草稿模块（阻塞项 1 的最后半条：有人写入了）。
-    await waitFor(() => expect(draftRecovery.recover(DRAFT_KEYS.projectCreate).hasLocal).toBe(true));
+    await waitFor(() => expect(draftRecovery.recover(DRAFT_KEYS.scoped('s1', 'easy', 'create')).hasLocal).toBe(true));
 
     // 会话过期：只切状态，不卸载工作区。
     await act(async () => {

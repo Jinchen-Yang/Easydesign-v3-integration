@@ -40,5 +40,7 @@
   "guest.promptBody": "The demo only runs the fixed lysozyme example and never submits compute. Your own design needs an account.",
   "guest.promptDemo": "Show me the fixed demo",
   "prompt.signIn": "Sign in / Register",
-  "prompt.backToDemo": "Back to the demo"
+  "prompt.backToDemo": "Back to the demo",
+  "Account and workspace settings": "Account and workspace settings",
+  "Checking session…": "Checking session…"
 }

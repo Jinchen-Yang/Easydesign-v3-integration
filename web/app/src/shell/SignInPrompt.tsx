@@ -1,4 +1,6 @@
 import { useI18n } from './I18nProvider';
+import { Brand } from '../components/Brand';
+import { AccountLanguage } from './WorkspaceBar';
 
 /**
  * 统一的登录引导屏：访客试图进入需要真实数据的界面（工作区、项目列表）
@@ -14,11 +16,15 @@ export function SignInPrompt({
 }) {
   const { t } = useI18n();
   return (
+    <div className="account-auth-page">
+    <header className="account-auth-header"><a href="#/" aria-label="EasyDesign"><Brand/></a><AccountLanguage/></header>
     <main className="account-login">
+      <div className="account-auth-mark"><Brand compact/></div>
       <h1>{title}</h1>
       <p>{description}</p>
       <a className="account-primary" href="#/account">{t('prompt.signIn')}</a>
-      <a href={backHref ?? '#/'}>{backLabel ?? t('prompt.backToDemo')}</a>
+      <a className="account-back-link" href={backHref ?? '#/'}>{backLabel ?? t('prompt.backToDemo')}</a>
     </main>
+    </div>
   );
 }

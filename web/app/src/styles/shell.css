@@ -223,3 +223,14 @@
   padding: 0.4rem 1rem;
   cursor: pointer;
 }
+
+/* Shared Pro palette for authentication and recovery. */
+.session-recovery-dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(440px, calc(100vw - 32px)); color: var(--ink); background: white; box-shadow: 0 20px 70px #24242d24; }
+.session-recovery-dialog::backdrop { background: #24242d40; backdrop-filter: blur(3px); }
+.session-recovery-dialog .session-recovery-modal { width: 100%; box-shadow: none; border: 0; padding: 30px; }
+.session-recovery-dialog .session-recovery-primary { background: var(--violet); border-color: var(--violet); color: white; }
+.session-recovery-dialog input { border-color: var(--line); }
+.shell-root { color: var(--ink); background: var(--page); }
+.shell-header { background: white; border-color: var(--line); }
+.shell-nav a, .shell-session a { color: var(--muted); }
+.shell-new { background: var(--violet); }

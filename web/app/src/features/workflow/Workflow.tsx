@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Check, Circle, LockKeyhole, ArrowUpRight, FlaskConical } from 'lucide-react';
 import type { WorkbenchSnapshot, WorkflowPhase } from '../../adapters/WorkbenchAdapter';
 import { labProgress, type LabOrderStep } from '../../domain/labOrder';
@@ -21,13 +22,14 @@ export function Workflow({
   agentTasks?: { id: string; title: string; detail: string; status: string }[];
   onOpenTasks?: () => void;
 }) {
+  const { t } = useTranslation('pro');
   const finishedTasks = agentTasks.filter((task) =>
     ['complete', 'completed'].includes(task.status),
   ).length;
   return (
-    <aside className="workflow" aria-label="Workflow">
+    <aside className="workflow" aria-label={t('Workflow')}>
       <div className="workflow-top">
-        <span className="eyebrow">WORKFLOW</span>
+        <span className="eyebrow">{t('WORKFLOW')}</span>
         <span className="workflow-count">
           {snapshot.completed
             ? labOrderComplete
@@ -58,9 +60,9 @@ export function Workflow({
                   <span className="current-dot" />
                 )}
               </span>
-              <span>{task.label}</span>
+              <span>{t(task.label)}</span>
               {task.status === 'approval' && (
-                <span className="approval-dot" title="Ready for your review" />
+                <span className="approval-dot" title={t('Ready for your review')} />
               )}
               {task.status === 'locked' && <LockKeyhole className="step-lock" size={11} />}
             </button>
@@ -75,7 +77,7 @@ export function Workflow({
                     ) : (
                       <Circle size={8} />
                     )}
-                    <span>{sub.label}</span>
+                    <span>{mode === 'demo' ? t(sub.label) : sub.label}</span>
                   </div>
                 ))}
               </div>
@@ -93,15 +95,15 @@ export function Workflow({
           >
             <span
               className={`step-indicator ${labOrderComplete ? 'complete' : ''}`}
-              aria-label={labOrderComplete ? 'Simulation complete' : 'Pending submission'}
+              aria-label={labOrderComplete ? t('Simulation complete') : t('Pending submission')}
             >
               <Check size={13} />
             </span>
-            <span>Lab Order</span>
+            <span>{t('Lab Order')}</span>
             {!snapshot.completed && <LockKeyhole className="step-lock" size={11} />}
           </button>
           {viewedPhase === 'lab-order' && snapshot.labOrder && (
-            <nav className="lab-subtasks" aria-label="Lab order steps">
+            <nav className="lab-subtasks" aria-label={t('Lab order steps')}>
               {(['samples', 'requirements', 'review'] as const).map((step, index) => {
                 const complete = labProgress(snapshot.labOrder!)[step];
                 return (
@@ -112,11 +114,11 @@ export function Workflow({
                   >
                     <span
                       className={`lab-step-check ${complete ? 'done' : ''}`}
-                      aria-label={complete ? 'Complete' : 'Pending'}
+                      aria-label={complete ? t('Complete') : t('Pending')}
                     >
                       <Check size={12} />
                     </span>
-                    {['Samples', 'Specs', 'Review'][index]}
+                    {[t('Samples'), t('Specs'), t('Review')][index]}
                   </button>
                 );
               })}
@@ -126,7 +128,7 @@ export function Workflow({
       </nav>
       <div className="agent-tasks">
         <div className="agent-task-heading">
-          <span className="eyebrow">AGENT TASKS</span>
+          <span className="eyebrow">{t('AGENT TASKS')}</span>
           <span>
             {finishedTasks}/{agentTasks.length}
           </span>
@@ -143,8 +145,8 @@ export function Workflow({
           <div className="specialist-row" key={task.id}>
             <span className={`specialist-dot ${task.status}`} />
             <div>
-              <strong>{task.title}</strong>
-              <small>{task.detail}</small>
+              <strong>{agentTasks.length ? task.title : t(task.title)}</strong>
+              <small>{agentTasks.length ? task.detail : t(task.detail)}</small>
             </div>
             <span className={`activity-state ${task.status}`}>
               {['complete', 'completed'].includes(task.status) ? (
@@ -159,7 +161,8 @@ export function Workflow({
         ))}
         {!!agentTasks.length && (
           <button className="view-agent-tasks" type="button" onClick={onOpenTasks}>
-            View all tasks <ArrowUpRight size={12} />
+            {t('View all tasks')}
+            <ArrowUpRight size={12} />
           </button>
         )}
       </div>
@@ -170,9 +173,9 @@ export function Workflow({
             {mode === 'demo' ? 'A guided research demo' : 'A guided research workspace'}
           </strong>
           <p>
-            {mode === 'demo' ? 'Simulated results.' : 'Evidence, clearly explained.'}
+            {mode === 'demo' ? t('Simulated results.') : t('Evidence, clearly explained.')}
             <br />
-            Your decisions shape the journey.
+            {t('Your decisions shape the journey.')}
           </p>
         </div>
         <ArrowUpRight size={12} />

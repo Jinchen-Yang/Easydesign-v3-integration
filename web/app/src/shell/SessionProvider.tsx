@@ -7,7 +7,8 @@ import {
   type AccountScope, type AccountSession,
 } from '../shared/account-client';
 import { draftRecovery, type DraftRecoveryModule } from '../data/draftRecovery';
-import { SESSION_EXPIRED_EVENT, type SessionExpiredDetail } from '../shared/sessionEvents';
+import { SESSION_EXPIRED_EVENT, SESSION_PERMISSIONS_EVENT, type SessionExpiredDetail, type SessionPermissionsDetail } from '../shared/sessionEvents';
+import { workspaceHref } from '../views/easy/routeParams';
 import { appI18n } from './I18nProvider';
 
 const commonT = (key: string): string => appI18n.t(key, { ns: 'common' });
@@ -51,6 +52,7 @@ export type SessionEvent =
   | { type: 'probe-guest' }
   | { type: 'probe-network-error'; retry: () => void }
   | { type: 'login-authenticated'; session: AccountSession; scope: AccountScope }
+  | { type: 'session-refreshed'; previous: AccountSession; session: AccountSession; scope: AccountScope }
   | { type: 'session-expired'; recoverableData: Record<string, unknown> }
   | { type: 'switch-account' }
   | { type: 'recovery-dismissed' }
@@ -58,6 +60,11 @@ export type SessionEvent =
 
 export function reduceSession(state: SessionState, event: SessionEvent): SessionState {
   switch (event.type) {
+    case 'session-refreshed':
+      return state.kind === 'authenticated' && state.session === event.previous &&
+        event.session.user.id === state.session.user.id
+        ? { kind: 'authenticated', session: event.session, scope: event.scope }
+        : state;
     case 'probe-start':
       return { kind: 'checking' };
     case 'probe-authenticated':
@@ -158,6 +165,8 @@ export interface SessionContextValue {
   state: SessionState;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Refresh permissions without unmounting the current workspace. */
+  refreshSession: () => Promise<void>;
   /** Same-account re-login from the expired state; restores the interrupted route. */
   recoverSession: (password: string) => Promise<void>;
   /** Gives up recovery (expired) or retries later (network-error) and lands as guest. */
@@ -176,18 +185,85 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
   const [state, dispatch] = useReducer(reduceSession, { kind: 'checking' });
   const stateRef = useRef(state);
   stateRef.current = state;
+  // One generation guards every operation that can replace session authority.
+  // A cancelled recovery or later login must invalidate *all* older responses,
+  // including their draft-identity and navigation side effects.
+  const operationGeneration = useRef(0);
+
+  const refreshSession = useCallback(async (permission?: SessionPermissionsDetail): Promise<void> => {
+    const current = stateRef.current;
+    if (current.kind !== 'authenticated') return;
+    const generation = ++operationGeneration.current;
+    try {
+      const session = await api.probe();
+      if (generation !== operationGeneration.current) return;
+      const scope = await resolveScope(session);
+      if (generation !== operationGeneration.current || stateRef.current !== current) return;
+      if (session.user.id !== current.session.user.id) {
+        // A cookie changed in another tab: never mix identities in mounted UI.
+        drafts.clearAll();
+        drafts.setIdentity(null);
+        dispatch({ type: 'signed-out' });
+        return;
+      }
+      const requested = hashQueryParameter('scope') ?? new URLSearchParams(location.search).get('scope');
+      if (permission && requested && current.session.scopes.some(item => item.id === requested) &&
+          !session.scopes.some(item => item.id === requested)) {
+        // A resource 404 alone is ambiguous. Only the canonical account response
+        // may confirm a removed workspace and discard its selected project route.
+        const view = hashQueryParameter('view') === 'pro' ? 'pro' : 'easy';
+        location.hash = workspaceHref(scope.id, view);
+      }
+      dispatch({ type: 'session-refreshed', previous: current.session, session, scope });
+    } catch (error) {
+      if (generation !== operationGeneration.current) return;
+      if (stateRef.current === current &&
+          error instanceof AccountApiError && error.status === 401) {
+        saveRecoveryPath();
+        dispatch({ type: 'session-expired', recoverableData: drafts.recoverAll() });
+      }
+      throw error;
+    }
+  }, [api, drafts]);
+
+  const permissionRefreshPending = useRef<string | null>(null);
+  useEffect(() => {
+    const handlePermissions = (event: Event): void => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as SessionPermissionsDetail | undefined;
+      const current = stateRef.current;
+      if (!detail?.scope || current.kind !== 'authenticated' ||
+          detail.session?.user.id !== current.session.user.id ||
+          detail.session.csrf_token !== current.session.csrf_token) return;
+      const identity = JSON.stringify([current.session.user.id, current.session.csrf_token]);
+      if (permissionRefreshPending.current === identity) return;
+      permissionRefreshPending.current = identity;
+      void refreshSession(detail).catch(() => {
+        // The requesting surface already shows the denied operation; a failed
+        // permission refresh must neither invent access nor sign the user out.
+      }).finally(() => {
+        if (permissionRefreshPending.current === identity) permissionRefreshPending.current = null;
+      });
+    };
+    window.addEventListener(SESSION_PERMISSIONS_EVENT, handlePermissions);
+    return () => window.removeEventListener(SESSION_PERMISSIONS_EVENT, handlePermissions);
+  }, [refreshSession]);
 
   const probe = useCallback(async (): Promise<void> => {
+    const generation = ++operationGeneration.current;
     dispatch({ type: 'probe-start' });
     try {
       const session = await api.probe();
+      if (generation !== operationGeneration.current) return;
       const scope = await resolveScope(session);
+      if (generation !== operationGeneration.current) return;
       drafts.setIdentity(session.user.id);
       dispatch({ type: 'probe-authenticated', session, scope });
       // An already-signed-in visitor has no pending login intent; drop any
       // stale target so a later login is not thrown back to an old route.
       discardNextUrl();
     } catch (error) {
+      if (generation !== operationGeneration.current) return;
       if (error instanceof AccountApiError && error.status === 401) {
         // Park the deep link this guest actually opened (?next= or the hash)
         // so the next successful login returns them to it.
@@ -201,7 +277,10 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, drafts]);
 
-  useEffect(() => { void probe(); }, [probe]);
+  useEffect(() => {
+    void probe();
+    return () => { operationGeneration.current++; };
+  }, [probe]);
 
   useEffect(() => {
     // 其他标签页登出/换号：重新探测，本标签页跟随（不再整页跳转）。
@@ -216,9 +295,11 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
       if (current.kind !== 'authenticated') return;
       if (event instanceof CustomEvent) {
         const detail = event.detail as Partial<SessionExpiredDetail> | undefined;
-        if (detail?.session !== undefined && detail.session.user.id !== current.session.user.id) return;
+        if (detail?.session !== undefined && (detail.session.user.id !== current.session.user.id ||
+            detail.session.csrf_token !== current.session.csrf_token)) return;
       }
       saveRecoveryPath();
+      operationGeneration.current++;
       dispatch({ type: 'session-expired', recoverableData: drafts.recoverAll() });
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, handleExpired);
@@ -226,6 +307,7 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
   }, [drafts]);
 
   const login = useCallback(async (username: string, password: string): Promise<void> => {
+    const generation = ++operationGeneration.current;
     const current = stateRef.current;
     const recovering = current.kind === 'expired' && username === current.previousSession.user.username;
     if (current.kind === 'expired' && !recovering) {
@@ -235,7 +317,9 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
       dispatch({ type: 'switch-account' });
     }
     const session = await api.login(username, password);
+    if (generation !== operationGeneration.current) return;
     const scope = await resolveScope(session);
+    if (generation !== operationGeneration.current) return;
     drafts.setIdentity(session.user.id);
     // Same-account recovery returns to the interrupted route; a fresh guest
     // login consumes the parked `?next=` intent (if any) instead.
@@ -249,8 +333,11 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
     if (current.kind !== 'expired') {
       throw new AccountApiError('invalid_state', commonT('There is no session pending recovery'), 409);
     }
+    const generation = ++operationGeneration.current;
     const session = await api.login(current.previousSession.user.username, password);
+    if (generation !== operationGeneration.current) return;
     const scope = await resolveScope(session);
+    if (generation !== operationGeneration.current) return;
     drafts.setIdentity(session.user.id);
     const restorePath = takeRecoveryPath();
     dispatch({ type: 'login-authenticated', session, scope });
@@ -260,12 +347,14 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
   const logout = useCallback(async (): Promise<void> => {
     const current = stateRef.current;
     if (current.kind !== 'authenticated' && current.kind !== 'expired') return;
+    const generation = ++operationGeneration.current;
     const session = current.kind === 'authenticated' ? current.session : current.previousSession;
     try {
       await api.logout(session);
     } catch {
       /* 会话可能已被服务端吊销；本地登出必须照常完成。 */
     }
+    if (generation !== operationGeneration.current) return;
     drafts.clearAll();
     drafts.setIdentity(null);
     notifySessionChange();
@@ -273,14 +362,15 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
   }, [api, drafts]);
 
   const dismissRecovery = useCallback((): void => {
+    operationGeneration.current++;
     // 放弃恢复时作废回跳路径：它属于已过期的那个会话，不该影响之后的登录。
     takeRecoveryPath();
     dispatch({ type: 'recovery-dismissed' });
   }, []);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ state, login, logout, recoverSession, dismissRecovery }),
-    [state, login, logout, recoverSession, dismissRecovery],
+    () => ({ state, login, logout, refreshSession, recoverSession, dismissRecovery }),
+    [state, login, logout, refreshSession, recoverSession, dismissRecovery],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

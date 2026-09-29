@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { appI18n } from '../../shell/I18nProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
@@ -14,7 +16,13 @@ import type { WorkflowPhase } from '../../adapters/WorkbenchAdapter';
 import type { LiveWorkbenchPort } from '../../adapters/LiveWorkbenchAdapter';
 import type { Artifact, Candidate, LiveState, ProductSnapshot } from './contracts';
 import { StructureViewer } from './StructureViewer';
-const show = (v: unknown) => (v == null ? 'Not available' : typeof v === 'object' ? '' : String(v));
+import { useInputDraft } from '../../data/useInputDraft';
+const show = (v: unknown) =>
+  v == null
+    ? appI18n.getFixedT(null, 'pro')('Not available')
+    : typeof v === 'object'
+      ? ''
+      : String(v);
 // Display priorities only: native thresholds and scientific ranking are untouched.
 const prominent = [
   ['bb_rmsd', 'RMSD'],
@@ -43,6 +51,7 @@ export function LiveContext({
   compare,
   onClose,
   revealRequest,
+  draftKey,
 }: {
   snapshot: ProductSnapshot;
   state: LiveState;
@@ -53,7 +62,9 @@ export function LiveContext({
   compare: boolean;
   onClose: () => void;
   revealRequest: number;
+  draftKey?: string;
 }) {
+  const { t } = useTranslation('pro');
   const panel = useRef<HTMLElement>(null),
     scroll = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -62,6 +73,57 @@ export function LiveContext({
   }, [phase, revealRequest]);
   const c = v.scientific_context,
     selected = state.selectedCandidate;
+  const candidateView = useInputDraft(
+    draftKey ?? null,
+    { offset: 0, candidateId: '' },
+    {
+      valid: (value): value is { offset: number; candidateId: string } => {
+        if (!value || typeof value !== 'object') return false;
+        const record = value as { offset: number; candidateId: string };
+        return (
+          Number.isInteger(record.offset) &&
+          record.offset >= 0 &&
+          typeof record.candidateId === 'string'
+        );
+      },
+    },
+  );
+  const restoredView = useRef<string | null>(null);
+  const [viewError, setViewError] = useState('');
+  useEffect(() => {
+    if (
+      !draftKey ||
+      restoredView.current === draftKey ||
+      !v.candidates.total ||
+      !state.candidates.limit ||
+      !state.candidates.items.length
+    )
+      return;
+    restoredView.current = draftKey;
+    const saved = candidateView.value;
+    if (candidateView.status !== 'local') return;
+    let active = true;
+    // Restoring a read-only page/selection never changes scientific filtering,
+    // submits a Gate or starts computation.
+    void (async () => {
+      const offset = saved.offset < v.candidates.total ? saved.offset : 0;
+      if (offset !== state.candidates.offset) await adapter.candidatePage(offset);
+      if (active && saved.candidateId) await adapter.selectCandidate(saved.candidateId);
+    })().catch((error: Error) => {
+      if (active) setViewError(error.message);
+    });
+    return () => {
+      active = false;
+    };
+    // Re-run only for a new project or when its first candidate page becomes available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    draftKey,
+    v.candidates.total > 0,
+    state.candidates.limit > 0,
+    state.candidates.items.length > 0,
+    adapter,
+  ]);
   const [selectedTargetPreview, setSelectedTargetPreview] = useState('');
   const targetEvidence = c.target || {},
     targetFacts =
@@ -76,7 +138,7 @@ export function LiveContext({
       String(targetFacts.canonical_accession || '') ||
       String(c.target_intent?.target_label || '') ||
       String(c.target_source?.query || '') ||
-      'Your target';
+      t('Your target');
   const defaultTargetPreview = String(
       v.decision?.default_option_id || targetOptions[0]?.option_id || '',
     ),
@@ -105,19 +167,36 @@ export function LiveContext({
       : Object.fromEntries((c.chains || []).map((chain) => [chain, 'focus-target']));
   const emptyStructureMessage =
     targetEvidence.decision_kind === 'identity-selection'
-      ? 'Approve the verified target identity before structure candidates are prepared.'
+      ? t('Approve the verified target identity before structure candidates are prepared.')
       : targetEvidence.decision_kind === 'structure-selection'
-        ? 'Select and approve a verified structure candidate to load its coordinates.'
+        ? t('Select and approve a verified structure candidate to load its coordinates.')
         : v.lifecycle === 'failed'
-          ? 'Target research stopped before verified structure evidence was prepared. Retry Target Intelligence to continue.'
-          : 'Structure evidence is not available yet.';
+          ? t(
+              'Target research stopped before verified structure evidence was prepared. Retry Target Intelligence to continue.',
+            )
+          : t('Structure evidence is not available yet.');
   const site = c.sites.find((s) => s.id === siteId) || c.sites[0];
   const entries = state.candidates.items;
   const nativeProgress = ['pilot', 'scale'].includes(phase)
     ? v.jobs.find((job) => job.phase === phase && ['queued', 'running'].includes(job.status))
         ?.progress
     : undefined;
-  const select = (candidate: Candidate) => void adapter.selectCandidate(candidate.id);
+  const select = (candidate: Candidate) => {
+    candidateView.setValue({
+      offset: state.candidates.offset,
+      candidateId: candidate.id,
+    });
+    void adapter.selectCandidate(candidate.id).catch((error: Error) => setViewError(error.message));
+  };
+  const page = async (offset: number) => {
+    setViewError('');
+    try {
+      await adapter.candidatePage(offset);
+      candidateView.setValue({ offset, candidateId: '' });
+    } catch (error) {
+      setViewError((error as Error).message);
+    }
+  };
   const structure = (candidate?: Candidate | null) => (
     <StructureViewer
       artifact={
@@ -144,7 +223,7 @@ export function LiveContext({
     <div className="candidate-metrics">
       {candidateMetrics.slice(0, 3).map((m) => (
         <div key={m.id}>
-          <span>{m.label}</span>
+          <span>{t(m.label)}</span>
           <strong>
             {metricValue(m.value)} {m.unit}
           </strong>
@@ -171,7 +250,7 @@ export function LiveContext({
       ref={panel}
       id="scientific-context"
       className={`scientific-context phase-${phase}`}
-      aria-label="Scientific Context"
+      aria-label={t('Scientific Context')}
       tabIndex={-1}
       onKeyDown={(e) => {
         if (e.key === 'Escape') onClose();
@@ -179,13 +258,13 @@ export function LiveContext({
     >
       <header className="context-header">
         <div>
-          <span className="eyebrow">SCIENTIFIC CONTEXT</span>
-          <span className="context-phase">{phase[0].toUpperCase() + phase.slice(1)}</span>
+          <span className="eyebrow">{t('SCIENTIFIC CONTEXT')}</span>
+          <span className="context-phase">{t(phase[0].toUpperCase() + phase.slice(1))}</span>
         </div>
         <DemoBadge mode="live" />
         <button
           className="context-close icon-button"
-          aria-label="Close scientific context"
+          aria-label={t('Close scientific context')}
           onClick={onClose}
         >
           <X size={16} />
@@ -198,23 +277,23 @@ export function LiveContext({
               <span className="object-icon">
                 <Target size={24} />
               </span>
-              <h2>A focused research goal</h2>
+              <h2>{t('A focused research goal')}</h2>
               <p>{v.project.goal}</p>
             </div>
             <div className="definition-list">
               <div>
-                <span>Target</span>
-                <strong>{c.target_id || 'Under review'}</strong>
+                <span>{t('Target')}</span>
+                <strong>{c.target_id || t('Under review')}</strong>
               </div>
               <div>
-                <span>Current step</span>
-                <strong>{v.project.phase}</strong>
+                <span>{t('Current step')}</span>
+                <strong>{t(v.project.phase[0].toUpperCase() + v.project.phase.slice(1))}</strong>
               </div>
             </div>
             <div className="source-placeholder">
               <Layers size={18} />
-              <strong>Your research starts here</strong>
-              <p>Your goal, source structure and decisions stay with this project.</p>
+              <strong>{t('Your research starts here')}</strong>
+              <p>{t('Your goal, source structure and decisions stay with this project.')}</p>
             </div>
           </>
         )}
@@ -222,7 +301,7 @@ export function LiveContext({
           <>
             <div className="context-title">
               <div className="title-with-icon">
-                <h2>{phase === 'target' ? targetLabel : 'Choose a binding site'}</h2>
+                <h2>{phase === 'target' ? targetLabel : t('Choose a binding site')}</h2>
                 <span className="object-icon small">
                   <Dna size={17} />
                 </span>
@@ -230,7 +309,9 @@ export function LiveContext({
               <p>
                 {phase === 'target'
                   ? 'A structural reference for your binder design.'
-                  : `${c.sites.length} candidate sites on your target.`}
+                  : t('{{count}} candidate sites on your target.', {
+                      count: c.sites.length,
+                    })}
               </p>
             </div>
             {structure()}
@@ -238,90 +319,107 @@ export function LiveContext({
               <>
                 <div className="identity-grid">
                   <div>
-                    <span>Target</span>
+                    <span>{t('Target')}</span>
                     <strong>{targetLabel}</strong>
                   </div>
                   <div>
-                    <span>Target chain</span>
-                    <strong>{c.chains?.join(', ') || 'Under review'}</strong>
+                    <span>{t('Target chain')}</span>
+                    <strong>{c.chains?.join(', ') || t('Under review')}</strong>
                   </div>
                   <div>
-                    <span>Residues</span>
-                    <strong>{c.sequence_length || 'Under review'}</strong>
+                    <span>{t('Residues')}</span>
+                    <strong>{c.sequence_length || t('Under review')}</strong>
                   </div>
                   <div>
-                    <span>Structure</span>
+                    <span>{t('Structure')}</span>
                     <strong>
                       {c.structure?.format.toUpperCase() ||
                         (targetOptions.length
-                          ? `${targetOptions.length} candidates`
-                          : 'Under review')}
+                          ? t('{{count}} candidates', {
+                              count: targetOptions.length,
+                            })
+                          : t('Under review'))}
                     </strong>
                   </div>
                 </div>
                 <div className="definition-list target-source-facts">
                   <div>
-                    <span>Organism</span>
+                    <span>{t('Organism')}</span>
                     <strong>
                       {String(
                         c.target_intent?.organism ||
                           c.target_source?.organism_taxon_id ||
-                          'Under review',
+                          t('Under review'),
                       )}
                     </strong>
                   </div>
                   <div>
-                    <span>Evidence state</span>
+                    <span>{t('Evidence state')}</span>
                     <strong>{String(targetEvidence.status || v.lifecycle)}</strong>
                   </div>
                 </div>
                 {!!targetOptions.length && (
                   <div className="target-structure-options">
                     <div className="section-label">
-                      <h3>Automatically selected structure</h3>
-                      <span>Recommended for this target</span>
+                      <h3>{t('Automatically selected structure')}</h3>
+                      <span>{t('Recommended for this target')}</span>
                     </div>
                     {defaultTargetOption && (
                       <button
                         type="button"
                         className="target-structure-card recommended"
-                        aria-label={`Preview recommended structure ${String(defaultTargetOption.label || defaultTargetOption.option_id)}`}
+                        aria-label={t('Preview recommended structure {{name}}', {
+                          name: String(defaultTargetOption.label || defaultTargetOption.option_id),
+                        })}
                         aria-pressed={String(defaultTargetOption.option_id) === activeTargetPreview}
                         disabled={!defaultTargetOption.preview_artifact}
                         onClick={() =>
                           setSelectedTargetPreview(String(defaultTargetOption.option_id))
                         }
                       >
-                        <span className="target-structure-badge">Recommended · selected</span>
+                        <span className="target-structure-badge">
+                          {t('Recommended · selected')}
+                        </span>
                         <strong>
                           {String(defaultTargetOption.label || defaultTargetOption.option_id)}
                         </strong>
                         <span>
-                          {String(defaultTargetOption.description || 'Verified candidate')}
+                          {String(defaultTargetOption.description || t('Verified candidate'))}
                         </span>
                       </button>
                     )}
                     <p className="target-selection-note">
-                      The structure and chain are already selected. Approve the target to continue;
-                      use Change structure only if you want to replace this recommendation.
+                      {t(
+                        'The structure and chain are already selected. Approve the target to continue; use Change structure only if you want to replace this recommendation.',
+                      )}
                     </p>
                     {!!alternativeTargetOptions.length && (
                       <details className="target-alternatives">
-                        <summary>View alternatives ({alternativeTargetOptions.length})</summary>
-                        <p>Previewing an alternative does not change the Gate 1 selection.</p>
+                        <summary>
+                          {t('View alternatives ({{count}})', {
+                            count: alternativeTargetOptions.length,
+                          })}
+                        </summary>
+                        <p>
+                          {t('Previewing an alternative does not change the Gate 1 selection.')}
+                        </p>
                         <div className="target-alternative-list">
                           {alternativeTargetOptions.map((candidate) => (
                             <button
                               type="button"
                               className="target-structure-card"
                               key={String(candidate.option_id)}
-                              aria-label={`Preview alternative structure ${String(candidate.label || candidate.option_id)}`}
+                              aria-label={t('Preview alternative structure {{name}}', {
+                                name: String(candidate.label || candidate.option_id),
+                              })}
                               aria-pressed={String(candidate.option_id) === activeTargetPreview}
                               disabled={!candidate.preview_artifact}
                               onClick={() => setSelectedTargetPreview(String(candidate.option_id))}
                             >
                               <strong>{String(candidate.label || candidate.option_id)}</strong>
-                              <span>{String(candidate.description || 'Verified candidate')}</span>
+                              <span>
+                                {String(candidate.description || t('Verified candidate'))}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -331,16 +429,16 @@ export function LiveContext({
                 )}
                 <div className="quiet-note">
                   <Check size={14} />
-                  <p>Review the target and its evidence before moving to site comparison.</p>
+                  <p>{t('Review the target and its evidence before moving to site comparison.')}</p>
                 </div>
               </>
             ) : (
               <>
                 <div className="section-label">
-                  <h3>Candidate sites</h3>
-                  <span>Relative recommendation</span>
+                  <h3>{t('Candidate sites')}</h3>
+                  <span>{t('Relative recommendation')}</span>
                 </div>
-                <div className="site-tabs" role="group" aria-label="Candidate sites">
+                <div className="site-tabs" role="group" aria-label={t('Candidate sites')}>
                   {c.sites.map((s) => (
                     <button
                       key={s.id}
@@ -348,7 +446,7 @@ export function LiveContext({
                       onClick={() => onSite(s.id)}
                     >
                       <span className={`site-swatch site-${s.rank}`} />
-                      Site {s.rank}
+                      {t('Site')} {s.rank}
                       {s.rank === 'A' && <span className="recommend-star">✧</span>}
                     </button>
                   ))}
@@ -356,30 +454,32 @@ export function LiveContext({
                 {site && (
                   <>
                     <div className="selected-site-heading">
-                      <strong>Site {site.rank}</strong>
+                      <strong>
+                        {t('Site')} {site.rank}
+                      </strong>
                       <span className="recommendation">
                         {!site.selectable
-                          ? 'Blocked'
+                          ? t('Blocked')
                           : site.rank === 'A'
-                            ? 'Recommended'
+                            ? t('Recommended')
                             : site.rank === 'B'
-                              ? 'Alternative'
-                              : 'Exploratory'}
+                              ? t('Alternative')
+                              : t('Exploratory')}
                       </span>
                     </div>
                     <p className="site-rationale">{site.why_ranked}</p>
                     <div className="definition-list">
                       <div>
-                        <span>Confidence</span>
-                        <strong>{site.confidence || 'Not assessed'}</strong>
+                        <span>{t('Confidence')}</span>
+                        <strong>{site.confidence || t('Not assessed')}</strong>
                       </div>
                       <div>
-                        <span>Candidate</span>
+                        <span>{t('Candidate')}</span>
                         <strong>{site.name}</strong>
                       </div>
                     </div>
                     <div className="residues">
-                      <span className="eyebrow">HOTSPOT RESIDUES</span>
+                      <span className="eyebrow">{t('HOTSPOT RESIDUES')}</span>
                       <div>
                         {site.coordinates.length
                           ? site.coordinates.map((r, i) => (
@@ -391,25 +491,27 @@ export function LiveContext({
                           : site.design_labels.map((n) => <span key={n}>{n}</span>)}
                       </div>
                     </div>
-                    {details('Risks', site.risks)}
-                    {details('Uncertainties', site.uncertainty)}
+                    {details(t('Risks'), site.risks)}
+                    {details(t('Uncertainties'), site.uncertainty)}
                   </>
                 )}
                 {compare && (
                   <div className="comparison-table">
-                    <h3>Compare candidate sites</h3>
+                    <h3>{t('Compare candidate sites')}</h3>
                     <table>
                       <thead>
                         <tr>
-                          <th>Site</th>
-                          <th>Confidence</th>
-                          <th>Recommendation</th>
+                          <th>{t('Site')}</th>
+                          <th>{t('Confidence')}</th>
+                          <th>{t('Recommendation')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {c.sites.map((s) => (
                           <tr key={s.id} className={s.id === siteId ? 'selected' : ''}>
-                            <th>Site {s.rank}</th>
+                            <th>
+                              {t('Site')} {s.rank}
+                            </th>
                             <td>{s.confidence}</td>
                             <td>{s.why_ranked}</td>
                           </tr>
@@ -421,8 +523,10 @@ export function LiveContext({
                 {!site && (
                   <p className="scientific-disclaimer">
                     {c.approved_site
-                      ? 'This saved project contains an approved hotspot; the earlier candidate portfolio is unavailable.'
-                      : 'Candidate sites will appear when the research is ready.'}
+                      ? t(
+                          'This saved project contains an approved hotspot; the earlier candidate portfolio is unavailable.',
+                        )
+                      : t('Candidate sites will appear when the research is ready.')}
                   </p>
                 )}
               </>
@@ -432,10 +536,11 @@ export function LiveContext({
         {phase === 'design' && (
           <>
             <div className="context-title">
-              <h2>A deliberate first pilot</h2>
+              <h2>{t('A deliberate first pilot')}</h2>
               <p>
-                {c.arms.length} complementary design{' '}
-                {c.arms.length === 1 ? 'approach' : 'approaches'}.
+                {t('{{count}} complementary design approaches.', {
+                  count: c.arms.length,
+                })}
               </p>
             </div>
             <div className="approved-site">
@@ -443,24 +548,28 @@ export function LiveContext({
                 <Check size={13} />
               </span>
               <div>
-                <span className="eyebrow">APPROVED SITE</span>
+                <span className="eyebrow">{t('APPROVED SITE')}</span>
                 <strong>
                   {c.approved_site?.selected_rank
-                    ? `Site ${c.approved_site.selected_rank}`
-                    : 'See approved hotspot'}
+                    ? t('Site {{name}}', {
+                        name: c.approved_site.selected_rank,
+                      })
+                    : t('See approved hotspot')}
                 </strong>
               </div>
               <span>{c.target_id}</span>
             </div>
             <div className="scaffold-card">
               <Dna size={34} strokeWidth={1.2} />
-              <span className="eyebrow">BINDER SCAFFOLD</span>
-              <h3>Design strategy</h3>
-              <p>{c.design_approved ? 'Approved design' : 'Ready for scientific review'}</p>
+              <span className="eyebrow">{t('BINDER SCAFFOLD')}</span>
+              <h3>{t('Design strategy')}</h3>
+              <p>{c.design_approved ? t('Approved design') : t('Ready for scientific review')}</p>
             </div>
             <div className="section-label">
-              <h3>Design arms</h3>
-              <span>{c.arms.length} arms</span>
+              <h3>{t('Design arms')}</h3>
+              <span>
+                {c.arms.length} {t('arms')}
+              </span>
             </div>
             <div className="design-arms">
               {c.arms.map((a, i) => (
@@ -474,7 +583,7 @@ export function LiveContext({
               ))}
             </div>
             <details className="evidence-details">
-              <summary>Design files</summary>
+              <summary>{t('Design files')}</summary>
               {v.artifacts
                 .filter((a) => ['yaml', 'yml', 'json'].includes(a.format))
                 .map((a) => (
@@ -487,17 +596,19 @@ export function LiveContext({
           </>
         )}
         {nativeProgress && (
-          <section aria-label="Native execution progress">
+          <section aria-label={t('Native execution progress')}>
             <div className="context-title">
-              <h2>{phase === 'pilot' ? 'Pilot' : 'Scale'} computation in progress</h2>
+              <h2>
+                {phase === 'pilot' ? t('Pilot') : t('Scale')} {t('computation in progress')}
+              </h2>
               <p>
-                {nativeProgress.completed} / {nativeProgress.total} candidates collected
+                {nativeProgress.completed} / {nativeProgress.total} {t('candidates collected')}
               </p>
             </div>
             <div
               className="scale-progress"
               role="progressbar"
-              aria-label="Native candidates collected"
+              aria-label={t('Native candidates collected')}
               aria-valuemin={0}
               aria-valuenow={nativeProgress.completed}
               aria-valuemax={nativeProgress.total || 1}
@@ -509,36 +620,42 @@ export function LiveContext({
               />
             </div>
             <p>
-              {nativeProgress.completed_tasks} / {nativeProgress.total_tasks} strategy tasks
-              complete · {nativeProgress.substage_label || nativeProgress.status}
+              {nativeProgress.completed_tasks} / {nativeProgress.total_tasks}{' '}
+              {t('strategy tasks complete ·')}{' '}
+              {nativeProgress.substage_label || nativeProgress.status}
             </p>
             <p>
-              Collected candidates are not native PASS results. Final evidence is still being
-              prepared.
+              {t(
+                'Collected candidates are not native PASS results. Final evidence is still being prepared.',
+              )}
             </p>
           </section>
         )}
         {phase === 'scale' && (
           <>
             <div className="context-title">
-              <h2>A broader view of the possibilities</h2>
-              <p>Review progress across the approved design arms.</p>
+              <h2>{t('A broader view of the possibilities')}</h2>
+              <p>{t('Review progress across the approved design arms.')}</p>
             </div>
             <div className="scale-counter">
               <strong>
                 {completedBatches}
                 <span> / {batches || '—'}</span>
               </strong>
-              <span>batches complete</span>
+              <span>{t('batches complete')}</span>
             </div>
             <div
               className="scale-progress"
               role="progressbar"
-              aria-label="Scale progress"
+              aria-label={t('Scale progress')}
               aria-valuenow={completedBatches}
               aria-valuemax={batches || 1}
             >
-              <span style={{ width: `${batches ? (completedBatches / batches) * 100 : 0}%` }} />
+              <span
+                style={{
+                  width: `${batches ? (completedBatches / batches) * 100 : 0}%`,
+                }}
+              />
             </div>
             <div className="batch-list">
               {v.jobs
@@ -549,8 +666,8 @@ export function LiveContext({
                       <Layers size={15} />
                     </span>
                     <div>
-                      <strong>{j.status}</strong>
-                      <span>{j.resumable ? 'Available to resume' : 'Scale batch'}</span>
+                      <strong>{t(j.status[0].toUpperCase() + j.status.slice(1))}</strong>
+                      <span>{j.resumable ? t('Available to resume') : t('Scale batch')}</span>
                     </div>
                   </div>
                 ))}
@@ -558,11 +675,11 @@ export function LiveContext({
             <div className="scale-legend">
               <span>
                 <i className="pass" />
-                {v.candidates.counts.pass || 0} pass
+                {v.candidates.counts.pass || 0} {t('pass')}
               </span>
               <span>
                 <i className="filtered" />
-                {v.candidates.counts.fail || 0} filtered
+                {v.candidates.counts.fail || 0} {t('filtered')}
               </span>
             </div>
           </>
@@ -573,22 +690,22 @@ export function LiveContext({
               <div className="title-with-icon">
                 <h2>
                   {phase === 'pilot'
-                    ? 'Small pilot, clear comparison'
+                    ? t('Small pilot, clear comparison')
                     : v.project.status === 'complete'
-                      ? 'Your finalized panel'
-                      : 'Your candidates to explore'}
+                      ? t('Your finalized panel')
+                      : t('Your candidates to explore')}
                 </h2>
                 <span className="count-label">{v.candidates.total}</span>
               </div>
-              <p>Compare the evidence and explore each candidate.</p>
+              <p>{t('Compare the evidence and explore each candidate.')}</p>
             </div>
             {!(nativeProgress && v.candidates.total === 0) && (
               <div className="pass-summary">
                 <strong>
-                  {v.candidates.counts.pass || 0} of {v.candidates.total} pass
+                  {v.candidates.counts.pass || 0} {t('of')} {v.candidates.total} {t('pass')}
                   <span>
-                    {v.candidates.counts.fail || 0} filtered · {v.candidates.counts.incomplete || 0}{' '}
-                    incomplete
+                    {v.candidates.counts.fail || 0} {t('filtered ·')}{' '}
+                    {v.candidates.counts.incomplete || 0} {t('incomplete')}
                   </span>
                 </strong>
                 <div className="pass-segments">
@@ -614,7 +731,7 @@ export function LiveContext({
                   <span>{selected.panel_role || selected.scaffold}</span>
                   <div>
                     <button
-                      aria-label="Previous candidate"
+                      aria-label={t('Previous candidate')}
                       onClick={() =>
                         select(
                           entries[
@@ -626,7 +743,7 @@ export function LiveContext({
                       <ChevronLeft size={15} />
                     </button>
                     <button
-                      aria-label="Next candidate"
+                      aria-label={t('Next candidate')}
                       onClick={() =>
                         select(entries[(entries.indexOf(selected) + 1) % entries.length])
                       }
@@ -639,17 +756,19 @@ export function LiveContext({
                 {metricCards}
                 {selected.sequence && (
                   <div className="sequence-preview">
-                    <span>Binder sequence · {selected.sequence.length} aa</span>
+                    <span>
+                      {t('Binder sequence ·')} {selected.sequence.length} aa
+                    </span>
                     <code>{selected.sequence}</code>
                   </div>
                 )}
                 <details className="evidence-details">
-                  <summary>All measurements & evidence</summary>
+                  <summary>{t('All measurements & evidence')}</summary>
                   <table className="metric-table">
                     <tbody>
                       {selected.metrics.map((m) => (
                         <tr key={m.id}>
-                          <th>{m.label}</th>
+                          <th>{t(m.label)}</th>
                           <td>
                             {show(m.value)} {m.unit}
                           </td>
@@ -667,8 +786,8 @@ export function LiveContext({
               </>
             )}
             <div className="section-label">
-              <h3>{phase === 'pilot' ? 'Pilot candidates' : 'Candidate panel'}</h3>
-              <span>Native evidence</span>
+              <h3>{phase === 'pilot' ? t('Pilot candidates') : t('Candidate panel')}</h3>
+              <span>{t('Native evidence')}</span>
             </div>
             <div className="finalists-grid">
               {entries.map((ca) => (
@@ -678,7 +797,9 @@ export function LiveContext({
                 >
                   <button
                     className="candidate-select live-candidate-select"
-                    aria-label={`Select ${ca.backend_id || ca.id} ${ca.scaffold || ''}`}
+                    aria-label={t('Select {{name}}', {
+                      name: [ca.backend_id || ca.id, ca.scaffold].filter(Boolean).join(' '),
+                    })}
                     aria-pressed={selected?.id === ca.id}
                     onClick={() => select(ca)}
                   >
@@ -690,7 +811,7 @@ export function LiveContext({
                     <span className="candidate-card-extra">
                       {headlineMetrics(ca).map((m) => (
                         <span key={m.id}>
-                          {m.label} <b>{metricValue(m.value)}</b>
+                          {t(m.label)} <b>{metricValue(m.value)}</b>
                         </span>
                       ))}
                     </span>
@@ -698,15 +819,14 @@ export function LiveContext({
                 </div>
               ))}
             </div>
+            {viewError && <p role="alert">{viewError}</p>}
             {state.candidates.total > state.candidates.limit && (
               <div className="live-pager">
                 <button
                   disabled={!state.candidates.offset}
-                  onClick={() =>
-                    void adapter.candidatePage(state.candidates.offset - state.candidates.limit)
-                  }
+                  onClick={() => void page(state.candidates.offset - state.candidates.limit)}
                 >
-                  Previous
+                  {t('Previous')}
                 </button>
                 <span>
                   {state.candidates.offset + 1}–
@@ -719,22 +839,23 @@ export function LiveContext({
                   disabled={
                     state.candidates.offset + state.candidates.limit >= state.candidates.total
                   }
-                  onClick={() =>
-                    void adapter.candidatePage(state.candidates.offset + state.candidates.limit)
-                  }
+                  onClick={() => void page(state.candidates.offset + state.candidates.limit)}
                 >
-                  Next
+                  {t('Next')}
                 </button>
               </div>
             )}
           </>
         )}
         {v.project.validation_only && (
-          <p className="scientific-disclaimer">Validation only · not authorized for experiment</p>
+          <p className="scientific-disclaimer">
+            {t('Validation only · not authorized for experiment')}
+          </p>
         )}
         {v.decision?.details_url && (
           <a className="artifact-download" href={v.decision.details_url} download>
-            Complete scientific review <ArrowDownToLine size={13} />
+            {t('Complete scientific review')}
+            <ArrowDownToLine size={13} />
           </a>
         )}
       </div>

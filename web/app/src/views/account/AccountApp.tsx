@@ -1,7 +1,11 @@
 import {useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
+import {LayoutGrid, Users, ChartNoAxesCombined, ShieldCheck, Settings, PanelLeftClose, PanelLeftOpen, ArrowLeft, X, LogOut, Eye, EyeOff, Plus} from 'lucide-react';
+import {useSearchParams} from 'react-router-dom';
+import {AccountLanguage} from '../../shell/WorkspaceBar';
+import {accountSections, type AccountSection} from '../../shell/AccountPanel';
 import {
-  accountApi, AccountApiError, draftsApi, fetchAccountConfig, fetchFinalDesignsOverview, fetchScopeUsage,
+  accountApi, draftsApi, fetchAccountConfig, fetchFinalDesignsOverview, fetchScopeUsage,
   notifySessionChange, scopedTransport, type AccountConfig, type AccountScope,
   type AccountSession, type AccountUser, type FinalDesignEntry, type FinalDesignsBlock,
   type FinalDesignsOverview, type ProjectDraft, type QuotaLimits, type ScopeUsage,
@@ -91,7 +95,10 @@ function useGuardedLoad<T>(): GuardedState<T> {
     setBusy(false);
   }, []);
   const patch = useCallback((update: (current: T) => T) => {
-    setValue(current => current === null ? current : update(current));
+    if (latest.current === null) return;
+    const next = update(latest.current);
+    latest.current = next;
+    setValue(next);
   }, []);
   return {value, error, busy, load, clear, patch};
 }
@@ -120,13 +127,14 @@ function useAction() {
   return {busy, run, feedback: <>{error && <p className="account-error" role="alert">{error}</p>}{message && <p className="account-success" role="status">{message}</p>}</>};
 }
 
-function Login({onLogin, login}: {onLogin: (session: AccountSession) => void; login: (username: string, password: string) => Promise<AccountSession>}) {
+function Login({login}: {login: (username: string, password: string) => Promise<void>}) {
   const { t } = useTranslation('account');
   const [register, setRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [setup, setSetup] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const action = useAction();
   useEffect(() => {
     let disposed = false;
@@ -141,26 +149,28 @@ function Login({onLogin, login}: {onLogin: (session: AccountSession) => void; lo
         await accountApi('/accounts/register', null, {username, password, display_name: displayName || username});
         setPassword(''); setRegister(false);
       } else {
-        const session = await login(username, password);
+        await login(username, password);
         setPassword('');
-        onLogin(session);
       }
     }, register ? t('Registration complete. You can sign in now.') : '');
   }
-  return <main className="account-login">
-    <Brand/><h1>{register ? t('Create an EasyDesign account') : t('Sign in to EasyDesign')}</h1>
+  return <div className="account-auth-page">
+    <header className="account-auth-header"><a href="#/" aria-label="EasyDesign"><Brand/></a><AccountLanguage/></header>
+    <main className="account-login">
+    <div className="account-auth-mark"><Brand compact/></div><h1>{register ? t('Create an EasyDesign account') : t('Sign in to EasyDesign')}</h1>
     <p>{t('Personal workspaces are private; team projects are shared by permission.')}</p>
     {setup && <p role="status" className="account-notice">{t('The administrator has not completed setup; contact the deployment owner to finish the security bootstrap.')}</p>}
     <form onSubmit={submit}>
       <label>{t('Username')}<input required value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" minLength={3} maxLength={64}/></label>
       {register && <label>{t('Display name')}<input value={displayName} onChange={event => setDisplayName(event.target.value)} maxLength={100}/></label>}
-      <label>{t('Password')}<input type="password" required value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 12 : undefined} maxLength={256}/></label>
+      <label>{t('Password')}<span className="account-password-field"><input type={showPassword ? 'text' : 'password'} required value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 12 : undefined} maxLength={256}/><button type="button" aria-label={showPassword ? t('Hide password') : t('Show password')} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></span></label>
       {register && <small>{t('At least 12 characters. You can sign in immediately after registration.')}</small>}
       <button className="account-primary" disabled={action.busy || setup}>{action.busy ? t('Processing…') : register ? t('Create account') : t('Sign in')}</button>
       {action.feedback}
     </form>
     <button className="account-link" onClick={() => {setRegister(!register); setPassword('');}}>{register ? t('Have an account? Back to sign in') : t('No account? Create one')}</button>
-  </main>;
+    <a className="account-back-link" href="#/"><ArrowLeft size={15}/>{t('Back to workspace')}</a>
+  </main><footer className="account-auth-footer">{t('A workspace for evidence-led protein design')}</footer></div>;
 }
 
 function Password({session, changed}: {session: AccountSession; changed: () => void}) {
@@ -183,13 +193,12 @@ function Password({session, changed}: {session: AccountSession; changed: () => v
 
 function Workspaces({session, refresh}: {session: AccountSession; refresh: () => Promise<void>}) {
   const { t } = useTranslation('account');
-  const [teamName, setTeamName] = useState('');
   const action = useAction();
   return <>
     <section className="account-panel"><h2>{t('My workspaces')}</h2><p>{t('Personal by default. New projects are shared with a team only after you enter its workspace.')}</p>
       <div className="account-grid">{session.scopes.map(scope => <article className="account-scope" key={scope.id}>
         <h3>{scope.name}</h3><span>{scope.kind === 'personal' ? t('Personal private') : scope.role === 'observer' ? t('Read-only access') : scope.can_execute ? t('Team admin') : t('Team member')}</span>
-        <p>{scope.can_execute ? t('You can edit, approve Gates, and start compute.') : t('You can collaboratively edit and view results; scientific approval and compute start are handled by team admins.')}</p>
+        <p>{scope.can_execute ? t('You can edit, approve Gates, and start compute.') : scope.can_edit ? t('You can collaboratively edit and view results; scientific approval and compute start are handled by team admins.') : t('You can view this workspace. Editing and scientific approval are unavailable for this role.')}</p>
         <a className="account-primary" href={workspaceHref(scope.id, 'easy')}>{t('Enter Easy workspace')}</a>
         <a href={workspaceHref(scope.id, 'pro')}>{t('Open Pro')}</a>
       </article>)}</div>
@@ -200,13 +209,22 @@ function Workspaces({session, refresh}: {session: AccountSession; refresh: () =>
         await accountApi(`/invitations/${invitation.id}`, session, {accept}); await refresh();
       })}>{accept ? t('Accept invitation') : t('Decline')}</button>)}
     </div>)}</section>}
+
+  </>;
+}
+
+function CreateTeam({session, refresh}: {session: AccountSession; refresh: () => Promise<void>}) {
+  const { t } = useTranslation('account');
+  const [teamName, setTeamName] = useState('');
+  const action = useAction();
+  return <details className="account-create-team"><summary><Plus size={16}/>{t('Create team')}</summary>
     <section className="account-panel"><h2>{t('Create team')}</h2><form onSubmit={event => {event.preventDefault(); void action.run(async () => {
       await accountApi('/teams', session, {name: teamName}); setTeamName(''); await refresh();
     }, t('Team created'));}}>
       <label>{t('Team name')}<input value={teamName} onChange={event => setTeamName(event.target.value)} required maxLength={100}/></label>
       <button disabled={action.busy} className="account-primary">{t('Create team')}</button>{action.feedback}
     </form></section>
-  </>;
+  </details>;
 }
 
 function DraftEditor({draft, busy, onSave, onCancel}: {
@@ -218,17 +236,26 @@ function DraftEditor({draft, busy, onSave, onCancel}: {
   const { t } = useTranslation('account');
   const [title, setTitle] = useState(draft.payload.title);
   const [goal, setGoal] = useState(draft.payload.goal);
+  const [baseRevision, setBaseRevision] = useState(draft.revision);
+  const conflicted = draft.revision !== baseRevision || draft.state !== 'draft';
   return <form className="account-draft-form" onSubmit={event => {
     event.preventDefault();
-    onSave({title: title.trim(), goal: goal.trim()}, draft.revision);
+    if (busy || conflicted) return;
+    onSave({title: title.trim(), goal: goal.trim()}, baseRevision);
   }}>
     <label>{t('Title')}<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={80}/></label>
     <label>{t('Research goal')}<textarea rows={3} value={goal} onChange={event => setGoal(event.target.value)} required maxLength={1500}/></label>
     <div className="account-row">
-      <button className="account-primary" disabled={busy || !title.trim() || !goal.trim()}>{t('Save new version')}</button>
+      <button className="account-primary" disabled={busy || conflicted || !title.trim() || !goal.trim()}>{t('Save new version')}</button>
       <button type="button" disabled={busy} onClick={onCancel}>{t('Cancel')}</button>
-      <small>{t('Saving on top of revision r{{revision}}; if another member saves at the same time you will be asked to reload.', {revision: draft.revision})}</small>
+      <small>{t('Saving on top of revision r{{revision}}; if another member saves at the same time you will be asked to reload.', {revision: baseRevision})}</small>
     </div>
+    {conflicted && <p className="account-notice" role="status">
+      {t('The saved draft changed. Your input is still here; copy it or explicitly load the latest saved version before editing again.')}
+      {draft.state === 'draft' && <button type="button" disabled={busy} onClick={() => {
+        setTitle(draft.payload.title); setGoal(draft.payload.goal); setBaseRevision(draft.revision);
+      }}>{t('Discard my edits and load the latest saved version')}</button>}
+    </p>}
   </form>;
 }
 
@@ -246,7 +273,11 @@ function TeamDrafts({session, scope, team, computeAvailable}: {
   const reload = useCallback(() => {
     load(async () => (await draftsApi.list(scopedTransport(session, scope))).drafts);
   }, [load, session, scope]);
-  useEffect(() => { setEditing(null); setCreating(false); setStarted(null); reload(); }, [reload]);
+  // A refreshed cookie/permission object does not change who owns this form.
+  // Keep unsubmitted edits across same-account recovery; reset only when the
+  // account or team actually changes, and load refreshed server data separately.
+  useEffect(() => { setEditing(null); setCreating(false); setStarted(null); }, [session.user.id, scope.id]);
+  useEffect(() => { reload(); }, [reload]);
   const names = new Map((team?.members || []).map(member => [member.user_id, member.display_name]));
   const nameOf = (id: string) => names.get(id) || (id === session.user.id ? session.user.display_name : id.slice(0, 12));
   const canEdit = scope.can_edit;
@@ -279,17 +310,16 @@ function TeamDrafts({session, scope, team, computeAvailable}: {
           : draft.state === 'starting' ? t('Starting') : t('Draft · r{{revision}}', {revision: draft.revision})}</td>
         <td><small>{t('Created {{name}}', {name: nameOf(draft.created_by)})}<br/>{t('Updated {{name}} · {{time}}', {name: nameOf(draft.updated_by), time: when(draft.updated_at)})}</small></td>
         <td className="account-actions">
-          {draft.state === 'draft' && canEdit && (editing === draft.id
-            ? <DraftEditor draft={draft} busy={action.busy} onCancel={() => setEditing(null)}
+          {(draft.state === 'draft' || editing === draft.id) && canEdit && (editing === draft.id
+            ? <DraftEditor draft={draft} busy={action.busy || busy} onCancel={() => setEditing(null)}
                 onSave={(value, revision) => void action.run(async () => {
                   try {
                     await draftsApi.save(scopedTransport(session, scope), value, draft.id, revision);
                     setEditing(null);
                   } catch (reason) {
-                    // A conflicted editor must close: the surviving revision is
-                    // the other member's, never a merge of stale local text.
-                    if (reason instanceof AccountApiError && ['stale_draft', 'draft_frozen'].includes(reason.code))
-                      setEditing(null);
+                    // Keep the researcher's text. Reloading server data updates
+                    // the conflict warning but never upgrades this edit's base
+                    // revision or silently overwrites the saved version.
                     throw reason;
                   } finally {
                     reload();
@@ -318,12 +348,15 @@ function Teams({session, refresh, computeAvailable}: {
   session: AccountSession; refresh: () => Promise<void>; computeAvailable: boolean;
 }) {
   const { t } = useTranslation('account');
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(session.scopes.find(item => item.kind === 'team')?.id ?? '');
   const {value: team, error: teamError, busy: teamBusy, load: loadTeam, clear: clearTeam} = useGuardedLoad<Team>();
   const [username, setUsername] = useState('');
   const [role, setRole] = useState('member');
   const action = useAction();
   const scope = session.scopes.find(item => item.id === selected);
+  useEffect(() => {
+    if (!session.scopes.some(item => item.id === selected && item.kind === 'team')) setSelected(session.scopes.find(item => item.kind === 'team')?.id ?? '');
+  }, [session.scopes, selected]);
   const reloadTeam = useCallback((id: string) => {
     loadTeam(async () => (await accountApi<{team: Team}>(`/teams/${id}`, session)).team);
   }, [loadTeam, session]);
@@ -332,14 +365,16 @@ function Teams({session, refresh, computeAvailable}: {
   // administration is account work, not scientific approval or execution.
   const manage = scope?.role === 'admin' || scope?.role === 'owner' || session.user.role === 'admin';
   return <>
-    <section className="account-panel"><h2>{t('Team collaboration')}</h2>
+    <CreateTeam session={session} refresh={refresh}/>
+    <section className="account-panel">
       <label>{t('Select team')}<select value={selected} onChange={event => setSelected(event.target.value)}>
         <option value="">{t('Please select')}</option>
         {session.scopes.filter(item => item.kind === 'team').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>
+      {!session.scopes.some(item => item.kind === 'team') && <div className="account-empty"><Users size={26}/><h3>{t('Build a shared research space')}</h3><p>{t('Create a team or accept an invitation in My workspaces to start collaborating.')}</p></div>}
       {teamBusy && <p role="status">{t('Loading team…')}</p>}
       {teamError && <p className="account-error" role="alert">{teamError}</p>}
-      {team && <><h3>{team.name}</h3><div className="account-table-scroll"><table><thead><tr><th>{t('Member')}</th><th>{t('Role')}</th><th>{t('Status')}</th><th>{t('Actions')}</th></tr></thead><tbody>{team.members?.filter(item => item.status === 'active').map(member => <tr key={member.user_id}>
+      {team && scope && team.id === scope.id && <><h3>{team.name}</h3><div className="account-table-scroll"><table><thead><tr><th>{t('Member')}</th><th>{t('Role')}</th><th>{t('Status')}</th><th>{t('Actions')}</th></tr></thead><tbody>{team.members?.filter(item => item.status === 'active').map(member => <tr key={member.user_id}>
         <td>{member.display_name} <small>@{member.username}</small></td><td>{member.role === 'admin' || member.role === 'owner' ? t('Team admin') : t('Member')}</td><td>{member.account_status === 'active' ? t('Active') : t('Unavailable')}</td>
         <td className="account-actions">
           {manage && member.role !== 'owner' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/teams/${team.id}/members/${member.user_id}`, session, {role: member.role === 'admin' ? 'member' : 'admin'}); await reloadTeam(team.id); await refresh();})}>{member.role === 'admin' ? t('Make member') : t('Make admin')}</button>}
@@ -350,16 +385,16 @@ function Teams({session, refresh, computeAvailable}: {
             });
           }}>{member.user_id === session.user.id ? t('Leave team') : t('Remove')}</button>}
         </td></tr>)}</tbody></table></div>
-        {manage && <form onSubmit={event => {event.preventDefault(); void action.run(async () => {
+        {manage && <details className="account-invite"><summary>{t('Invite an active user')}</summary><form onSubmit={event => {event.preventDefault(); void action.run(async () => {
           await accountApi(`/teams/${team.id}/invitations`, session, {username, role}); setUsername('');
         }, t('Invitation sent; waiting for the recipient to accept'));}}><h3>{t('Invite an active user')}</h3>
           <label>{t('Username')}<input required value={username} onChange={event => setUsername(event.target.value)}/></label>
           <label>{t('Role after joining')}<select value={role} onChange={event => setRole(event.target.value)}><option value="member">{t('Member')}</option><option value="admin">{t('Team admin')}</option></select></label>
           <button className="account-primary" disabled={action.busy}>{t('Send invitation')}</button>
-        </form>}
+        </form></details>}
       </>}{action.feedback}
     </section>
-    {scope && scope.kind === 'team' && team && <TeamDrafts session={session} scope={scope} team={team} computeAvailable={computeAvailable}/>}
+    {scope && scope.kind === 'team' && team && team.id === scope.id && <TeamDrafts key={`${session.user.id}:${scope.id}`} session={session} scope={scope} team={team} computeAvailable={computeAvailable}/>}
   </>;
 }
 
@@ -770,48 +805,82 @@ const USER_STATUS_LABELS: Record<string, string> = {
   pending: 'Pending review', active: 'Active', suspended: 'Suspended', rejected: 'Rejected',
 };
 
-const TABS: Array<[string, string]> = [
-  ['workspaces', 'My workspaces'], ['teams', 'Team collaboration'], ['usage', 'Resource usage'], ['password', 'Account security'],
+const TABS: Array<[AccountSection, string, typeof Users, string]> = [
+  ['workspaces', 'My workspaces', LayoutGrid, 'Choose your personal space or a shared team workspace.'],
+  ['teams', 'Team collaboration', Users, 'Manage members, invitations and shared project drafts.'],
+  ['usage', 'Resource usage', ChartNoAxesCombined, 'Follow your workspace usage and available capacity.'],
+  ['password', 'Account security', ShieldCheck, 'Keep your account access up to date.'],
 ];
+const ADMIN_TAB: typeof TABS[number] = ['admin', 'Administration', Settings, 'Manage accounts, teams and resource limits.'];
 
-export function AccountApp() {
+export function AccountApp({presentation = 'page', initialSection, onClose}: {
+  presentation?: 'page' | 'dialog'; initialSection?: AccountSection; onClose?: () => void;
+} = {}) {
   const { t } = useTranslation('account');
-  const [localSession, setLocalSession] = useState<AccountSession | null>(null);
+  const [params, setParams] = useSearchParams();
+  const requested = params.get('section') as AccountSection | null;
+  const [tab, setTab] = useState<AccountSection>(initialSection ?? (requested && accountSections.includes(requested) ? requested : 'workspaces'));
   const [config, setConfig] = useState<AccountConfig | null>(null);
-  const [tab, setTab] = useState('workspaces');
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('easydesign-account-nav-collapsed') === 'true'; } catch { return false; }
+  });
   const action = useAction();
   const machine = useSession();
-  // 唯一真相源是会话状态机；本地副本仅承载主动刷新（建团队/改配额/改密码后）
-  // 拿到的最新数据，登出或换号即丢弃，避免两个真相。
-  const session = localSession ?? (machine.state.kind === 'authenticated' ? machine.state.session : null);
-  const refresh = useCallback(async () => setLocalSession(await accountApi<AccountSession>('/accounts/me')), []);
-  const machineLogin = useCallback(async (username: string, password: string): Promise<AccountSession> => {
-    await machine.login(username, password);
-    return accountApi<AccountSession>('/accounts/me');
-  }, [machine]);
+  const lastSession = useRef<AccountSession | null>(null);
+  if (machine.state.kind === 'authenticated') lastSession.current = machine.state.session;
+  if (machine.state.kind === 'guest') lastSession.current = null;
+  const session = lastSession.current;
+  const refresh = machine.refreshSession;
   useEffect(() => {
-    if (machine.state.kind !== 'authenticated') setLocalSession(null);
-  }, [machine.state.kind]);
+    if (initialSection) setTab(initialSection);
+    else if (requested && accountSections.includes(requested)) setTab(requested);
+  }, [initialSection, requested]);
   useEffect(() => {
     let disposed = false;
     fetchAccountConfig().then(value => {if (!disposed) setConfig(value);}).catch(() => {});
     return () => {disposed = true;};
   }, []);
   if (machine.state.kind === 'checking' && session === null) return <main className="account-loading">{t('Checking session…')}</main>;
-  if (!session) return <Login onLogin={setLocalSession} login={machineLogin}/>;
+  if (machine.state.kind === 'network-error' && session === null) return <main className="account-login"><h1>{t('Unable to refresh your session')}</h1><button type="button" className="account-primary" onClick={machine.state.retry}>{t('Retry')}</button></main>;
+  if (!session) return <Login login={machine.login}/>;
   const computeAvailable = config ? config.compute_available : true;
-  const tabs: Array<[string, string]> = session.user.role === 'admin' ? [...TABS, ['admin', t('Administration')]] : TABS;
-  const main: ReactNode = tab === 'workspaces' ? <Workspaces session={session} refresh={refresh}/>
-    : tab === 'teams' ? <Teams session={session} refresh={refresh} computeAvailable={computeAvailable}/>
-    : tab === 'usage' ? <Usage session={session}/>
-    : tab === 'password' ? <Password session={session} changed={() => setLocalSession(null)}/>
+  const tabs = session.user.role === 'admin' ? [...TABS, ADMIN_TAB] : TABS;
+  const activeTab = session.user.must_change_password ? 'password' : tabs.some(item => item[0] === tab) ? tab : 'workspaces';
+  const current = tabs.find(item => item[0] === activeTab)!;
+  const main: ReactNode = activeTab === 'workspaces' ? <Workspaces session={session} refresh={refresh}/>
+    : activeTab === 'teams' ? <Teams session={session} refresh={refresh} computeAvailable={computeAvailable}/>
+    : activeTab === 'usage' ? <Usage session={session}/>
+    : activeTab === 'password' ? <Password session={session} changed={() => { void refresh().catch(() => {}); }}/>
     : <Administration session={session}/>;
-  return <div className="account-shell"><header className="account-header"><Brand/><strong>{session.user.display_name}</strong><span>{session.user.role === 'admin' ? t('System administrator') : t('Research user')}</span>
-    <button disabled={action.busy} onClick={() => void action.run(async () => {await machine.logout(); setLocalSession(null);setTab('workspaces');})}>{t('Sign out')}</button>
-  </header>{action.feedback}
-    {session.user.must_change_password ? <Password session={session} changed={() => setLocalSession(null)}/> : <>
-      <nav className="account-tabs">{tabs.map(([key,label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{t(label)}</button>)}</nav>
-      <main>{tab === 'admin' && session.user.role !== 'admin' ? <Workspaces session={session} refresh={refresh}/> : main}</main>
-    </>}
+  const toggleNav = () => {
+    setCollapsed(!collapsed);
+    try { localStorage.setItem('easydesign-account-nav-collapsed', String(!collapsed)); } catch { /* optional preference */ }
+  };
+  return <div className={`account-shell account-${presentation}${collapsed ? ' account-nav-collapsed' : ''}`}>
+    <aside className="account-sidebar">
+      <div className="account-sidebar-brand"><a href="#/" aria-label="EasyDesign"><Brand compact={collapsed}/></a>
+        <button type="button" className="account-icon-button" title={collapsed ? t('Expand menu') : t('Collapse menu')} aria-label={collapsed ? t('Expand menu') : t('Collapse menu')} aria-expanded={!collapsed} aria-controls="account-navigation" onClick={toggleNav}>{collapsed ? <PanelLeftOpen size={18}/> : <PanelLeftClose size={18}/>}</button>
+      </div>
+      <p className="account-nav-caption">{t('Your workspace')}</p>
+      <nav id="account-navigation" className="account-tabs" aria-label={t('Account settings')}>
+        {tabs.map(([key, label, Icon]) => <button key={key} type="button" title={collapsed ? t(label) : undefined} aria-label={t(label)} aria-current={activeTab === key ? 'page' : undefined} onClick={() => {
+          setTab(key);
+          if (presentation === 'page') setParams({section: key}, {replace: true});
+        }}><Icon size={18}/><span>{t(label)}</span></button>)}
+      </nav>
+      <div className="account-sidebar-bottom">
+        <a className="account-back-link" href={workspaceHref(session.scopes[0]?.id ?? session.user.id, 'pro')} onClick={event => { if (onClose) { event.preventDefault(); onClose(); } }}><ArrowLeft size={17}/><span>{t('Back to workspace')}</span></a>
+        <div className="account-sidebar-profile"><span className="account-avatar">{session.user.display_name.slice(0, 1).toUpperCase()}</span><span className="account-profile-name">{session.user.display_name}<small>{session.user.role === 'admin' ? t('System administrator') : t('Research user')}</small></span>
+          <button type="button" className="account-icon-button" disabled={action.busy} title={t('Sign out')} aria-label={t('Sign out')} onClick={() => void action.run(machine.logout)}><LogOut size={17}/></button>
+        </div>
+      </div>
+    </aside>
+    <div className="account-main">
+      <header className="account-content-header"><div><h1>{t(current[1])}</h1><p>{t(current[3])}</p></div><AccountLanguage/>
+        {onClose && <button type="button" className="account-icon-button" onClick={onClose} aria-label={t('Close settings')}><X size={20}/></button>}
+      </header>
+      {machine.state.kind === 'network-error' && <div className="account-network-error" role="alert">{t('Unable to refresh your session')}<button type="button" onClick={machine.state.retry}>{t('Retry')}</button></div>}
+      <main key={session.user.id} className="account-content" inert={machine.state.kind !== 'authenticated' ? true : undefined}>{action.feedback}{main}</main>
+    </div>
   </div>;
 }

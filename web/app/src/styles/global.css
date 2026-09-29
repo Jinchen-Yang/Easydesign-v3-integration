@@ -394,9 +394,6 @@ input[type='radio'] {
     scroll-behavior: auto !important;
   }
 }
-:root .account-pro-bar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:10px 20px; background:#e9f0fc; color:#23466d; font-size:13px; }
-:root .account-pro-bar select { margin-left:auto; border:1px solid #bdc9db; border-radius:7px; padding:6px 10px; }
-:root .account-pro-bar a { color:#245edb; }
 :root .account-compute-off { padding:3px 10px; border-radius:999px; background:#fff6df; color:#7a5b12; font-weight:600; }
 :root .account-permission-note { margin:0 0 12px; padding:12px; background:#eef3fb; color:#465e7d; border-radius:8px; }
 :root .account-pro-status { padding:60px; text-align:center; }

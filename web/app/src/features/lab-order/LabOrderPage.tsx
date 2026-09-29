@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, X } from 'lucide-react';
 import type { Candidate } from '../../adapters/WorkbenchAdapter';
@@ -36,11 +37,12 @@ function RequirementField({
   onChange: (key: TextKey, value: string) => void;
   placeholder?: string;
 }) {
+  const { t } = useTranslation('pro');
   return (
     <label>
-      {requirementLabels[name]}
+      {t(requirementLabels[name])}
       <input
-        aria-label={requirementLabels[name]}
+        aria-label={t(requirementLabels[name])}
         type={name === 'preferredDate' ? 'date' : 'text'}
         value={value}
         maxLength={160}
@@ -60,6 +62,7 @@ export function LabOrderPage({
   candidates: Candidate[];
   onChange: (draft: LabOrderDraft) => void;
 }) {
+  const { t } = useTranslation('pro');
   const [saved, setSaved] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const stepHeading = useRef<HTMLHeadingElement>(null);
@@ -81,33 +84,33 @@ export function LabOrderPage({
     update({ ...draft, requirements: { ...r, [key]: value }, reviewed: false });
   const changeStep = (step: LabOrderStep) => update({ ...draft, step });
   const footerMessage = !progress.samples
-    ? 'Select at least one sample.'
+    ? t('Select at least one sample.')
     : !progress.requirements && draft.step !== 'samples'
-      ? 'Choose a format, amount and delivery profile.'
+      ? t('Choose a format, amount and delivery profile.')
       : draft.step === 'review' && !draft.reviewed
-        ? 'Review the request and confirm below.'
-        : 'Demo only · No data is sent to the lab.';
+        ? t('Review the request and confirm below.')
+        : t('Demo only · No data is sent to the lab.');
   return (
-    <section className="lab-order" aria-label="Lab order preparation">
+    <section className="lab-order" aria-label={t('Lab order preparation')}>
       <div className="lab-order-scroll" ref={scroll}>
         <header className="lab-title">
           <div>
-            <h1>Lab Order</h1>
-            <span className="lab-draft-badge">Draft</span>
+            <h1>{t('Lab Order')}</h1>
+            <span className="lab-draft-badge">{t('Draft')}</span>
           </div>
-          <p>Turn your selected candidates into a lab request.</p>
+          <p>{t('Turn your selected candidates into a lab request.')}</p>
         </header>
         <div className="lab-layout">
           <div className="lab-form">
             <details className="lab-scientist">
-              <summary>Design Scientist · Request preparation</summary>
+              <summary>{t('Design Scientist · Request preparation')}</summary>
               <p>
-                Choose your samples, then confirm their expression requirements. Full expression
-                sequences are required before submission. Binding assays are not included in this
-                request.
+                {t(
+                  'Choose your samples, then confirm their expression requirements. Full expression sequences are required before submission. Binding assays are not included in this request.',
+                )}
               </p>
             </details>
-            <nav className="lab-tabs" aria-label="Request preparation">
+            <nav className="lab-tabs" aria-label={t('Request preparation')}>
               {LAB_STEPS.map((step, index) => (
                 <button
                   key={step}
@@ -115,23 +118,25 @@ export function LabOrderPage({
                   aria-current={step === draft.step ? 'step' : undefined}
                   onClick={() => changeStep(step)}
                 >
-                  {index + 1} {['Samples', 'Requirements', 'Review'][index]}
+                  {index + 1} {[t('Samples'), t('Requirements'), t('Review')][index]}
                 </button>
               ))}
             </nav>
             <div className="lab-panel" key={draft.step}>
               <h2 ref={stepHeading} tabIndex={-1}>
                 {
-                  ['Choose samples to send', 'Expression requirements', 'Review your lab request'][
-                    stepIndex
-                  ]
+                  [
+                    t('Choose samples to send'),
+                    t('Expression requirements'),
+                    t('Review your lab request'),
+                  ][stepIndex]
                 }
               </h2>
               <p className="lab-caption">
                 {
                   [
-                    'Selected candidates from your finalized panel.',
-                    'Shared settings for selected samples. Final scope is confirmed by the lab.',
+                    t('Selected candidates from your finalized panel.'),
+                    t('Shared settings for selected samples. Final scope is confirmed by the lab.'),
                     'A final check before sharing your design with the lab.',
                   ][stepIndex]
                 }
@@ -144,7 +149,9 @@ export function LabOrderPage({
                         <input
                           type="checkbox"
                           checked={draft.candidateIds.includes(candidate.id)}
-                          aria-label={`Send ${candidate.id}`}
+                          aria-label={t('Send {{name}}', {
+                            name: candidate.id,
+                          })}
                           onChange={(e) =>
                             update({
                               ...draft,
@@ -157,15 +164,15 @@ export function LabOrderPage({
                         />
                         <span>
                           <strong>{candidate.id}</strong>
-                          <small>Lysozyme / VHH · Demo candidate</small>
+                          <small>{t('Lysozyme / VHH · Demo candidate')}</small>
                         </span>
-                        <span className="lab-sequence-needed">Full sequence required</span>
+                        <span className="lab-sequence-needed">{t('Full sequence required')}</span>
                       </label>
                     ))}
                   </div>
                   <details className="lab-sequence-previews">
-                    <summary>View sequence previews</summary>
-                    <p>Truncated previews cannot be used as expression sequences.</p>
+                    <summary>{t('View sequence previews')}</summary>
+                    <p>{t('Truncated previews cannot be used as expression sequences.')}</p>
                     {candidates
                       .filter((c) => draft.candidateIds.includes(c.id))
                       .map((candidate) => (
@@ -180,13 +187,13 @@ export function LabOrderPage({
                 <>
                   <div className="lab-fields">
                     <label>
-                      Construct format
+                      {t('Construct format')}
                       <select
-                        aria-label="Construct format"
+                        aria-label={t('Construct format')}
                         value={r.format}
                         onChange={(e) => changeRequirement('format', e.target.value)}
                       >
-                        <option value="">Select a format</option>
+                        <option value="">{t('Select a format')}</option>
                         <option>VHH</option>
                         <option>VHH-Fc</option>
                       </select>
@@ -195,29 +202,29 @@ export function LabOrderPage({
                       name="amount"
                       value={r.amount}
                       onChange={changeRequirement}
-                      placeholder="Specify amount and unit"
+                      placeholder={t('Specify amount and unit')}
                     />
                     <RequirementField
                       name="host"
                       value={r.host}
                       onChange={changeRequirement}
-                      placeholder="To be agreed with the lab"
+                      placeholder={t('To be agreed with the lab')}
                     />
                     <RequirementField
                       name="buffer"
                       value={r.buffer}
                       onChange={changeRequirement}
-                      placeholder="Specify buffer requirements"
+                      placeholder={t('Specify buffer requirements')}
                     />
                     <label className="lab-full">
-                      Delivery & billing profile
+                      {t('Delivery & billing profile')}
                       <select
-                        aria-label="Delivery & billing profile"
+                        aria-label={t('Delivery & billing profile')}
                         value={r.profile}
                         onChange={(e) => changeRequirement('profile', e.target.value)}
                       >
-                        <option value="">Select saved details</option>
-                        <option value="demo-lab">Research lab · Example profile</option>
+                        <option value="">{t('Select saved details')}</option>
+                        <option value="demo-lab">{t('Research lab · Example profile')}</option>
                       </select>
                     </label>
                     <RequirementField
@@ -229,45 +236,45 @@ export function LabOrderPage({
                       name="purchaseOrder"
                       value={r.purchaseOrder}
                       onChange={changeRequirement}
-                      placeholder="Optional"
+                      placeholder={t('Optional')}
                     />
                   </div>
                   <details className="lab-advanced">
-                    <summary>Quality & delivery details</summary>
+                    <summary>{t('Quality & delivery details')}</summary>
                     <div className="lab-fields">
                       <RequirementField
                         name="sdsPurity"
                         value={r.sdsPurity}
                         onChange={changeRequirement}
-                        placeholder="Lab to confirm"
+                        placeholder={t('Lab to confirm')}
                       />
                       <RequirementField
                         name="secPurity"
                         value={r.secPurity}
                         onChange={changeRequirement}
-                        placeholder="Lab to confirm"
+                        placeholder={t('Lab to confirm')}
                       />
                       <RequirementField
                         name="endotoxin"
                         value={r.endotoxin}
                         onChange={changeRequirement}
-                        placeholder="Include units"
+                        placeholder={t('Include units')}
                       />
                       <RequirementField
                         name="concentration"
                         value={r.concentration}
                         onChange={changeRequirement}
-                        placeholder="Lab to confirm"
+                        placeholder={t('Lab to confirm')}
                       />
                       <label className="lab-full">
-                        Additional requirements
+                        {t('Additional requirements')}
                         <textarea
-                          aria-label="Additional requirements"
+                          aria-label={t('Additional requirements')}
                           rows={3}
                           value={r.notes}
                           maxLength={2000}
                           onChange={(e) => changeRequirement('notes', e.target.value)}
-                          placeholder="Special packaging or other requirements"
+                          placeholder={t('Special packaging or other requirements')}
                         />
                       </label>
                     </div>
@@ -278,38 +285,38 @@ export function LabOrderPage({
                 <>
                   <section className="lab-review-block">
                     <header>
-                      <h3>Selected samples</h3>
+                      <h3>{t('Selected samples')}</h3>
                       <button className="text-button" onClick={() => changeStep('samples')}>
-                        Edit samples
+                        {t('Edit samples')}
                       </button>
                     </header>
                     <p>
                       {selected.map((candidate) => candidate.id).join(', ') ||
-                        'No samples selected'}
+                        t('No samples selected')}
                     </p>
                     <p className="lab-warning">
-                      Full expression sequences required. Demo previews cannot be ordered.
+                      {t('Full expression sequences required. Demo previews cannot be ordered.')}
                     </p>
                   </section>
                   <section className="lab-review-block">
                     <header>
-                      <h3>Service & requirements</h3>
+                      <h3>{t('Service & requirements')}</h3>
                       <button className="text-button" onClick={() => changeStep('requirements')}>
-                        Edit requirements
+                        {t('Edit requirements')}
                       </button>
                     </header>
                     <dl className="lab-review-values">
                       <div>
-                        <dt>Service</dt>
-                        <dd>VHH expression</dd>
+                        <dt>{t('Service')}</dt>
+                        <dd>{t('VHH expression')}</dd>
                       </div>
                       <div>
-                        <dt>Construct</dt>
-                        <dd>{r.format || 'Not selected'}</dd>
+                        <dt>{t('Construct')}</dt>
+                        <dd>{r.format || t('Not selected')}</dd>
                       </div>
                       <div>
-                        <dt>Amount per sample</dt>
-                        <dd>{r.amount || 'To be specified'}</dd>
+                        <dt>{t('Amount per sample')}</dt>
+                        <dd>{r.amount || t('To be specified')}</dd>
                       </div>
                       {(Object.keys(r) as (keyof LabRequirements)[])
                         .filter(
@@ -322,19 +329,19 @@ export function LabOrderPage({
                           </div>
                         ))}
                     </dl>
-                    <p>Binding assays are not included in this request.</p>
+                    <p>{t('Binding assays are not included in this request.')}</p>
                   </section>
                   <section className="lab-review-block">
                     <header>
-                      <h3>Delivery & billing</h3>
+                      <h3>{t('Delivery & billing')}</h3>
                       <button className="text-button" onClick={() => changeStep('requirements')}>
-                        Edit profile
+                        {t('Edit profile')}
                       </button>
                     </header>
                     <p>
                       {r.profile
-                        ? 'Research lab · Example profile (not a live account)'
-                        : 'Choose a saved delivery, pickup and invoice profile.'}
+                        ? t('Research lab · Example profile (not a live account)')
+                        : t('Choose a saved delivery, pickup and invoice profile.')}
                     </p>
                   </section>
                   <label className="lab-consent">
@@ -345,50 +352,51 @@ export function LabOrderPage({
                       onChange={(e) => update({ ...draft, reviewed: e.target.checked })}
                     />
                     <span>
-                      I have reviewed the selected samples and the information to be shared with
-                      GentleGen.
+                      {t(
+                        'I have reviewed the selected samples and the information to be shared with GentleGen.',
+                      )}
                     </span>
                   </label>
                 </>
               )}
             </div>
           </div>
-          <aside className="lab-summary" aria-label="Order summary">
-            <h2>Order Summary</h2>
+          <aside className="lab-summary" aria-label={t('Order summary')}>
+            <h2>{t('Order Summary')}</h2>
             <dl>
               <div>
-                <dt>Lab partner</dt>
-                <dd>GentleGen</dd>
+                <dt>{t('Lab partner')}</dt>
+                <dd>{t('GentleGen')}</dd>
               </div>
               <div>
-                <dt>Service</dt>
-                <dd>VHH expression</dd>
+                <dt>{t('Service')}</dt>
+                <dd>{t('VHH expression')}</dd>
               </div>
               <div>
-                <dt>Samples</dt>
+                <dt>{t('Samples')}</dt>
                 <dd aria-live="polite" data-testid="lab-sample-count">
-                  {selected.length} selected
+                  {selected.length} {t('selected')}
                 </dd>
               </div>
               <div>
-                <dt>Sequence readiness</dt>
-                <dd>Full sequences needed</dd>
+                <dt>{t('Sequence readiness')}</dt>
+                <dd>{t('Full sequences needed')}</dd>
               </div>
               <div>
-                <dt>Delivery</dt>
-                <dd>Lab to confirm</dd>
+                <dt>{t('Delivery')}</dt>
+                <dd>{t('Lab to confirm')}</dd>
               </div>
             </dl>
             <div className="lab-quote">
-              <span>Quote</span>
-              <strong>To be quoted</strong>
-              <p>Price and turnaround are not yet confirmed.</p>
+              <span>{t('Quote')}</span>
+              <strong>{t('To be quoted')}</strong>
+              <p>{t('Price and turnaround are not yet confirmed.')}</p>
             </div>
           </aside>
         </div>
       </div>
       <footer className="lab-footer">
-        <p role="status">{saved ? 'Draft retained in this workspace.' : footerMessage}</p>
+        <p role="status">{saved ? t('Draft retained in this workspace.') : footerMessage}</p>
         <div>
           <button
             className="secondary-button"
@@ -397,7 +405,7 @@ export function LabOrderPage({
               setSaved(true);
             }}
           >
-            Save Draft
+            {t('Save Draft')}
           </button>
           {draft.step === 'review' ? (
             <button
@@ -406,7 +414,8 @@ export function LabOrderPage({
               disabled={!progress.review}
               onClick={() => dialog.current?.showModal()}
             >
-              Preview confirmation <ArrowRight size={14} />
+              {t('Preview confirmation')}
+              <ArrowRight size={14} />
             </button>
           ) : (
             <button
@@ -416,7 +425,7 @@ export function LabOrderPage({
                 changeStep(LAB_STEPS[stepIndex + 1]);
               }}
             >
-              {draft.step === 'samples' ? 'Define requirements' : 'Review request'}{' '}
+              {draft.step === 'samples' ? t('Define requirements') : t('Review request')}{' '}
               <ArrowRight size={14} />
             </button>
           )}
@@ -429,29 +438,32 @@ export function LabOrderPage({
         onClose={() => previewButton.current?.focus()}
       >
         <header>
-          <h2 id="lab-confirm-title">Send a quote request?</h2>
+          <h2 id="lab-confirm-title">{t('Send a quote request?')}</h2>
           <button
             className="icon-button"
-            aria-label="Close confirmation"
+            aria-label={t('Close confirmation')}
             onClick={() => dialog.current?.close()}
           >
             <X size={18} />
           </button>
         </header>
-        <p>{selected.length} samples · VHH expression · GentleGen</p>
         <p>
-          A connected service would share the approved full sequences, requirements and account
-          details with the lab. Price and production start require confirmation.
+          {selected.length} {t('samples · VHH expression · GentleGen')}
+        </p>
+        <p>
+          {t(
+            'A connected service would share the approved full sequences, requirements and account details with the lab. Price and production start require confirmation.',
+          )}
         </p>
         <p className="lab-warning">
-          No order submitted. This demo has no orderable sequences or connected lab account.
+          {t('No order submitted. This demo has no orderable sequences or connected lab account.')}
         </p>
         <div className="lab-confirm-actions">
           <button className="secondary-button" onClick={() => dialog.current?.close()}>
-            Back to draft
+            {t('Back to draft')}
           </button>
           <button className="primary-button" disabled>
-            Request Quote
+            {t('Request Quote')}
           </button>
         </div>
       </dialog>

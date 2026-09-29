@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Cpu, RefreshCw } from 'lucide-react';
 import {
@@ -13,6 +14,7 @@ const display = (value: number | null | undefined, suffix = '', digits = 0) =>
   value == null ? '—' : `${value.toFixed(digits)}${suffix}`;
 
 export function LiveResources() {
+  const { t } = useTranslation('pro');
   const [resources, setResources] = useState<ComputeResources | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -29,7 +31,7 @@ export function LiveResources() {
         signal: controller.signal,
         cache: 'no-store',
       });
-      if (!response.ok) throw new Error('Resource service unavailable');
+      if (!response.ok) throw new Error(t('Resource service unavailable'));
       const data = parseComputeResources(await response.json());
       if (mounted.current && request.current === controller) setResources(data);
     } catch {
@@ -82,12 +84,16 @@ export function LiveResources() {
   const live = resources?.connection === 'connected' && !stale;
   const state = live ? 'live' : sample ? 'stale' : 'offline';
   const title = sample
-    ? `${resources.node} compute node`
+    ? t('{{node}} compute node', {
+        node: resources.node === 'Compute node' ? t('Compute node') : resources.node,
+      })
     : resources?.connection === 'not-configured'
-      ? 'No compute service connected'
+      ? t('No compute service connected')
       : resources?.connection === 'unavailable'
-        ? `${resources.node} is unavailable`
-        : 'Connecting to compute node';
+        ? t('{{node}} is unavailable', {
+            node: resources.node === 'Compute node' ? t('Compute node') : resources.node,
+          })
+        : t('Connecting to compute node');
   const gpus = sample?.gpus ?? [];
   const sum = (key: 'memoryTotalMiB' | 'memoryUsedMiB') =>
     gpus.length && gpus.every((gpu) => gpu[key] !== null)
@@ -98,37 +104,43 @@ export function LiveResources() {
       ? gpus.reduce((n, gpu) => n + gpu.utilization!, 0) / gpus.length
       : null;
   return (
-    <section className={`live-resources resource-${state}`} aria-label="Compute connection">
+    <section className={`live-resources resource-${state}`} aria-label={t('Compute connection')}>
       <div className="resource-node">
         <span className="resource-node-icon">
           <Cpu size={24} />
         </span>
         <div className="resource-node-title">
-          <span className="eyebrow">GPU COMPUTE NODE</span>
+          <span className="eyebrow">{t('GPU COMPUTE NODE')}</span>
           <h2>{title}</h2>
           <p>
             {sample
-              ? 'Whole-node telemetry · Read-only · Refreshes every 10s'
+              ? t('Whole-node telemetry · Read-only · Refreshes every 10s')
               : resources?.connection === 'not-configured'
-                ? 'Live resource monitoring is not configured on this device.'
+                ? t('Live resource monitoring is not configured on this device.')
                 : resources?.connection === 'unavailable'
-                  ? 'Could not reach the resource monitor. Retry in a moment.'
-                  : 'Fetching hardware metrics…'}
+                  ? t('Could not reach the resource monitor. Retry in a moment.')
+                  : t('Fetching hardware metrics…')}
           </p>
         </div>
         <div className="resource-node-actions">
           <span className={`resource-status ${state}`} role="status">
             <i />
-            {live ? 'Live' : sample ? 'Stale data' : refreshing ? 'Connecting' : 'Not connected'}
+            {live
+              ? t('Live')
+              : sample
+                ? t('Stale data')
+                : refreshing
+                  ? t('Connecting')
+                  : t('Not connected')}
           </span>
           <button
             className="secondary-button"
             disabled={refreshing}
             onClick={() => void refresh()}
-            aria-label="Refresh resources"
+            aria-label={t('Refresh resources')}
           >
             <RefreshCw size={13} className={refreshing ? 'resource-spin' : ''} />
-            {refreshing ? 'Refreshing' : 'Refresh'}
+            {refreshing ? t('Refreshing') : t('Refresh')}
           </button>
         </div>
       </div>
@@ -136,28 +148,28 @@ export function LiveResources() {
         <>
           <div className="resource-summary">
             <div>
-              <span>Detected GPUs</span>
+              <span>{t('Detected GPUs')}</span>
               <strong>
                 {gpus.length}
-                <small> devices</small>
+                <small> {t('devices')}</small>
               </strong>
             </div>
             <div>
-              <span>Total memory</span>
+              <span>{t('Total memory')}</span>
               <strong>
                 {display(sum('memoryTotalMiB'), '', 1)}
                 <small> GiB</small>
               </strong>
             </div>
             <div>
-              <span>Used memory</span>
+              <span>{t('Used memory')}</span>
               <strong>
                 {display(sum('memoryUsedMiB'), '', 1)}
                 <small> GiB</small>
               </strong>
             </div>
             <div>
-              <span>Average utilization</span>
+              <span>{t('Average utilization')}</span>
               <strong>
                 {display(average, '%')}
                 <small> GPU</small>
@@ -166,16 +178,17 @@ export function LiveResources() {
           </div>
           <div className="resource-timestamp">
             <span>
-              Sampled{' '}
+              {t('Sampled')}{' '}
               <time dateTime={sample.sampledAt}>
                 {new Date(sample.sampledAt).toLocaleTimeString('en-GB')}
               </time>{' '}
-              · {age}s ago
+              · {age}
+              {t('s ago')}
             </span>
             <span>
               {stale
-                ? 'Connection delayed. These are the last known values.'
-                : 'Includes activity outside EasyDesign.'}
+                ? t('Connection delayed. These are the last known values.')
+                : t('Includes activity outside EasyDesign.')}
             </span>
           </div>
           <div className="gpu-grid">
@@ -185,28 +198,33 @@ export function LiveResources() {
                   <span>GPU {gpu.index}</span>
                   <span className="gpu-load-label">
                     {gpu.utilization == null
-                      ? 'Unknown'
+                      ? t('Unknown')
                       : gpu.utilization >= 10
-                        ? 'In use'
-                        : 'Low utilization'}
+                        ? t('In use')
+                        : t('Low utilization')}
                   </span>
                 </header>
                 <h3>{gpu.name.replace(/^NVIDIA /, '')}</h3>
                 <div className="gpu-utilization">
                   <strong>{display(gpu.utilization, '%')}</strong>
-                  <span>utilization</span>
+                  <span>{t('utilization')}</span>
                 </div>
                 {gpu.utilization === null ? (
-                  <div className="gpu-metric-unavailable" aria-label="Utilization unavailable" />
+                  <div
+                    className="gpu-metric-unavailable"
+                    aria-label={t('Utilization unavailable')}
+                  />
                 ) : (
                   <progress
-                    aria-label={`GPU ${gpu.index} utilization`}
+                    aria-label={t('GPU {{index}} utilization', {
+                      index: gpu.index,
+                    })}
                     max={100}
                     value={gpu.utilization}
                   />
                 )}
                 <div className="gpu-memory">
-                  <span>Memory</span>
+                  <span>{t('Memory')}</span>
                   <span>
                     {display(gpu.memoryUsedMiB == null ? null : gpu.memoryUsedMiB / 1024, '', 1)} /{' '}
                     {display(
@@ -217,31 +235,34 @@ export function LiveResources() {
                   </span>
                 </div>
                 {gpu.memoryUsedMiB === null || !gpu.memoryTotalMiB ? (
-                  <div className="gpu-metric-unavailable" aria-label="Memory usage unavailable" />
+                  <div
+                    className="gpu-metric-unavailable"
+                    aria-label={t('Memory usage unavailable')}
+                  />
                 ) : (
                   <progress
-                    aria-label={`GPU ${gpu.index} memory`}
+                    aria-label={t('GPU {{index}} memory', { index: gpu.index })}
                     max={gpu.memoryTotalMiB}
                     value={gpu.memoryUsedMiB}
                   />
                 )}
                 <dl>
                   <div>
-                    <dt>Temperature</dt>
+                    <dt>{t('Temperature')}</dt>
                     <dd>{display(gpu.temperatureC, ' °C')}</dd>
                   </div>
                   <div>
-                    <dt>Power / limit</dt>
+                    <dt>{t('Power / limit')}</dt>
                     <dd>
                       {display(gpu.powerW)} / {display(gpu.powerLimitW, ' W')}
                     </dd>
                   </div>
                   <div>
-                    <dt>Compute processes</dt>
+                    <dt>{t('Compute processes')}</dt>
                     <dd>{display(gpu.processCount)}</dd>
                   </div>
                   <div>
-                    <dt>Driver</dt>
+                    <dt>{t('Driver')}</dt>
                     <dd>{gpu.driverVersion || '—'}</dd>
                   </div>
                 </dl>
@@ -251,7 +272,9 @@ export function LiveResources() {
         </>
       )}
       <p className="resource-queue-note">
-        Job queue not connected. GPU activity does not identify queued jobs or reserve capacity.
+        {t(
+          'This panel shows hardware activity; it does not identify queued jobs or reserve capacity.',
+        )}
       </p>
     </section>
   );

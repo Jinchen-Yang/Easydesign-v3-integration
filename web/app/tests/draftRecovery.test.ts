@@ -93,6 +93,29 @@ describe('createDraftRecovery 本地层', () => {
 });
 
 describe('createDraftRecovery 命名空间', () => {
+  it('同账号刷新恢复，刷新后换账号清除上一身份的全部 scope 草稿', () => {
+    const storage = memoryStorage();
+    const first = createDraftRecovery({ storage });
+    first.setIdentity('u1');
+    const key = DRAFT_KEYS.scoped('s1', 'project', 'p1', 'gate', 'card-revision-1');
+    first.saveLocal(key, { instruction: '审阅输入' });
+    const reloaded = createDraftRecovery({ storage });
+    reloaded.setIdentity('u1');
+    expect(reloaded.recover(key).data).toEqual({ instruction: '审阅输入' });
+    const switched = createDraftRecovery({ storage });
+    switched.setIdentity('u2');
+    expect(switched.recover(key).hasLocal).toBe(false);
+    switched.setIdentity('u1');
+    expect(switched.recover(key).hasLocal).toBe(false);
+  });
+
+  it('scope/project/Gate card 逐段编码，分隔符无法拼接成另一草稿键', () => {
+    const drafts = createDraftRecovery({ storage: memoryStorage() });
+    const key = DRAFT_KEYS.scoped('scope:a', 'p1', 'card:1');
+    drafts.saveLocal(key, 'review');
+    expect(drafts.recover(DRAFT_KEYS.scoped('scope', 'a:p1', 'card:1')).hasLocal).toBe(false);
+    expect(drafts.recover(DRAFT_KEYS.scoped('scope:a', 'p1', 'card:2')).hasLocal).toBe(false);
+  });
   it('访客草稿与账号草稿相互隔离，访客数据在登录后仍保留在访客命名空间', () => {
     const storage = memoryStorage();
     const drafts = createDraftRecovery({ storage });
@@ -129,6 +152,17 @@ describe('createDraftRecovery 命名空间', () => {
 });
 
 describe('createDraftRecovery 远程层', () => {
+  it('远程保存的晚到响应不能写入后来登录的账号', async () => {
+    let finish!: (value: Response) => void;
+    const transport = (() => new Promise<Response>((resolve) => { finish = resolve; })) as typeof fetch;
+    const drafts = createDraftRecovery({ storage: memoryStorage(), transport });
+    drafts.setIdentity('u1');
+    const pending = drafts.saveRemote(draftFixture());
+    drafts.setIdentity('u2');
+    finish(Response.json({ draft: draftFixture() }));
+    await pending;
+    expect(drafts.recover('draft:project:d1').hasRemote).toBe(false);
+  });
   it('saveRemote 调用团队草稿接口并登记远程副本', async () => {
     const saved = draftFixture({ id: 'd1', revision: 3, payload: { title: 't', goal: 'g' } });
     const drafts = createDraftRecovery({ storage: memoryStorage(), transport: jsonTransport({ draft: saved }) });

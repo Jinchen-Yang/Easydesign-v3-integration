@@ -782,6 +782,13 @@ class ProductService:
                     row, created = journal.reserve(project, payload)
         finally:
             journal.close()
+        # Close the small race between the first invalidation and reserving the
+        # request.  A concurrent workbench poll can otherwise rebuild and cache
+        # the still-awaiting Gate card before the request becomes visible.  The
+        # detached worker then advances native state, but cannot clear this
+        # server process's in-memory cache, leaving an already-approved Gate on
+        # screen until the product server restarts.
+        self._invalidate_projection_cache(project)
         if created:
             self.launcher(row["id"])
         return self.public_request(row)
@@ -896,6 +903,9 @@ class ProductService:
             claimed = journal.retry(request_id)
         finally:
             journal.close()
+        # As in submit(), make the accepted retry visible before allowing a
+        # stable pre-retry projection to remain cached.
+        self._invalidate_projection_cache(row["project"])
         if claimed:
             self.launcher(request_id)
         return self.request(request_id)

@@ -28,6 +28,7 @@ from easydesign.product.contracts import (
     WorkbenchProjection,
 )
 from easydesign.product.domain import DomainSession, NativeGateway, decision_view
+from easydesign.product.journal import RequestJournal
 from easydesign.product.projection import (
     activity,
     activity_rows,
@@ -1478,6 +1479,37 @@ def test_failed_gate_action_resubmission_retries_same_request(site_bridge, tmp_p
     assert retried["state"] == "accepted"
     assert retried["result"] == {"recovery": True}
     assert launched == [action.request_id, action.request_id]
+
+
+def test_gate_submit_clears_snapshot_rebuilt_before_request_reservation(
+    site_bridge, tmp_path, monkeypatch
+):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic Gate cache race")
+    service = service_for(b, tmp_path)
+    view = service.snapshot("target-test")
+    assert service._stable_snapshots["target-test"]["decision"] is not None
+    action = ActionRequest(
+        request_id=str(uuid4()),
+        revision=view["revision"],
+        action="approve",
+        card_id=view["decision"]["id"],
+        selected_option_id=view["decision"]["options"][0]["option_id"],
+    )
+    stale = json.loads(json.dumps(view))
+    original_reserve = RequestJournal.reserve
+
+    def reserve_after_racing_poll(journal, *args, **kwargs):
+        # submit() already performed its first invalidation. Reproduce a poll
+        # that observes the old Gate immediately before the request is reserved.
+        service._stable_snapshots["target-test"] = stale
+        return original_reserve(journal, *args, **kwargs)
+
+    monkeypatch.setattr(RequestJournal, "reserve", reserve_after_racing_poll)
+    service.submit("target-test", action)
+    assert "target-test" not in service._stable_snapshots
 
 
 def test_frozen_pilot_query_is_read_only(design_bridge, tmp_path):

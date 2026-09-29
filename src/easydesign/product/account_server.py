@@ -128,6 +128,9 @@ class AccountHandler(Handler):
     account_user: AccountUser | None = None
     current_scope: ScopeAccess | None = None
     resource_tail: list[str] = []
+    # Set per request when sliding renewal fired; send() attaches the fresh
+    # cookie so the browser's Max-Age follows the extended session.
+    _renewed_cookie: str | None = None
 
     def host_guard(self) -> None:
         port = self.server.server_port
@@ -155,6 +158,11 @@ class AccountHandler(Handler):
     def _principal(self) -> AccountUser:
         token = self._token()
         user = self.server.accounts.authenticate(token)
+        if self.server.accounts.renew(token) is not None:
+            # Sliding renewal: the server session lives on for active use, and
+            # the browser cookie must follow or it would die on the original
+            # 7-day Max-Age and undo the renewal.
+            self._renewed_cookie = self._cookie(token)
         supplied = self.headers.get("X-CSRF-Token")
         if self.command == "POST" or supplied is not None:
             if not supplied or not hmac.compare_digest(
@@ -528,6 +536,7 @@ class AccountHandler(Handler):
         self.account_user = None
         self.current_scope = None
         self.resource_tail = []
+        self._renewed_cookie = None
         reading = False
         try:
             self.host_guard()
@@ -698,4 +707,8 @@ class AccountHandler(Handler):
         if mime == "text/html" and isinstance(data, bytes):
             marker = b'<meta name="easydesign-identity-mode" content="accounts" />'
             data = data.replace(b"</head>", marker + b"</head>", 1)
+        if cookie is None:
+            # Renewed sessions ride along on the current response unless this
+            # response already sets an explicit session cookie (login/logout).
+            cookie = self._renewed_cookie
         super().send(status, data, mime, cookie=cookie, immutable=immutable and scope is None)

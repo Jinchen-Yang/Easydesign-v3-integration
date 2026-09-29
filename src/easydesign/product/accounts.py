@@ -529,6 +529,38 @@ class AccountStore:
                 raise ProductError("unauthorized", "会话已失效，请重新登录", 401)
             return _user(row)
 
+    def renew(self, token: str) -> float | None:
+        """Slide a live session's expiry forward for continued active use.
+
+        Renewal fires only when less than half the TTL remains, so an active
+        user triggers at most one write per half-TTL window instead of one
+        write per request. The compare-and-set guards against resurrecting a
+        session that was revoked, replaced, or password-invalidated between
+        the read and the write.
+        """
+        if not isinstance(token, str) or not 32 <= len(token) <= 128:
+            return None
+        key = hashlib.sha256(token.encode()).hexdigest()
+        now = self.clock()
+        with self.db() as db:
+            row = db.execute(
+                "SELECT s.expires_at, s.auth_version FROM sessions s "
+                "JOIN users u ON u.id=s.user_id "
+                "WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? "
+                "AND s.auth_version=u.auth_version AND u.status='active'",
+                (key, now),
+            ).fetchone()
+        if row is None or row["expires_at"] - now >= SESSION_SECONDS / 2:
+            return None
+        fresh = now + SESSION_SECONDS
+        with self.db(write=True) as db:
+            changed = db.execute(
+                "UPDATE sessions SET expires_at=? WHERE token_hash=? "
+                "AND revoked_at IS NULL AND expires_at=? AND auth_version=?",
+                (fresh, key, row["expires_at"], row["auth_version"]),
+            ).rowcount
+        return fresh if changed else None
+
     def logout(self, token: str) -> None:
         key = hashlib.sha256(token.encode()).hexdigest()
         with self.db(write=True) as db:

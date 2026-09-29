@@ -81,6 +81,40 @@ def test_sessions_expire_and_logout_only_revokes_its_own_session(accounts):
         store.authenticate(second.token)
 
 
+def test_session_renewal_slides_expiry_only_in_the_second_half(accounts):
+    store, _admin, _alice, _bob, clock = accounts
+    start = clock[0]
+    session = store.login("alice", PASSWORD, peer="fixture")
+    # Fresh session: more than half the TTL remains; renewal stays a no-op
+    # so steady traffic adds no per-request write load.
+    assert store.renew(session.token) is None
+    clock[0] = start + 4 * 24 * 3600
+    renewed = store.renew(session.token)
+    assert renewed == pytest.approx(start + 4 * 24 * 3600 + 7 * 24 * 3600)
+    # Inside the renewed window (more than half the new TTL left) it is a no-op.
+    clock[0] = start + 7 * 24 * 3600
+    assert store.renew(session.token) is None
+    # Active use keeps the session alive past the original 7-day horizon.
+    clock[0] = start + 9 * 24 * 3600
+    assert store.authenticate(session.token).username == "alice"
+
+
+def test_session_renewal_never_resurrects_revoked_or_invalidated_sessions(accounts):
+    store, admin, alice, _bob, clock = accounts
+    session = store.login("alice", PASSWORD, peer="fixture")
+    clock[0] += 4 * 24 * 3600
+    store.logout(session.token)
+    assert store.renew(session.token) is None
+    invalidated = store.login("alice", PASSWORD, peer="fixture")
+    clock[0] += 4 * 24 * 3600
+    store.reset_password(admin, alice.id, "Temporary-new-password!")
+    assert store.renew(invalidated.token) is None
+    with pytest.raises(ProductError):
+        store.authenticate(invalidated.token)
+    # Unknown or malformed tokens are ignored rather than raising.
+    assert store.renew("x" * 40) is None
+
+
 def test_admin_privilege_and_last_admin_are_checked_from_the_store(accounts):
     store, admin, alice, bob, _clock = accounts
     with pytest.raises(ProductError):

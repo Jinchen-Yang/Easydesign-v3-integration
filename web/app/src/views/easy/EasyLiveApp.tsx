@@ -763,8 +763,14 @@ export function EasyLiveApp({
           >
             {t('Create new design')}
           </a>
-          {snapshot && <a href="#current-design">{t('Current task')}</a>}
-          <a href="#my-designs">{t('My designs')}</a>
+          {snapshot && <a href="#current-design" onClick={(event) => {
+            event.preventDefault();
+            document.getElementById('current-design')?.scrollIntoView({ behavior: 'smooth' });
+          }}>{t('Current task')}</a>}
+          <a href="#my-designs" onClick={(event) => {
+            event.preventDefault();
+            document.getElementById('my-designs')?.scrollIntoView({ behavior: 'smooth' });
+          }}>{t('My designs')}</a>
         </nav>
         <div className="easy-header-end">
           <span className={`easy-live-connection ${state.connection}`}>● {state.connection}</span>
@@ -813,7 +819,7 @@ export function EasyLiveApp({
                   {INPUT_TYPES.filter((item) => !['pse', 'bundle'].includes(item.id)).map(
                     (item) => (
                       <option key={item.id} value={item.id}>
-                        {item.label}
+                        {t(item.label)}
                       </option>
                     ),
                   )}

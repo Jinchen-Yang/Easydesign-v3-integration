@@ -41,6 +41,8 @@ class TransportPolicy:
     trusted_proxies: tuple[str, ...] = ()
     real_ip_header: str = "X-Real-IP"
     max_connections: int = 384
+    max_readers: int = 16
+    read_wait_timeout: float = 10.0
     max_uploads: int = 4
     max_pending_uploads: int = 300
     upload_wait_timeout: float = 10.0
@@ -55,6 +57,11 @@ class TransportPolicy:
             raise ValueError("Real IP header must be an HTTP field name")
         if (
             type(self.max_connections) is not int
+            or type(self.max_readers) is not int
+            or not 1 <= self.max_readers <= 4096
+            or type(self.read_wait_timeout) not in (int, float)
+            or not math.isfinite(self.read_wait_timeout)
+            or not 0 <= self.read_wait_timeout <= 120
             or type(self.max_uploads) is not int
             or type(self.max_pending_uploads) is not int
             or not 0 <= self.max_pending_uploads <= 4096

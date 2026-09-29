@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 from contextvars import ContextVar
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -99,6 +100,10 @@ class MultiUserServer(ProductServer):
         base = ProductService(
             runtime.gateway_factory(runtime.context), launcher=self._unbound_launch
         )
+        policy = transport_policy or TransportPolicy()
+        # Waiting readers already own one of ProductServer's bounded connections.
+        # Keep this CPU/SQLite read cap independent of uploads, login and AI streams.
+        self.read_slots = threading.BoundedSemaphore(policy.max_readers)
         super().__init__(
             base,
             port=port,
@@ -108,7 +113,7 @@ class MultiUserServer(ProductServer):
             service_provider=_bound_service,
             handler_type=AccountHandler,
             rabbit_chat=rabbit_chat,
-            transport_policy=transport_policy,
+            transport_policy=policy,
             web_history=web_history,
             easy_web_history=easy_web_history,
         )
@@ -523,6 +528,7 @@ class AccountHandler(Handler):
         self.account_user = None
         self.current_scope = None
         self.resource_tail = []
+        reading = False
         try:
             self.host_guard()
             url = urlsplit(self.path)
@@ -542,6 +548,22 @@ class AccountHandler(Handler):
             if parts[:2] != ["api", "v1"]:
                 raise ProductError("not_found", "接口不存在", 404)
             tail = parts[2:]
+            # Classify the router's decoded, validated segments, not the raw URL.
+            # Acquire before authentication so a queued request cannot retain an
+            # identity or scope that was revoked while it waited.
+            if (
+                self.command == "GET"
+                and tail[:1] == ["scopes"]
+                and (
+                    (len(tail) == 4 and tail[2] == "requests")
+                    or (len(tail) == 5 and tail[2] == "projects" and tail[4] == "workbench")
+                )
+            ):
+                reading = self.server.read_slots.acquire(
+                    timeout=self.server.transport_policy.read_wait_timeout
+                )
+                if not reading:
+                    raise ProductError("read_busy", "状态读取繁忙，请稍后重试", 503)
             if self._account_routes(tail, parse_qs(url.query)):
                 return
             if len(tail) < 3 or tail[0] != "scopes":
@@ -632,6 +654,9 @@ class AccountHandler(Handler):
         except Exception:
             logging.getLogger(__name__).exception("Account product request failed")
             self.send(500, {"error": {"code": "operational_error", "message": "操作暂时无法完成"}})
+        finally:
+            if reading:
+                self.server.read_slots.release()
 
     def static(self, path: str) -> None:
         if path in {"/account", "/account/"}:

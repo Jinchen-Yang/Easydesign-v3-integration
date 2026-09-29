@@ -306,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
             status == 503
             and isinstance(data, dict)
             and isinstance(data.get("error"), dict)
-            and data["error"].get("code") == "upload_busy"
+            and data["error"].get("code") in {"upload_busy", "read_busy"}
         ):
             self.send_header("Retry-After", "2")
         if compressible:

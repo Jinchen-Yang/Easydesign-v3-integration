@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowRight,
   Check,
@@ -85,6 +86,7 @@ const PIPELINE_STEPS = [
 ] as const;
 
 function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
+  const { t } = useTranslation('easy');
   const job =
     snapshot.jobs.find((item) => item.phase === snapshot.project.phase && item.progress) ||
     snapshot.jobs.find((item) => item.progress);
@@ -101,15 +103,22 @@ function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
       ? `${progress.substage_completed} / ${progress.substage_total}`
       : null;
   return (
-    <section className="easy-execution-progress" aria-label="真实执行进度">
+    <section className="easy-execution-progress" aria-label={t('Live execution progress')}>
       <div className="easy-execution-title">
         <div>
           <span>REAL EXECUTION</span>
           <strong>
-            {native ? '独立结构预测与原生过滤' : progress.substage_label || 'BoltzGen'}
+            {native ? t('Independent structure prediction and native filter') : progress.substage_label || 'BoltzGen'}
           </strong>
         </div>
-        <b>{progress.total ? `${progress.completed} / ${progress.total} 条` : '等待资源'}</b>
+        <b>
+          {progress.total
+            ? t('{{completed}} / {{total}} candidates', {
+                completed: progress.completed,
+                total: progress.total,
+              })
+            : t('Waiting for resources')}
+        </b>
       </div>
       <div
         className="easy-progress-track"
@@ -134,8 +143,11 @@ function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
         })}
       </div>
       <p>
-        {progress.completed_tasks} / {progress.total_tasks} 个策略任务完成
-        {progress.running_tasks ? `，${progress.running_tasks} 个正在运行` : ''}
+        {t('{{completed}} / {{total}} strategy tasks complete', {
+          completed: progress.completed_tasks,
+          total: progress.total_tasks,
+        })}
+        {progress.running_tasks ? t(', {{count}} running', { count: progress.running_tasks }) : ''}
       </p>
     </section>
   );
@@ -150,6 +162,7 @@ function HistoricalStagePanel({
   stageIndex: number;
   onReturn: () => void;
 }) {
+  const { t } = useTranslation('easy');
   const context = snapshot.scientific_context;
   const workflow = snapshot.workflow.find((item) => item.id === STEPS[stageIndex].toLowerCase());
   const rows: [string, string | number][] = [];
@@ -193,10 +206,11 @@ function HistoricalStagePanel({
   return (
     <section className="easy-live-history-card" aria-label={`${STEPS[stageIndex]} history`}>
       <div className="easy-live-kicker">HISTORICAL STAGE · READ ONLY</div>
-      <h3>{STEPS[stageIndex]} 阶段记录</h3>
+      <h3>{t('{{stage}} stage record', { stage: STEPS[stageIndex] })}</h3>
       <p>
-        {workflow?.subtasks?.filter((item) => item.status === 'complete').length || 0}{' '}
-        个步骤已记录。
+        {t('{{count}} steps recorded.', {
+          count: workflow?.subtasks?.filter((item) => item.status === 'complete').length || 0,
+        })}
       </p>
       <dl>
         {rows.map(([label, value]) => (
@@ -207,7 +221,7 @@ function HistoricalStagePanel({
         ))}
       </dl>
       <button className="easy-outline" onClick={onReturn}>
-        返回当前阶段
+        {t('Back to current stage')}
       </button>
     </section>
   );
@@ -225,6 +239,7 @@ function GatePanel({
   canDecide?: boolean;
 }) {
   const decision = snapshot.decision!;
+  const { t } = useTranslation('easy');
   const [selected, setSelected] = useState(decision.default_option_id);
   const [showRevise, setShowRevise] = useState(false);
   const [instruction, setInstruction] = useState('');
@@ -259,7 +274,7 @@ function GatePanel({
       <div className="easy-live-kicker">
         <ShieldCheck size={14} /> SCIENTIST GATE {decision.gate}
       </div>
-      <h3>{decision.gate === 1 ? '确认自动推荐的目标结构' : decision.question}</h3>
+      <h3>{decision.gate === 1 ? t('Confirm the automatically recommended target structure') : decision.question}</h3>
       <p>{decision.action_summary}</p>
       <div className="easy-live-options" role="radiogroup" aria-label="Scientific options">
         {visibleOptions.map((item) => (
@@ -276,7 +291,7 @@ function GatePanel({
                 {item.rank ? `Site ${item.rank} · ` : ''}
                 {item.label || item.option_id}
               </strong>
-              <small>{item.description || (item.eligible ? '可选择' : '已阻断')}</small>
+              <small>{item.description || (item.eligible ? t('Selectable') : t('Blocked'))}</small>
               {item.design_labels && <em>Hotspot: {item.design_labels.join(', ')}</em>}
             </span>
           </label>
@@ -284,7 +299,7 @@ function GatePanel({
       </div>
       {(decision.warnings.length > 0 || decision.limitations.length > 0) && (
         <details>
-          <summary>风险与局限（{decision.warnings.length + decision.limitations.length}）</summary>
+          <summary>{t('Risks and limitations ({{count}})', { count: decision.warnings.length + decision.limitations.length })}</summary>
           <ul>
             {[...decision.warnings, ...decision.limitations].map((item, index) => (
               <li key={index}>{item}</li>
@@ -297,7 +312,7 @@ function GatePanel({
           aria-label="Revision instruction"
           value={instruction}
           maxLength={1500}
-          placeholder="说明希望科学 Agent 修改什么"
+          placeholder={t('Describe what you want the science Agent to change')}
           onChange={(event) => setInstruction(event.target.value)}
         />
       )}
@@ -320,7 +335,7 @@ function GatePanel({
           }
         >
           {busy ? <LoaderCircle className="easy-spin" size={15} /> : <Check size={15} />}
-          {approveAction === 'override' ? '确认并覆盖' : '批准并继续'}
+          {approveAction === 'override' ? t('Confirm and override') : t('Approve and continue')}
           <ArrowRight size={15} />
         </button>
         <button
@@ -328,7 +343,7 @@ function GatePanel({
           disabled={busy || !canDecide}
           onClick={() => setShowRevise((value) => !value)}
         >
-          修改
+          {t('Revise')}
         </button>
         {showRevise && (
           <button
@@ -343,7 +358,7 @@ function GatePanel({
               })
             }
           >
-            提交修改意见
+            {t('Submit revision')}
           </button>
         )}
       </div>
@@ -360,6 +375,7 @@ function SimulatedOrder({
   adapter: EasyProductPort;
   onUpdate: (value: LabOrderView) => void;
 }) {
+  const { t } = useTranslation('easy');
   const [selected, setSelected] = useState(() => order.candidates.map((item) => item.id));
   const [amount, setAmount] = useState('1 mg per sample');
   const [format, setFormat] = useState<'VHH' | 'VHH-Fc'>('VHH');
@@ -400,7 +416,7 @@ function SimulatedOrder({
       <div className="easy-live-kicker">
         <FlaskConical size={14} /> GATE 5 · SIMULATED LAB ORDER
       </div>
-      <h3>{order.receipt ? '模拟下单回执已生成' : '模拟实验下单'}</h3>
+      <h3>{order.receipt ? t('Simulated order receipt generated') : t('Simulated lab order')}</h3>
       <p>{order.disclaimer}</p>
       <div className="easy-live-order-candidates">
         {order.candidates.map((item) => (
@@ -420,7 +436,7 @@ function SimulatedOrder({
             <span>
               <strong>{item.id}</strong>
               <small>
-                {item.selection_class} · {item.sequence_length} aa · 完整序列已验证
+                {item.selection_class} · {item.sequence_length} aa · {t('Full sequence verified')}
               </small>
             </span>
           </label>
@@ -429,7 +445,7 @@ function SimulatedOrder({
       {!order.receipt && (
         <div className="easy-live-order-fields">
           <label>
-            构建形式
+            {t('Construct format')}
             <select
               value={format}
               onChange={(event) => setFormat(event.target.value as typeof format)}
@@ -439,7 +455,7 @@ function SimulatedOrder({
             </select>
           </label>
           <label>
-            每个样品用量
+            {t('Amount per sample')}
             <input
               value={amount}
               maxLength={160}
@@ -450,22 +466,25 @@ function SimulatedOrder({
       )}
       {order.quote && !order.receipt && (
         <p className="easy-live-quote">
-          非约束性模拟报价：{String(order.quote.illustrative_total)} {String(order.quote.currency)}
+          {t('Non-binding simulated quote: {{total}} {{currency}}', {
+            total: String(order.quote.illustrative_total),
+            currency: String(order.quote.currency),
+          })}
         </p>
       )}
       {order.receipt && (
         <dl className="easy-live-receipt">
           <div>
-            <dt>模拟订单</dt>
+            <dt>{t('Simulated order')}</dt>
             <dd>{String(order.receipt.order_id)}</dd>
           </div>
           <div>
-            <dt>状态</dt>
+            <dt>{t('Status')}</dt>
             <dd>{String(order.receipt.status)}</dd>
           </div>
           <div>
-            <dt>真实外部请求</dt>
-            <dd>未发送</dd>
+            <dt>{t('Real external request')}</dt>
+            <dd>{t('Not sent')}</dd>
           </div>
         </dl>
       )}
@@ -478,7 +497,7 @@ function SimulatedOrder({
               disabled={!selected.length || !amount.trim() || busy}
               onClick={() => void run(() => adapter.saveLabOrder(draft))}
             >
-              保存模拟订单草稿
+              {t('Save simulated order draft')}
             </button>
           )}
           {order.draft && !order.quote && (
@@ -487,7 +506,7 @@ function SimulatedOrder({
               disabled={busy}
               onClick={() => void run(() => adapter.quoteLabOrder())}
             >
-              生成模拟报价
+              {t('Generate simulated quote')}
             </button>
           )}
           {order.quote && (
@@ -496,7 +515,7 @@ function SimulatedOrder({
               disabled={busy}
               onClick={() => void run(() => adapter.submitLabOrder())}
             >
-              确认仅模拟并提交
+              {t('Confirm simulation-only and submit')}
             </button>
           )}
         </div>
@@ -514,6 +533,8 @@ export function EasyLiveApp({
   access?: { id: string; can_edit: boolean; can_execute: boolean; role: string };
   computeAvailable?: boolean;
 }) {
+  const { t, i18n } = useTranslation('easy');
+  const locale = i18n.language === 'en' ? ('en' as const) : ('zh' as const);
   const { canExecute } = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState | null>(null);
   const [input, setInput] = useState<EasyInput>(() => emptyInput());
@@ -631,8 +652,8 @@ export function EasyLiveApp({
       ? [
           {
             id: 'queue-cancelled',
-            title: '本次请求未执行',
-            summary: '排队已取消，已有科学证据保留。',
+            title: t('This request was not executed'),
+            summary: t('Queue cancelled; existing scientific evidence is retained.'),
             status: 'waiting',
           },
         ]
@@ -689,24 +710,24 @@ export function EasyLiveApp({
   if (!state)
     return (
       <div className="easy-live-loading">
-        <LoaderCircle className="easy-spin" /> 正在连接 EasyDesign…
+        <LoaderCircle className="easy-spin" /> {t('Connecting to EasyDesign…')}
       </div>
     );
   if (state.connection === 'authentication-required')
     return access ? (
       <main className="easy-live-login">
         <Brand />
-        <h1>会话需要重新登录</h1>
-        <p>当前账号会话已过期或被撤销，正在返回账号页。</p>
+        <h1>{t('Please sign in again')}</h1>
+        <p>{t('The current account session has expired or been revoked; returning to the account page.')}</p>
         <a className="easy-primary" href="#/account">
-          返回账号与团队
+          {t('Back to account and teams')}
         </a>
         {error && <p className="easy-error">{error}</p>}
       </main>
     ) : (
       <main className="easy-live-login">
         <Brand />
-        <h1>连接本地研究工作区</h1>
+        <h1>{t('Connect to the local research workspace')}</h1>
         <label>
           Access token
           <input value={token} onChange={(event) => setToken(event.target.value)} />
@@ -720,7 +741,7 @@ export function EasyLiveApp({
               .catch((reason) => setError((reason as Error).message))
           }
         >
-          连接 <ArrowRight size={16} />
+          {t('Connect')} <ArrowRight size={16} />
         </button>
         {error && <p className="easy-error">{error}</p>}
       </main>
@@ -740,18 +761,18 @@ export function EasyLiveApp({
               newDesign();
             }}
           >
-            新设计
+            {t('Create new design')}
           </a>
-          {snapshot && <a href="#current-design">当前任务</a>}
-          <a href="#my-designs">我的设计</a>
+          {snapshot && <a href="#current-design">{t('Current task')}</a>}
+          <a href="#my-designs">{t('My designs')}</a>
         </nav>
         <div className="easy-header-end">
           <span className={`easy-live-connection ${state.connection}`}>● {state.connection}</span>
           <button className="easy-help" onClick={() => void adapter.refresh()}>
-            <RefreshCw size={14} /> 刷新
+            <RefreshCw size={14} /> {t('Refresh')}
           </button>
           <a className="easy-pro-link" href={professionalUrl}>
-            打开专业版
+            {t('Open the Pro version')}
           </a>
         </div>
       </header>
@@ -760,17 +781,17 @@ export function EasyLiveApp({
         {!canExecute && (
           <p className="account-permission-note">
             {access?.role === 'observer'
-              ? '管理员只读查看：不能修改他人项目、批准 Gate 或启动计算。'
+              ? t('Administrator read-only view: you cannot modify projects of others, approve Gates, or start compute.')
               : !computeAvailable
-                ? '当前服务未连接科学执行器（账号管理模式）：可以浏览与协作编辑，计算启动与审批暂不可用。'
-                : '团队协作成员：可以查看和讨论，科学审批及计算启动由团队管理员负责。'}
+                ? t('This server has no scientific executor connected (account-management mode): browsing and collaborative editing are available; compute start and approval are temporarily unavailable.')
+                : t('Team collaborator: you can view and discuss; scientific approval and compute start are handled by team admins.')}
           </p>
         )}
         <section className="easy-intro">
           <h1>
-            从一句话开始<span>真实设计</span>
+            {t('Start from one sentence')}<span>{t('Real design')}</span>
           </h1>
-          <p>同一套冻结后端、同一套 Scientist Gates；这里仅简化操作，不简化科学边界。</p>
+          <p>{t('Same frozen backend, same Scientist Gates; only the operation is simplified here, never the scientific boundaries.')}</p>
         </section>
         <section className="easy-input-card" id="design">
           <div className="easy-section-top">
@@ -780,7 +801,7 @@ export function EasyLiveApp({
           </div>
           <div className="easy-input-row">
             <label className="easy-type-label">
-              <span>输入类型</span>
+              <span>{t('Input type')}</span>
               <div className="easy-select-wrap">
                 <select
                   value={input.type}
@@ -804,7 +825,7 @@ export function EasyLiveApp({
               {input.type === 'structure' ? (
                 <label className="easy-live-upload">
                   <FileUp size={20} />
-                  <span>{file?.name || '上传 PDB / mmCIF'}</span>
+                  <span>{file?.name || t('Upload PDB / mmCIF')}</span>
                   <input
                     type="file"
                     accept={fileTypes.structure}
@@ -828,7 +849,7 @@ export function EasyLiveApp({
                     placeholder={
                       input.type === 'sequence'
                         ? '>target\nACDEFGHIKLMNPQRSTVWY'
-                        : '例如：请为人源 NK2R 设计一个抑制受体信号的胞外 VHH binder'
+                        : t('e.g. Design an extracellular VHH binder that inhibits receptor signaling for human NK2R')
                     }
                     onChange={(event) => {
                       setFile(null);
@@ -838,7 +859,7 @@ export function EasyLiveApp({
                   {input.type === 'sequence' && (
                     <label className="easy-live-upload">
                       <FileUp size={20} />
-                      <span>{file?.name || '或上传 FASTA 文件'}</span>
+                      <span>{file?.name || t('or upload a FASTA file')}</span>
                       <input
                         type="file"
                         accept={fileTypes.sequence}
@@ -860,13 +881,13 @@ export function EasyLiveApp({
                 <>
                   <input
                     value={input.text}
-                    placeholder="目标名称或数据库 ID"
+                    placeholder={t('Target name or database ID')}
                     onChange={(event) => setInput({ ...input, text: event.target.value })}
                   />
                   {input.type === 'protein-name' && (
                     <input
                       value={input.species}
-                      placeholder="物种，例如 Homo sapiens"
+                      placeholder={t('Species, e.g. Homo sapiens')}
                       onChange={(event) => setInput({ ...input, species: event.target.value })}
                     />
                   )}
@@ -878,13 +899,13 @@ export function EasyLiveApp({
               disabled={state.pending || !!issue || !canExecute}
               onClick={() => void start()}
             >
-              {state.pending ? <LoaderCircle className="easy-spin" size={16} /> : '开始设计'}{' '}
+              {state.pending ? <LoaderCircle className="easy-spin" size={16} /> : t('Start design')}{' '}
               <ArrowRight size={16} />
             </button>
           </div>
           <div className="easy-options">
             <label>
-              设计名称
+              {t('Design name')}
               <input
                 value={input.name}
                 onChange={(event) => setInput({ ...input, name: event.target.value })}
@@ -892,7 +913,7 @@ export function EasyLiveApp({
             </label>
             {input.type !== 'description' && (
               <label>
-                设计目标
+                {t('Design goal')}
                 <input
                   value={input.goal}
                   onChange={(event) => setInput({ ...input, goal: event.target.value })}
@@ -917,7 +938,7 @@ export function EasyLiveApp({
                 ) : (
                   <Check size={12} />
                 )}
-                {queueCancelled && !snapshot.decision ? '排队已取消' : snapshot.project.status}
+                {queueCancelled && !snapshot.decision ? t('Queue cancelled') : snapshot.project.status}
               </span>
             </div>
             <div className="easy-steps">
@@ -952,16 +973,16 @@ export function EasyLiveApp({
                   <section className="easy-live-progress-card">
                     <ShieldCheck size={22} />
                     <div>
-                      <h3>研究已停止</h3>
-                      <p>Scientist 已停止本轮研究；科学证据保留，不会继续启动计算。</p>
+                      <h3>{t('Research stopped')}</h3>
+                      <p>{t('The Scientist has stopped this research run; scientific evidence is retained and no further compute will be started.')}</p>
                     </div>
                   </section>
                 ) : completed ? (
                   <section className="easy-live-progress-card easy-live-complete-card">
                     <Check size={22} />
                     <div>
-                      <h3>设计闭环已完成</h3>
-                      <p>Gate 5 已记录；实验与真实下单仍未授权。</p>
+                      <h3>{t('Design loop complete')}</h3>
+                      <p>{t('Gate 5 recorded; experiments and real ordering remain unauthorized.')}</p>
                     </div>
                   </section>
                 ) : queuedRequest?.result?.queue ? (
@@ -970,14 +991,14 @@ export function EasyLiveApp({
                     <div>
                       <h3>
                         {queuedRequest.result.queue.state === 'starting'
-                          ? '正在启动执行器'
-                          : '等待执行资源'}
+                          ? t('Starting executor')
+                          : t('Waiting for execution resources')}
                       </h3>
                       <p>
                         {queuedRequest.result.queue.position != null
-                          ? `排队位置：${queuedRequest.result.queue.position}。`
+                          ? t('Queue position: {{position}}.', { position: queuedRequest.result.queue.position })
                           : ''}
-                        任务已保存，不需要重复提交。
+                        {t('The task is saved; no need to resubmit.')}
                       </p>
                     </div>
                     {queuedRequest.result.queue.cancellable && (
@@ -990,7 +1011,7 @@ export function EasyLiveApp({
                             .catch((reason) => setError((reason as Error).message))
                         }
                       >
-                        取消排队
+                        {t('Cancel queueing')}
                       </button>
                     )}
                   </section>
@@ -998,8 +1019,8 @@ export function EasyLiveApp({
                   <section className="easy-live-progress-card" role="status">
                     <ShieldCheck size={22} />
                     <div>
-                      <h3>排队已取消</h3>
-                      <p>本次请求未启动计算，已有科学证据保留；不会自动重新排队。</p>
+                      <h3>{t('Queue cancelled')}</h3>
+                      <p>{t('This request did not start compute; existing scientific evidence is retained; it will not be re-queued automatically.')}</p>
                     </div>
                     {(failedCreate || snapshot.capabilities.resume) && (
                       <button
@@ -1011,7 +1032,7 @@ export function EasyLiveApp({
                           ).catch((reason) => setError((reason as Error).message))
                         }
                       >
-                        重新排队
+                        {t('Re-queue')}
                       </button>
                     )}
                   </section>
@@ -1033,15 +1054,15 @@ export function EasyLiveApp({
                   <section className="easy-live-progress-card easy-live-gate-recovery" role="alert">
                     <ShieldCheck size={22} />
                     <div>
-                      <h3>正在恢复审批卡</h3>
-                      <p>项目正在等待 Scientist 批准；在审批选项恢复前不会显示为 Agent 工作中。</p>
+                      <h3>{t('Restoring the approval card')}</h3>
+                      <p>{t('The project is waiting for Scientist approval; it will not show as Agent working until the approval options are restored.')}</p>
                     </div>
                     <button
                       className="easy-primary"
                       disabled={state.pending}
                       onClick={() => void adapter.refresh()}
                     >
-                      刷新审批卡 <RefreshCw size={14} />
+                      {t('Refresh approval card')} <RefreshCw size={14} />
                     </button>
                   </section>
                 ) : snapshot.capabilities.resume || executionBlocked ? (
@@ -1057,14 +1078,14 @@ export function EasyLiveApp({
                     <div>
                       <h3>
                         {autoContinuationEligible
-                          ? '正在自动继续'
+                          ? t('Auto-continuing')
                           : executionBlocked
-                            ? '当前执行已阻塞'
-                            : '当前步骤可以继续'}
+                            ? t('Current execution is blocked')
+                            : t('Current step can continue')}
                       </h3>
                       <p>
                         {executionBlocked && !autoContinuationEligible
-                          ? '当前执行未完成，证据与恢复状态已保留。请查看技术详情后决定是否继续。'
+                          ? t('The current execution is incomplete; evidence and recovery state are retained. Review the technical details before deciding whether to continue.')
                           : snapshot.current_action.message || snapshot.current_action.stage}
                       </p>
                     </div>
@@ -1084,7 +1105,7 @@ export function EasyLiveApp({
                           }
                         }}
                       >
-                        继续研究 <ArrowRight size={14} />
+                        {t('Continue research')} <ArrowRight size={14} />
                       </button>
                     )}
                     {failedCreate && (
@@ -1103,7 +1124,7 @@ export function EasyLiveApp({
                             .catch((reason) => setError((reason as Error).message));
                         }}
                       >
-                        重试目标解析 <RefreshCw size={14} />
+                        {t('Retry target resolution')} <RefreshCw size={14} />
                       </button>
                     )}
                   </section>
@@ -1111,7 +1132,7 @@ export function EasyLiveApp({
                   <section className="easy-live-progress-card">
                     <LoaderCircle className="easy-spin" size={22} />
                     <div>
-                      <h3>Agent 正在工作</h3>
+                      <h3>{t('Agent is working')}</h3>
                       <p>{snapshot.current_action.stage}</p>
                     </div>
                   </section>
@@ -1121,7 +1142,7 @@ export function EasyLiveApp({
                 )}
                 {shownIndex === index && (
                   <section className="easy-live-activity">
-                    <h3>实时过程</h3>
+                    <h3>{t('Live activity')}</h3>
                     {activity.map((item) => (
                       <article key={item.id}>
                         <span className={item.status || ''} />
@@ -1133,7 +1154,7 @@ export function EasyLiveApp({
                     ))}
                     {technicalActivity.length > 0 && (
                       <details className="easy-live-technical-details">
-                        <summary>查看技术详情</summary>
+                        <summary>{t('View technical details')}</summary>
                         {snapshot.decision?.details_url && (
                           <a
                             href={
@@ -1144,7 +1165,7 @@ export function EasyLiveApp({
                             target="_blank"
                             rel="noreferrer"
                           >
-                            查看当前 Gate 的审查与 provenance
+                            {t('View review and provenance for the current Gate')}
                           </a>
                         )}
                         <div>
@@ -1188,7 +1209,7 @@ export function EasyLiveApp({
                 )}
                 {shownIndex >= 3 && candidates.length > 0 && (
                   <div className="easy-live-candidates">
-                    <h3>候选分子</h3>
+                    <h3>{t('Candidate molecules')}</h3>
                     {candidates.map((candidate) => (
                       <button
                         key={candidate.id}
@@ -1219,17 +1240,17 @@ export function EasyLiveApp({
         <section className="easy-history" id="my-designs">
           <div className="easy-history-heading">
             <h2>
-              我的设计 <span>{projects.length}</span>
+              {t('My designs')} <span>{projects.length}</span>
             </h2>
-            <p>最近 5 个有效设计</p>
+            <p>{t('Latest 5 active designs')}</p>
           </div>
           <div className="easy-history-table">
             <table>
               <thead>
                 <tr>
-                  <th>设计</th>
-                  <th>阶段</th>
-                  <th>状态</th>
+                  <th>{t('Design')}</th>
+                  <th>{t('Stage')}</th>
+                  <th>{t('Status')}</th>
                   <th />
                 </tr>
               </thead>
@@ -1250,7 +1271,7 @@ export function EasyLiveApp({
                     </td>
                     <td>
                       <button className="easy-outline" onClick={() => void openProject(project.id)}>
-                        打开
+                        {t('Open')}
                       </button>
                     </td>
                   </tr>
@@ -1261,7 +1282,7 @@ export function EasyLiveApp({
         </section>
       </main>
       <RabbitMascot
-        locale="zh"
+        locale={locale}
         mood={state.pending || active ? 'running' : snapshot ? 'complete' : 'idle'}
         stage={(snapshot ? STEPS[index] : 'Idle') as (typeof STEPS)[number] | 'Idle'}
         chatContext={{

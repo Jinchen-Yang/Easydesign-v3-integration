@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode} from 'react';
+import {useTranslation} from 'react-i18next';
 import {
   accountApi, AccountApiError, draftsApi, fetchAccountConfig, fetchFinalDesignsOverview, fetchScopeUsage,
   notifySessionChange, scopedTransport, type AccountConfig, type AccountScope,
@@ -7,6 +8,7 @@ import {
 } from '../../shared/account-client';
 import {Brand} from '../../components/Brand';
 import {useSession} from '../../shell/SessionProvider';
+import {appI18n} from '../../shell/I18nProvider';
 import {workspaceHref} from '../easy/routeParams';
 import './accounts.css';
 
@@ -21,7 +23,9 @@ const ACTIVE_ADMISSION_STATES = new Set(['reserved', 'queued', 'starting', 'runn
 const AUDIT_PAGE = 100;
 
 function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : '操作失败，请重试';
+  return error instanceof Error && error.message
+    ? error.message
+    : appI18n.t('Operation failed, please try again', { ns: 'account' });
 }
 
 function when(timestamp: number): string {
@@ -117,6 +121,7 @@ function useAction() {
 }
 
 function Login({onLogin, login}: {onLogin: (session: AccountSession) => void; login: (username: string, password: string) => Promise<AccountSession>}) {
+  const { t } = useTranslation('account');
   const [register, setRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -140,64 +145,66 @@ function Login({onLogin, login}: {onLogin: (session: AccountSession) => void; lo
         setPassword('');
         onLogin(session);
       }
-    }, register ? '注册已提交，等待管理员审核。审核通过后即可登录。' : '');
+    }, register ? t('Registration submitted and awaiting administrator review. You can sign in once approved.') : '');
   }
   return <main className="account-login">
-    <Brand/><h1>{register ? '申请 EasyDesign 账号' : '登录 EasyDesign'}</h1>
-    <p>个人工作区独立，团队项目按权限协作。</p>
-    {setup && <p role="status" className="account-notice">管理员尚未初始化，请联系部署负责人完成安全引导。</p>}
+    <Brand/><h1>{register ? t('Apply for an EasyDesign account') : t('Sign in to EasyDesign')}</h1>
+    <p>{t('Personal workspaces are private; team projects are shared by permission.')}</p>
+    {setup && <p role="status" className="account-notice">{t('The administrator has not completed setup; contact the deployment owner to finish the security bootstrap.')}</p>}
     <form onSubmit={submit}>
-      <label>用户名<input required value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" minLength={3} maxLength={64}/></label>
-      {register && <label>显示名称<input value={displayName} onChange={event => setDisplayName(event.target.value)} maxLength={100}/></label>}
-      <label>密码<input type="password" required value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 12 : undefined} maxLength={256}/></label>
-      {register && <small>至少 12 个字符。注册后需管理员审核，才能使用工作区。</small>}
-      <button className="account-primary" disabled={action.busy || setup}>{action.busy ? '正在处理…' : register ? '提交注册申请' : '登录'}</button>
+      <label>{t('Username')}<input required value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" minLength={3} maxLength={64}/></label>
+      {register && <label>{t('Display name')}<input value={displayName} onChange={event => setDisplayName(event.target.value)} maxLength={100}/></label>}
+      <label>{t('Password')}<input type="password" required value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 12 : undefined} maxLength={256}/></label>
+      {register && <small>{t('At least 12 characters. Registration requires administrator approval before workspace access.')}</small>}
+      <button className="account-primary" disabled={action.busy || setup}>{action.busy ? t('Processing…') : register ? t('Submit registration') : t('Sign in')}</button>
       {action.feedback}
     </form>
-    <button className="account-link" onClick={() => {setRegister(!register); setPassword('');}}>{register ? '已有账号，返回登录' : '没有账号？申请注册'}</button>
+    <button className="account-link" onClick={() => {setRegister(!register); setPassword('');}}>{register ? t('Have an account? Back to sign in') : t('No account? Apply for registration')}</button>
   </main>;
 }
 
 function Password({session, changed}: {session: AccountSession; changed: () => void}) {
+  const { t } = useTranslation('account');
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const action = useAction();
-  return <section className="account-panel"><h2>{session.user.must_change_password ? '请先修改临时密码' : '修改密码'}</h2>
-    <p>修改后所有现有会话都会失效，需要重新登录。</p>
+  return <section className="account-panel"><h2>{session.user.must_change_password ? t('Change your temporary password first') : t('Change password')}</h2>
+    <p>{t('Changing the password invalidates all existing sessions; you will need to sign in again.')}</p>
     <form onSubmit={event => {event.preventDefault(); void action.run(async () => {
       await accountApi('/accounts/password', session, {current_password: current, password: next});
       setCurrent(''); setNext(''); notifySessionChange(); changed();
     });}}>
-      <label>当前密码<input type="password" autoComplete="current-password" required value={current} onChange={event => setCurrent(event.target.value)}/></label>
-      <label>新密码<input type="password" autoComplete="new-password" minLength={12} maxLength={256} required value={next} onChange={event => setNext(event.target.value)}/></label>
-      <button className="account-primary" disabled={action.busy}>修改并重新登录</button>{action.feedback}
+      <label>{t('Current password')}<input type="password" autoComplete="current-password" required value={current} onChange={event => setCurrent(event.target.value)}/></label>
+      <label>{t('New password')}<input type="password" autoComplete="new-password" minLength={12} maxLength={256} required value={next} onChange={event => setNext(event.target.value)}/></label>
+      <button className="account-primary" disabled={action.busy}>{t('Change and sign in again')}</button>{action.feedback}
     </form>
   </section>;
 }
 
 function Workspaces({session, refresh}: {session: AccountSession; refresh: () => Promise<void>}) {
+  const { t } = useTranslation('account');
   const [teamName, setTeamName] = useState('');
   const action = useAction();
   return <>
-    <section className="account-panel"><h2>我的工作区</h2><p>默认个人私有。进入团队工作区后，新建项目才会与团队共享。</p>
+    <section className="account-panel"><h2>{t('My workspaces')}</h2><p>{t('Personal by default. New projects are shared with a team only after you enter its workspace.')}</p>
       <div className="account-grid">{session.scopes.map(scope => <article className="account-scope" key={scope.id}>
-        <h3>{scope.name}</h3><span>{scope.kind === 'personal' ? '个人私有' : scope.role === 'observer' ? '只读访问' : scope.can_execute ? '团队管理员' : '团队成员'}</span>
-        <p>{scope.can_execute ? '可以编辑、批准 Gate 和启动计算。' : '可以协作编辑和查看结果；科学审批与计算启动由团队管理员负责。'}</p>
-        <a className="account-primary" href={workspaceHref(scope.id, 'easy')}>进入 Easy 工作区</a>
-        <a href={workspaceHref(scope.id, 'pro')}>打开专业版</a>
+        <h3>{scope.name}</h3><span>{scope.kind === 'personal' ? t('Personal private') : scope.role === 'observer' ? t('Read-only access') : scope.can_execute ? t('Team admin') : t('Team member')}</span>
+        <p>{scope.can_execute ? t('You can edit, approve Gates, and start compute.') : t('You can collaboratively edit and view results; scientific approval and compute start are handled by team admins.')}</p>
+        <a className="account-primary" href={workspaceHref(scope.id, 'easy')}>{t('Enter Easy workspace')}</a>
+        <a href={workspaceHref(scope.id, 'pro')}>{t('Open Pro')}</a>
       </article>)}</div>
     </section>
-    {session.invitations.length > 0 && <section className="account-panel"><h2>团队邀请</h2>{session.invitations.map(invitation => <div className="account-row" key={invitation.id}>
-      <span>{invitation.team_name} · {invitation.role === 'admin' ? '团队管理员' : '成员'}</span>
+    {session.invitations.length > 0 && <section className="account-panel"><h2>{t('Team invitations')}</h2>{session.invitations.map(invitation => <div className="account-row" key={invitation.id}>
+      <span>{invitation.team_name} · {invitation.role === 'admin' ? t('Team admin') : t('Member')}</span>
       {[true, false].map(accept => <button key={String(accept)} disabled={action.busy} onClick={() => void action.run(async () => {
         await accountApi(`/invitations/${invitation.id}`, session, {accept}); await refresh();
-      })}>{accept ? '接受邀请' : '拒绝'}</button>)}
+      })}>{accept ? t('Accept invitation') : t('Decline')}</button>)}
     </div>)}</section>}
-    <section className="account-panel"><h2>创建团队</h2><form onSubmit={event => {event.preventDefault(); void action.run(async () => {
+    <section className="account-panel"><h2>{t('Create team')}</h2><form onSubmit={event => {event.preventDefault(); void action.run(async () => {
       await accountApi('/teams', session, {name: teamName}); setTeamName(''); await refresh();
-    }, '团队已创建');}}>
-      <label>团队名称<input value={teamName} onChange={event => setTeamName(event.target.value)} required maxLength={100}/></label>
-      <button disabled={action.busy} className="account-primary">创建团队</button>{action.feedback}
+    }, t('Team created'));}}>
+      <label>{t('Team name')}<input value={teamName} onChange={event => setTeamName(event.target.value)} required maxLength={100}/></label>
+      <button disabled={action.busy} className="account-primary">{t('Create team')}</button>{action.feedback}
     </form></section>
   </>;
 }
@@ -208,18 +215,19 @@ function DraftEditor({draft, busy, onSave, onCancel}: {
   onSave: (value: {title: string; goal: string}, revision: number) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('account');
   const [title, setTitle] = useState(draft.payload.title);
   const [goal, setGoal] = useState(draft.payload.goal);
   return <form className="account-draft-form" onSubmit={event => {
     event.preventDefault();
     onSave({title: title.trim(), goal: goal.trim()}, draft.revision);
   }}>
-    <label>标题<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={80}/></label>
-    <label>研究目标<textarea rows={3} value={goal} onChange={event => setGoal(event.target.value)} required maxLength={1500}/></label>
+    <label>{t('Title')}<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={80}/></label>
+    <label>{t('Research goal')}<textarea rows={3} value={goal} onChange={event => setGoal(event.target.value)} required maxLength={1500}/></label>
     <div className="account-row">
-      <button className="account-primary" disabled={busy || !title.trim() || !goal.trim()}>保存新版本</button>
-      <button type="button" disabled={busy} onClick={onCancel}>取消</button>
-      <small>基于版本 r{draft.revision} 保存；其他成员同时保存会提示重新加载。</small>
+      <button className="account-primary" disabled={busy || !title.trim() || !goal.trim()}>{t('Save new version')}</button>
+      <button type="button" disabled={busy} onClick={onCancel}>{t('Cancel')}</button>
+      <small>{t('Saving on top of revision r{{revision}}; if another member saves at the same time you will be asked to reload.', {revision: draft.revision})}</small>
     </div>
   </form>;
 }
@@ -227,6 +235,7 @@ function DraftEditor({draft, busy, onSave, onCancel}: {
 function TeamDrafts({session, scope, team, computeAvailable}: {
   session: AccountSession; scope: AccountScope; team: Team | null; computeAvailable: boolean;
 }) {
+  const { t } = useTranslation('account');
   const {value: list, error, busy, load} = useGuardedLoad<ProjectDraft[]>();
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -241,34 +250,34 @@ function TeamDrafts({session, scope, team, computeAvailable}: {
   const names = new Map((team?.members || []).map(member => [member.user_id, member.display_name]));
   const nameOf = (id: string) => names.get(id) || (id === session.user.id ? session.user.display_name : id.slice(0, 12));
   const canEdit = scope.can_edit;
-  return <section className="account-panel" aria-label="团队项目草稿">
-    <div className="account-row"><h2>团队项目草稿</h2>
-      {busy && <span role="status">加载中…</span>}
-      <button disabled={busy} onClick={reload}>刷新</button>
-      {canEdit && !creating && <button className="account-primary" onClick={() => {setCreating(true); setTitle(''); setGoal('');}}>新建草稿</button>}
+  return <section className="account-panel" aria-label={t('Team project drafts')}>
+    <div className="account-row"><h2>{t('Team project drafts')}</h2>
+      {busy && <span role="status">{t('Loading…')}</span>}
+      <button disabled={busy} onClick={reload}>{t('Refresh')}</button>
+      {canEdit && !creating && <button className="account-primary" onClick={() => {setCreating(true); setTitle(''); setGoal('');}}>{t('New draft')}</button>}
     </div>
-    <p>成员可以共同编辑草稿；保存草稿不会启动任何科学计算。只有团队管理员能把草稿作为项目启动，启动后草稿冻结为当时的科学输入。</p>
+    <p>{t('Members can edit drafts together; saving a draft never starts scientific compute. Only team admins can start a draft as a project; once started, the draft freezes as the scientific input of that moment.')}</p>
     {error && <p className="account-error" role="alert">{error}</p>}
     {creating && <form onSubmit={event => {event.preventDefault(); void action.run(async () => {
       await draftsApi.save(scopedTransport(session, scope), {title: title.trim(), goal: goal.trim()});
       setCreating(false); reload();
-    }, '草稿已创建');}}>
-      <label>标题<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={80}/></label>
-      <label>研究目标<textarea rows={3} value={goal} onChange={event => setGoal(event.target.value)} required maxLength={1500}/></label>
+    }, t('Draft created'));}}>
+      <label>{t('Title')}<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={80}/></label>
+      <label>{t('Research goal')}<textarea rows={3} value={goal} onChange={event => setGoal(event.target.value)} required maxLength={1500}/></label>
       <div className="account-row">
-        <button className="account-primary" disabled={action.busy || !title.trim() || !goal.trim()}>创建草稿</button>
-        <button type="button" disabled={action.busy} onClick={() => setCreating(false)}>取消</button>
+        <button className="account-primary" disabled={action.busy || !title.trim() || !goal.trim()}>{t('Create draft')}</button>
+        <button type="button" disabled={action.busy} onClick={() => setCreating(false)}>{t('Cancel')}</button>
       </div>
       {action.feedback}
     </form>}
-    {list && list.length === 0 && !creating && <p>还没有草稿。团队成员可以先在这里共同打磨研究目标，再由团队管理员启动。</p>}
-    <div className="account-table-scroll"><table><thead><tr><th>草稿</th><th>状态</th><th>协作</th><th>操作</th></tr></thead>
+    {list && list.length === 0 && !creating && <p>{t('No drafts yet. Team members can refine the research goal here together before a team admin starts it.')}</p>}
+    <div className="account-table-scroll"><table><thead><tr><th>{t('Draft')}</th><th>{t('Status')}</th><th>{t('Collaboration')}</th><th>{t('Actions')}</th></tr></thead>
       <tbody>{(list || []).map(draft => <tr key={draft.id}>
         <td><strong>{draft.payload.title}</strong><small>{draft.payload.goal}</small></td>
         <td>{draft.state === 'started'
-          ? <>已启动 {draft.project_id && <small><a href={workspaceHref(scope.id, 'easy', draft.project_id)}>打开项目</a></small>}</>
-          : draft.state === 'starting' ? '启动中' : `草稿 · r${draft.revision}`}</td>
-        <td><small>创建 {nameOf(draft.created_by)}<br/>更新 {nameOf(draft.updated_by)} · {when(draft.updated_at)}</small></td>
+          ? <>{t('Started')} {draft.project_id && <small><a href={workspaceHref(scope.id, 'easy', draft.project_id)}>{t('Open project')}</a></small>}</>
+          : draft.state === 'starting' ? t('Starting') : t('Draft · r{{revision}}', {revision: draft.revision})}</td>
+        <td><small>{t('Created {{name}}', {name: nameOf(draft.created_by)})}<br/>{t('Updated {{name}} · {{time}}', {name: nameOf(draft.updated_by), time: when(draft.updated_at)})}</small></td>
         <td className="account-actions">
           {draft.state === 'draft' && canEdit && (editing === draft.id
             ? <DraftEditor draft={draft} busy={action.busy} onCancel={() => setEditing(null)}
@@ -285,22 +294,22 @@ function TeamDrafts({session, scope, team, computeAvailable}: {
                   } finally {
                     reload();
                   }
-                }, '草稿已保存')}/>
-            : <button disabled={action.busy} onClick={() => {setEditing(draft.id); setCreating(false);}}>编辑</button>)}
+                }, t('Draft saved'))}/>
+            : <button disabled={action.busy} onClick={() => {setEditing(draft.id); setCreating(false);}}>{t('Edit')}</button>)}
           {draft.state === 'draft' && scope.can_execute && computeAvailable && <button disabled={action.busy} onClick={() => {
-            if (window.confirm(`以当前版本 r${draft.revision} 启动「${draft.payload.title}」？启动会创建团队科学项目。`))
+            if (window.confirm(t('Start "{{title}}" at the current revision r{{revision}}? Starting creates a team scientific project.', {title: draft.payload.title, revision: draft.revision})))
               void action.run(async () => {
                 const result = await draftsApi.start(scopedTransport(session, scope), draft.id, draft.revision);
                 const projectId = result.project?.id || result.draft?.project_id || '';
                 if (projectId) setStarted({draftId: draft.id, projectId});
                 reload();
-              }, '项目已启动');
-          }}>启动项目</button>}
+              }, t('Project started'));
+          }}>{t('Start project')}</button>}
         </td>
       </tr>)}</tbody></table></div>
-    {!scope.can_execute && <p className="account-permission-note">当前身份是团队成员：可以编辑和讨论草稿；启动计算与科学审批由团队管理员执行。</p>}
-    {scope.can_execute && !computeAvailable && <p className="account-permission-note">当前服务未连接科学执行器（账号管理模式）：草稿协作可用，启动项目暂不可用。</p>}
-    {started && <p className="account-success" role="status">草稿已转为项目。<a href={workspaceHref(scope.id, 'easy', started.projectId)}>在工作区打开新项目</a></p>}
+    {!scope.can_execute && <p className="account-permission-note">{t('Your role is team member: you can edit and discuss drafts; compute start and scientific approval are performed by team admins.')}</p>}
+    {scope.can_execute && !computeAvailable && <p className="account-permission-note">{t('This server has no scientific executor connected (account-management mode): draft collaboration is available; project start is temporarily unavailable.')}</p>}
+    {started && <p className="account-success" role="status">{t('Draft converted to project.')}<a href={workspaceHref(scope.id, 'easy', started.projectId)}>{t('Open the new project in the workspace')}</a></p>}
     {action.feedback}
   </section>;
 }
@@ -308,6 +317,7 @@ function TeamDrafts({session, scope, team, computeAvailable}: {
 function Teams({session, refresh, computeAvailable}: {
   session: AccountSession; refresh: () => Promise<void>; computeAvailable: boolean;
 }) {
+  const { t } = useTranslation('account');
   const [selected, setSelected] = useState('');
   const {value: team, error: teamError, busy: teamBusy, load: loadTeam, clear: clearTeam} = useGuardedLoad<Team>();
   const [username, setUsername] = useState('');
@@ -322,30 +332,30 @@ function Teams({session, refresh, computeAvailable}: {
   // administration is account work, not scientific approval or execution.
   const manage = scope?.role === 'admin' || scope?.role === 'owner' || session.user.role === 'admin';
   return <>
-    <section className="account-panel"><h2>团队协作</h2>
-      <label>选择团队<select value={selected} onChange={event => setSelected(event.target.value)}>
-        <option value="">请选择</option>
+    <section className="account-panel"><h2>{t('Team collaboration')}</h2>
+      <label>{t('Select team')}<select value={selected} onChange={event => setSelected(event.target.value)}>
+        <option value="">{t('Please select')}</option>
         {session.scopes.filter(item => item.kind === 'team').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>
-      {teamBusy && <p role="status">加载团队信息…</p>}
+      {teamBusy && <p role="status">{t('Loading team…')}</p>}
       {teamError && <p className="account-error" role="alert">{teamError}</p>}
-      {team && <><h3>{team.name}</h3><div className="account-table-scroll"><table><thead><tr><th>成员</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>{team.members?.filter(item => item.status === 'active').map(member => <tr key={member.user_id}>
-        <td>{member.display_name} <small>@{member.username}</small></td><td>{member.role === 'admin' || member.role === 'owner' ? '团队管理员' : '成员'}</td><td>{member.account_status === 'active' ? '已启用' : '不可用'}</td>
+      {team && <><h3>{team.name}</h3><div className="account-table-scroll"><table><thead><tr><th>{t('Member')}</th><th>{t('Role')}</th><th>{t('Status')}</th><th>{t('Actions')}</th></tr></thead><tbody>{team.members?.filter(item => item.status === 'active').map(member => <tr key={member.user_id}>
+        <td>{member.display_name} <small>@{member.username}</small></td><td>{member.role === 'admin' || member.role === 'owner' ? t('Team admin') : t('Member')}</td><td>{member.account_status === 'active' ? t('Active') : t('Unavailable')}</td>
         <td className="account-actions">
-          {manage && member.role !== 'owner' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/teams/${team.id}/members/${member.user_id}`, session, {role: member.role === 'admin' ? 'member' : 'admin'}); await reloadTeam(team.id); await refresh();})}>{member.role === 'admin' ? '设为成员' : '设为管理员'}</button>}
+          {manage && member.role !== 'owner' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/teams/${team.id}/members/${member.user_id}`, session, {role: member.role === 'admin' ? 'member' : 'admin'}); await reloadTeam(team.id); await refresh();})}>{member.role === 'admin' ? t('Make member') : t('Make admin')}</button>}
           {(manage || member.user_id === session.user.id) && member.role !== 'owner' && <button disabled={action.busy} onClick={() => {
-            if (window.confirm(member.user_id === session.user.id ? '确认退出这个团队？' : `确认移除 ${member.display_name}？`)) void action.run(async () => {
+            if (window.confirm(member.user_id === session.user.id ? t('Leave this team?') : t('Remove {{name}}?', {name: member.display_name}))) void action.run(async () => {
               await accountApi(`/teams/${team.id}/members/${member.user_id}`, session, {remove: true}); await refresh();
               if (member.user_id === session.user.id) {setSelected('');} else await reloadTeam(team.id);
             });
-          }}>{member.user_id === session.user.id ? '退出团队' : '移除'}</button>}
+          }}>{member.user_id === session.user.id ? t('Leave team') : t('Remove')}</button>}
         </td></tr>)}</tbody></table></div>
         {manage && <form onSubmit={event => {event.preventDefault(); void action.run(async () => {
           await accountApi(`/teams/${team.id}/invitations`, session, {username, role}); setUsername('');
-        }, '邀请已发送，等待对方接受');}}><h3>邀请已启用的用户</h3>
-          <label>用户名<input required value={username} onChange={event => setUsername(event.target.value)}/></label>
-          <label>加入后的角色<select value={role} onChange={event => setRole(event.target.value)}><option value="member">成员</option><option value="admin">团队管理员</option></select></label>
-          <button className="account-primary" disabled={action.busy}>发送邀请</button>
+        }, t('Invitation sent; waiting for the recipient to accept'));}}><h3>{t('Invite an active user')}</h3>
+          <label>{t('Username')}<input required value={username} onChange={event => setUsername(event.target.value)}/></label>
+          <label>{t('Role after joining')}<select value={role} onChange={event => setRole(event.target.value)}><option value="member">{t('Member')}</option><option value="admin">{t('Team admin')}</option></select></label>
+          <button className="account-primary" disabled={action.busy}>{t('Send invitation')}</button>
         </form>}
       </>}{action.feedback}
     </section>
@@ -354,71 +364,73 @@ function Teams({session, refresh, computeAvailable}: {
 }
 
 const LIMIT_LABELS: Record<keyof QuotaLimits, string> = {
-  max_active_jobs: '并发科学请求', max_active_chats: '并发对话',
-  max_gpu_devices: 'GPU 槽位上限', max_upload_bytes: '单文件上传上限',
-  max_stored_upload_bytes: '上传存储额度', max_candidates_per_job: '单次生成候选上限',
-  final_designs_allowance: '最终设计个人累计额度',
-  pilot_stage_budget: 'Pilot 阶段预算（新项目）',
-  scale_stage_budget: 'Scale 阶段预算（新项目）',
+  max_active_jobs: 'Concurrent scientific requests', max_active_chats: 'Concurrent conversations',
+  max_gpu_devices: 'GPU slot limit', max_upload_bytes: 'Single-file upload limit',
+  max_stored_upload_bytes: 'Upload storage quota', max_candidates_per_job: 'Candidates per run limit',
+  final_designs_allowance: 'Final designs personal cumulative allowance',
+  pilot_stage_budget: 'Pilot stage budget (new projects)',
+  scale_stage_budget: 'Scale stage budget (new projects)',
 };
 
 function UsagePanel({usage}: {usage: ScopeUsage}) {
+  const { t } = useTranslation('account');
   const active = usage.admissions.filter(item => ACTIVE_ADMISSION_STATES.has(item.state));
   const jobs = active.filter(item => item.kind === 'scientific').length;
   const chats = active.filter(item => item.kind === 'conversation').length;
   const gpus = active.reduce((total, item) => total + item.gpu_slots, 0);
-  const stageBudget = (value: number | null) => value === null ? '原生默认' : String(value);
+  const stageBudget = (value: number | null) => value === null ? t('Native default') : String(value);
   const rows: Array<[string, string]> = [
-    [LIMIT_LABELS.max_active_jobs, `${jobs} / ${usage.limits.max_active_jobs}${usage.limits.max_active_jobs === 0 ? '（暂停新请求）' : ''}`],
-    [LIMIT_LABELS.max_active_chats, `${chats} / ${usage.limits.max_active_chats}`],
-    [LIMIT_LABELS.max_gpu_devices, `${gpus} / ${usage.limits.max_gpu_devices}`],
-    [LIMIT_LABELS.max_upload_bytes, bytes(usage.limits.max_upload_bytes)],
-    [LIMIT_LABELS.max_stored_upload_bytes, `${bytes(usage.stored_upload_bytes)} / ${bytes(usage.limits.max_stored_upload_bytes)}`],
-    [LIMIT_LABELS.max_candidates_per_job, `${usage.limits.max_candidates_per_job}（单次执行上限，非累计余额）`],
-    [LIMIT_LABELS.pilot_stage_budget, stageBudget(usage.limits.pilot_stage_budget)],
-    [LIMIT_LABELS.scale_stage_budget, stageBudget(usage.limits.scale_stage_budget)],
+    [t(LIMIT_LABELS.max_active_jobs), `${jobs} / ${usage.limits.max_active_jobs}${usage.limits.max_active_jobs === 0 ? t('(new requests paused)') : ''}`],
+    [t(LIMIT_LABELS.max_active_chats), `${chats} / ${usage.limits.max_active_chats}`],
+    [t(LIMIT_LABELS.max_gpu_devices), `${gpus} / ${usage.limits.max_gpu_devices}`],
+    [t(LIMIT_LABELS.max_upload_bytes), bytes(usage.limits.max_upload_bytes)],
+    [t(LIMIT_LABELS.max_stored_upload_bytes), `${bytes(usage.stored_upload_bytes)} / ${bytes(usage.limits.max_stored_upload_bytes)}`],
+    [t(LIMIT_LABELS.max_candidates_per_job), `${usage.limits.max_candidates_per_job}${t('(per-execution limit, not a cumulative balance)')}`],
+    [t(LIMIT_LABELS.pilot_stage_budget), stageBudget(usage.limits.pilot_stage_budget)],
+    [t(LIMIT_LABELS.scale_stage_budget), stageBudget(usage.limits.scale_stage_budget)],
   ];
-  return <section className="account-panel" aria-label="资源用量">
-    <div className="account-row"><h2>{usage.scope.name} · 资源用量</h2>
-      <span>{usage.scope.kind === 'personal' ? '按个人额度检查' : usage.scope.role === 'observer' ? '团队口径（只读查看）' : '计算同时受发起人个人额度与团队额度约束'}</span>
+  return <section className="account-panel" aria-label={t('Resource usage')}>
+    <div className="account-row"><h2>{usage.scope.name} · {t('Resource usage')}</h2>
+      <span>{usage.scope.kind === 'personal' ? t('Checked against personal quota') : usage.scope.role === 'observer' ? t('Team view (read-only)') : t("Compute is constrained by both the initiator's personal quota and the team quota")}</span>
     </div>
     <div className="account-grid">{rows.map(([label, value]) => <article className="account-scope" key={label}>
       <h3>{value}</h3><span>{label}</span>
     </article>)}</div>
-    <p className="account-field-help">阶段预算是本范围内新建项目的冻结默认值；已有项目的冻结预算不受后续修改影响。</p>
+    <p className="account-field-help">{t('Stage budgets are frozen defaults for new projects in this scope; frozen budgets of existing projects are unaffected by later changes.')}</p>
     <FinalDesignsBalance block={usage.final_designs}/>
-    <h3>最近准入记录</h3>
-    <div className="account-table-scroll"><table><thead><tr><th>类型</th><th>状态</th><th>GPU</th><th>请求</th><th>时间</th></tr></thead>
+    <h3>{t('Recent admissions')}</h3>
+    <div className="account-table-scroll"><table><thead><tr><th>{t('Type')}</th><th>{t('Status')}</th><th>GPU</th><th>{t('Request')}</th><th>{t('Time')}</th></tr></thead>
       <tbody>{usage.admissions.map(item => <tr key={item.id}>
-        <td>{item.kind === 'scientific' ? '科学计算' : '对话'}</td>
+        <td>{item.kind === 'scientific' ? t('Scientific compute') : t('Conversation')}</td>
         <td>{item.state}{item.reason ? <small>{item.reason}</small> : null}</td>
-        <td>{item.gpu_slots}{item.devices.length ? <small>设备 {item.devices.join(', ')}</small> : null}</td>
+        <td>{item.gpu_slots}{item.devices.length ? <small>{t('Devices {{devices}}', {devices: item.devices.join(', ')})}</small> : null}</td>
         <td><code>{item.request_id.slice(0, 8)}</code></td>
         <td>{when(item.created_at)}</td>
       </tr>)}</tbody></table></div>
-    {usage.admissions.length === 0 && <p>暂无准入记录。发起科学请求或豆豆对话后，这里会显示配额检查与释放轨迹。</p>}
+    {usage.admissions.length === 0 && <p>{t('No admissions yet. After you start a scientific request or a Doudou conversation, quota checks and release traces appear here.')}</p>}
   </section>;
 }
 
 function Usage({session}: {session: AccountSession}) {
+  const { t } = useTranslation('account');
   const [selected, setSelected] = useState(session.scopes[0]?.id || '');
   const {value, error, busy, load, clear} = useGuardedLoad<ScopeUsage>();
   const reload = useCallback(() => {
     if (selected) load(() => fetchScopeUsage(session, selected));
   }, [load, session, selected]);
   useEffect(() => { clear(); reload(); }, [clear, reload]);
-  if (!session.scopes.length) return <section className="account-panel"><h2>资源用量</h2><p>当前账号没有可用工作区。</p></section>;
+  if (!session.scopes.length) return <section className="account-panel"><h2>{t('Resource usage')}</h2><p>{t('This account has no available workspace.')}</p></section>;
   return <>
-    <section className="account-panel"><h2>资源用量</h2>
+    <section className="account-panel"><h2>{t('Resource usage')}</h2>
       <div className="account-row">
-        <label>选择工作区<select value={selected} onChange={event => setSelected(event.target.value)}>
+        <label>{t('Select workspace')}<select value={selected} onChange={event => setSelected(event.target.value)}>
           {session.scopes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-        <button disabled={busy} onClick={reload}>{busy ? '加载中…' : '刷新'}</button>
+        <button disabled={busy} onClick={reload}>{busy ? t('Loading…') : t('Refresh')}</button>
       </div>
-      <p>额度由服务端在实际执行路径上检查；这里的数字是准入台账的只读投影，不构成资源隔离本身。</p>
+      <p>{t('Quotas are enforced by the server on the actual execution path; the numbers here are a read-only projection of the admission ledger, not resource isolation itself.')}</p>
       {error && <p className="account-error" role="alert">{error}</p>}
-      {busy && !value && <p role="status">正在读取资源用量…</p>}
+      {busy && !value && <p role="status">{t('Reading resource usage…')}</p>}
     </section>
     {value && <UsagePanel usage={value}/>}
   </>;
@@ -439,12 +451,12 @@ export type RequiredLimitKey =
 export type NullableLimitKey = 'final_designs_allowance' | 'pilot_stage_budget' | 'scale_stage_budget';
 
 const LIMIT_CONSTRAINTS: Record<RequiredLimitKey, {min: number; max: number; label: string}> = {
-  max_active_jobs: {min: 0, max: 64, label: '并发科学请求（0 表示暂停新请求）'},
-  max_active_chats: {min: 0, max: 64, label: '并发对话'},
-  max_gpu_devices: {min: 1, max: 64, label: 'GPU 槽位上限'},
-  max_upload_bytes: {min: 1024, max: 32 * 1024 ** 2, label: '单文件上传字节上限'},
-  max_stored_upload_bytes: {min: 1024, max: 10 * 1024 ** 4, label: '上传存储字节额度'},
-  max_candidates_per_job: {min: 1, max: 1_000_000, label: '单次生成候选数量上限'},
+  max_active_jobs: {min: 0, max: 64, label: 'Concurrent scientific requests (0 pauses new requests)'},
+  max_active_chats: {min: 0, max: 64, label: 'Concurrent conversations'},
+  max_gpu_devices: {min: 1, max: 64, label: 'GPU slot limit'},
+  max_upload_bytes: {min: 1024, max: 32 * 1024 ** 2, label: 'Single-file upload byte limit'},
+  max_stored_upload_bytes: {min: 1024, max: 10 * 1024 ** 4, label: 'Upload storage byte quota'},
+  max_candidates_per_job: {min: 1, max: 1_000_000, label: 'Max candidates per run'},
 };
 const LIMIT_KEYS = Object.keys(LIMIT_CONSTRAINTS) as Array<RequiredLimitKey>;
 
@@ -459,24 +471,24 @@ const NULLABLE_LIMIT_CONSTRAINTS: Record<NullableLimitKey, {
 }> = {
   final_designs_allowance: {
     min: 0, max: 1_000_000,
-    label: '最终设计个人累计额度',
-    nullLabel: '不限制（不启用余额检查）',
-    help: '按审批人个人累计计费：依据经过核验的 Scale 全局候选池或完整原生批次回执，'
-      + '完整科学负结果同样计入已交付；技术失败、证据不完整或待恢复时保留预留。'
-      + 'Pilot 候选池与 Gate-5 面板修订不消耗该额度。'
-      + '修改额度只影响之后的预留，不会改写已冻结的科学计划或已消耗数量。',
+    label: 'Final designs personal cumulative allowance',
+    nullLabel: 'Unlimited (balance check disabled)',
+    help: 'Billed per approver: delivery counts verified Scale global candidate pools or complete native-batch receipts, '
+      + 'and complete scientific negative results count as delivered; reservations are kept on technical failure, incomplete evidence, or pending recovery. '
+      + 'Pilot candidate pools and Gate-5 panel revisions do not consume this allowance. '
+      + 'Changes only affect future reservations and never rewrite frozen scientific plans or amounts already consumed.',
   },
   pilot_stage_budget: {
     min: 1, max: 10_000,
-    label: 'Pilot 阶段预算（新项目默认）',
-    nullLabel: '使用原生默认（不设阶段预算）',
-    help: '只作为本范围内新建项目冻结的阶段预算默认值；已有项目的冻结预算不变。',
+    label: 'Pilot stage budget (default for new projects)',
+    nullLabel: 'Use native default (no stage budget)',
+    help: 'Only the frozen stage-budget default for new projects in this scope; frozen budgets of existing projects are unchanged.',
   },
   scale_stage_budget: {
     min: 1, max: 10_000,
-    label: 'Scale 阶段预算（新项目默认）',
-    nullLabel: '使用原生默认（不设阶段预算）',
-    help: '只作为本范围内新建项目冻结的阶段预算默认值；已有项目的冻结预算不变。',
+    label: 'Scale stage budget (default for new projects)',
+    nullLabel: 'Use native default (no stage budget)',
+    help: 'Only the frozen stage-budget default for new projects in this scope; frozen budgets of existing projects are unchanged.',
   },
 };
 const NULLABLE_LIMIT_KEYS = Object.keys(NULLABLE_LIMIT_CONSTRAINTS) as Array<NullableLimitKey>;
@@ -503,36 +515,41 @@ export function limitPayloadFromDraft(draft: LimitDraft): QuotaLimits {
 }
 
 /** Returns the first human-readable problem for each invalid field. */
-export function limitDraftProblems(draft: LimitDraft): Partial<Record<keyof QuotaLimits, string>> {
+export function limitDraftProblems(
+  draft: LimitDraft,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): Partial<Record<keyof QuotaLimits, string>> {
   const problems: Partial<Record<keyof QuotaLimits, string>> = {};
   for (const key of LIMIT_KEYS) {
     const {min, max} = LIMIT_CONSTRAINTS[key];
     const raw = draft[key].trim();
     if (!raw) {
-      problems[key] = '不能为空；请填写服务端允许范围内的整数。';
+      problems[key] = t('Required; enter an integer within the server-allowed range.');
       continue;
     }
     const value = Number(raw);
     if (!Number.isInteger(value)) {
-      problems[key] = '请输入有效整数。';
+      problems[key] = t('Enter a valid integer.');
       continue;
     }
-    if (value < min || value > max) problems[key] = `必须在 ${min} 到 ${max} 之间。`;
+    if (value < min || value > max) problems[key] = t('Must be between {{min}} and {{max}}.', {min, max});
   }
   for (const key of NULLABLE_LIMIT_KEYS) {
     const {min, max} = NULLABLE_LIMIT_CONSTRAINTS[key];
     if (draft[key].unlimited) continue; // null is an explicit, valid choice
     const raw = draft[key].text.trim();
     if (!raw) {
-      problems[key] = `不能为空；请填写 ${min} 到 ${max} 之间的整数，或勾选“${NULLABLE_LIMIT_CONSTRAINTS[key].nullLabel}”。`;
+      problems[key] = t('Required; enter an integer between {{min}} and {{max}}, or check "{{nullLabel}}".', {
+        min, max, nullLabel: t(NULLABLE_LIMIT_CONSTRAINTS[key].nullLabel),
+      });
       continue;
     }
     const value = Number(raw);
     if (!Number.isInteger(value)) {
-      problems[key] = '请输入有效整数。';
+      problems[key] = t('Enter a valid integer.');
       continue;
     }
-    if (value < min || value > max) problems[key] = `必须在 ${min} 到 ${max} 之间。`;
+    if (value < min || value > max) problems[key] = t('Must be between {{min}} and {{max}}.', {min, max});
   }
   return problems;
 }
@@ -540,6 +557,7 @@ export function limitDraftProblems(draft: LimitDraft): Partial<Record<keyof Quot
 function QuotaEditor({session, subject, name, subjectKind}: {
   session: AccountSession; subject: string; name: string; subjectKind: 'personal' | 'team';
 }) {
+  const { t } = useTranslation('account');
   const {value: limits, error, busy, load} = useGuardedLoad<QuotaLimits>();
   const [draft, setDraft] = useState<LimitDraft | null>(null);
   const action = useAction();
@@ -549,17 +567,17 @@ function QuotaEditor({session, subject, name, subjectKind}: {
   useEffect(() => { reload(); }, [reload]);
   // Seed the editable copy once per loaded subject; server values stay authoritative.
   useEffect(() => { if (limits) setDraft(previous => previous ?? draftOf(limits)); }, [limits]);
-  const problems = draft ? limitDraftProblems(draft) : {};
+  const problems = draft ? limitDraftProblems(draft, t) : {};
   const invalid = Object.keys(problems).length > 0;
-  return <section className="account-panel"><h3>{name} · 资源额度</h3>
-    {busy && !limits && <p role="status">正在读取额度…</p>}
+  return <section className="account-panel"><h3>{name} · {t('Resource quota')}</h3>
+    {busy && !limits && <p role="status">{t('Reading quota…')}</p>}
     {error && <p className="account-error" role="alert">{error}</p>}
     {limits && draft && <form onSubmit={event => {event.preventDefault(); void action.run(async () => {
       // Invalid fields cannot reach the submit button, so the parse is total.
       const saved = await accountApi<{limits: QuotaLimits}>(`/admin/quotas/${subject}`, session, limitPayloadFromDraft(draft));
       setDraft(draftOf(saved.limits));
-    }, '资源额度已保存，后续准入按新额度检查');}}>
-      {LIMIT_KEYS.map(key => <label key={key}>{LIMIT_CONSTRAINTS[key].label}
+    }, t('Resource quota saved; future admissions are checked against the new quota'));}}>
+      {LIMIT_KEYS.map(key => <label key={key}>{t(LIMIT_CONSTRAINTS[key].label)}
         <input
           type="number"
           required
@@ -567,15 +585,15 @@ function QuotaEditor({session, subject, name, subjectKind}: {
           min={LIMIT_CONSTRAINTS[key].min}
           max={LIMIT_CONSTRAINTS[key].max}
           aria-invalid={problems[key] ? true : undefined}
-          aria-label={LIMIT_CONSTRAINTS[key].label}
+          aria-label={t(LIMIT_CONSTRAINTS[key].label)}
           value={draft[key]}
           onChange={event => setDraft({...draft, [key]: event.target.value})}
         />
         {problems[key] && <small className="account-field-error" role="alert">{problems[key]}</small>}
       </label>)}
-      <p className="account-field-help">单次生成候选数量上限是一次执行内的即时上限，不是累计最终设计余额；后者由下面的个人累计额度控制。</p>
+      <p className="account-field-help">{t('The candidates-per-run limit is an immediate cap within one execution, not a cumulative final-designs balance; the latter is controlled by the personal cumulative allowance below.')}</p>
       {NULLABLE_LIMIT_KEYS.map(key => {const constraint = NULLABLE_LIMIT_CONSTRAINTS[key]; const field = draft[key]; return <label key={key}>
-        {constraint.label}
+        {t(constraint.label)}
         <span className="account-nullable-limit">
           <input
             type="number"
@@ -585,7 +603,7 @@ function QuotaEditor({session, subject, name, subjectKind}: {
             required={!field.unlimited}
             disabled={field.unlimited}
             aria-invalid={problems[key] ? true : undefined}
-            aria-label={constraint.label}
+            aria-label={t(constraint.label)}
             value={field.text}
             onChange={event => setDraft({...draft, [key]: {...field, text: event.target.value}})}
           />
@@ -593,26 +611,27 @@ function QuotaEditor({session, subject, name, subjectKind}: {
             <input
               type="checkbox"
               checked={field.unlimited}
-              aria-label={`${constraint.label}：${constraint.nullLabel}`}
+              aria-label={t('{{label}}: {{nullLabel}}', {label: t(constraint.label), nullLabel: t(constraint.nullLabel)})}
               onChange={event => setDraft({...draft, [key]: {unlimited: event.target.checked, text: event.target.checked ? '' : field.text}})}
             />
-            {constraint.nullLabel}
+            {t(constraint.nullLabel)}
           </span>
         </span>
         {problems[key] && <small className="account-field-error" role="alert">{problems[key]}</small>}
-        <small className="account-field-help">{constraint.help}</small>
+        <small className="account-field-help">{t(constraint.help)}</small>
         {key === 'final_designs_allowance' && subjectKind === 'team' &&
-          <small className="account-field-help">该额度只按审批人个人计费：在团队主体上保存的数值不会形成团队池，也不会改变计费单位。</small>}
+          <small className="account-field-help">{t('This allowance is billed per approver only: values saved on a team subject do not form a team pool and do not change the billing unit.')}</small>}
       </label>;})}
-      <button className="account-primary" disabled={action.busy || invalid || busy}>保存额度</button>
-      {invalid && <p className="account-field-error" role="alert">仍有字段超出服务端允许范围，修正后才能保存。</p>}
+      <button className="account-primary" disabled={action.busy || invalid || busy}>{t('Save quota')}</button>
+      {invalid && <p className="account-field-error" role="alert">{t('Some fields are outside the server-allowed range; fix them before saving.')}</p>}
     </form>}{action.feedback}</section>;
 }
 
 function FinalDesignsEntriesTable({entries}: {entries: FinalDesignEntry[]}) {
-  return <div className="account-table-scroll"><table><thead><tr><th>项目</th><th>计费人</th><th>预留</th><th>已交付</th><th>状态</th><th>更新</th></tr></thead>
+  const { t } = useTranslation('account');
+  return <div className="account-table-scroll"><table><thead><tr><th>{t('Project')}</th><th>{t('Billed to')}</th><th>{t('Reserved')}</th><th>{t('Delivered')}</th><th>{t('Status')}</th><th>{t('Updated')}</th></tr></thead>
     <tbody>{entries.map(entry => <tr key={entry.id}>
-      <td><code>{entry.project_id.slice(0, 12)}</code><small>{entry.scope_id === entry.subject_id ? '个人范围' : `范围 ${entry.scope_id.slice(0, 8)}`}</small></td>
+      <td><code>{entry.project_id.slice(0, 12)}</code><small>{entry.scope_id === entry.subject_id ? t('Personal scope') : t('Scope {{id}}', {id: entry.scope_id.slice(0, 8)})}</small></td>
       <td><code>{entry.subject_id.slice(0, 12)}</code></td>
       <td>{entry.amount}</td>
       <td>{entry.delivered === null ? '—' : entry.delivered}</td>
@@ -622,74 +641,77 @@ function FinalDesignsEntriesTable({entries}: {entries: FinalDesignEntry[]}) {
 }
 
 function FinalDesignsBalance({block}: {block: FinalDesignsBlock}) {
+  const { t } = useTranslation('account');
   const personal = block.kind === 'personal';
   const cards: Array<[string, string, string?]> = personal
     ? [
-      ['额度', block.allowance === null ? '不限制' : String(block.allowance)],
-      ['已预留（进行中的战役）', String(block.reserved)],
-      ['已交付（含科学负结果）', String(block.delivered)],
-      ['剩余可用', block.remaining === null ? '不限制' : String(block.remaining),
+      [t('Allowance'), block.allowance === null ? t('Unlimited') : String(block.allowance)],
+      [t('Reserved (campaigns in progress)'), String(block.reserved)],
+      [t('Delivered (including scientific negative results)'), String(block.delivered)],
+      [t('Remaining available'), block.remaining === null ? t('Unlimited') : String(block.remaining),
         block.remaining === null ? undefined : block.remaining <= 0 ? 'account-warn' : undefined],
     ]
     : [
-      ['已预留（本团队，进行中的战役）', String(block.reserved)],
-      ['已交付（本团队，含科学负结果）', String(block.delivered)],
+      [t('Reserved (this team, campaigns in progress)'), String(block.reserved)],
+      [t('Delivered (this team, including scientific negative results)'), String(block.delivered)],
     ];
   const stateText = personal && block.remaining !== null
     ? block.remaining > 0
-      ? `还可预留 ${block.remaining} 个最终设计；新的 Gate-4 预留超限会被拒绝（final_designs_exhausted）。`
-      : '可用额度已耗尽：新的 Gate-4 预留会被拒绝（final_designs_exhausted），需管理员调整额度。'
+      ? t('{{count}} final designs can still be reserved; new Gate-4 reservations beyond this are rejected (final_designs_exhausted).', {count: block.remaining})
+      : t('Allowance exhausted: new Gate-4 reservations are rejected (final_designs_exhausted); an administrator must adjust the allowance.')
     : null;
-  return <section className="account-panel" aria-label={personal ? '最终设计余额（个人累计）' : '最终设计用量（团队口径）'}>
-    <div className="account-row"><h3>{personal ? '最终设计余额（按审批人个人累计）' : '最终设计用量（团队口径）'}</h3>
-      {personal && block.allowance === null && <span>不限制：未启用余额检查</span>}
+  return <section className="account-panel" aria-label={personal ? t('Final designs balance (personal cumulative)') : t('Final designs usage (team view)')}>
+    <div className="account-row"><h3>{personal ? t('Final designs balance (cumulative per approver)') : t('Final designs usage (team view)')}</h3>
+      {personal && block.allowance === null && <span>{t('Unlimited: balance check disabled')}</span>}
     </div>
     <p>{personal
-      ? '按审批人个人累计，覆盖其个人与团队范围内的战役；不包含其他人的余额或私有项目。'
-      : '仅统计计入本团队账目的预留与交付；不披露成员的个人余额、其他团队或个人项目的数据。'}</p>
+      ? t("Cumulative per approver across their personal and team-scope campaigns; excludes other people's balances and private projects.")
+      : t("Only counts reservations and deliveries billed to this team; members' personal balances, other teams, and personal projects are not disclosed.")}</p>
     {stateText && <p className="account-permission-note" role="status">{stateText}</p>}
     <div className="account-grid">{cards.map(([label, value, warn]) => <article className="account-scope" key={label}>
       <h3 className={warn}>{value}</h3><span>{label}</span>
     </article>)}</div>
-    <details><summary>计费规则</summary><p>{block.rule}</p></details>
-    <h4>最终设计记录</h4>
+    <details><summary>{t('Billing rules')}</summary><p>{block.rule}</p></details>
+    <h4>{t('Final designs records')}</h4>
     <FinalDesignsEntriesTable entries={block.entries}/>
-    {block.entries.length === 0 && <p>还没有最终设计预留。Gate-4 批准生产战役后，这里会显示预留与结算轨迹。</p>}
+    {block.entries.length === 0 && <p>{t('No final-design reservations yet. After Gate-4 approves a production campaign, reservations and settlement traces appear here.')}</p>}
   </section>;
 }
 
 type AdminData = {users: AccountUser[]; teams: Team[]; events: Audit[]};
 
 function FinalDesignsOverview({session}: {session: AccountSession}) {
+  const { t } = useTranslation('account');
   const {value, error, busy, load} = useGuardedLoad<FinalDesignsOverview>();
   const reload = useCallback(() => {
     load(() => fetchFinalDesignsOverview(session));
   }, [load, session]);
   useEffect(() => { reload(); }, [reload]);
-  return <section className="account-panel" aria-label="最终设计余额总览">
-    <div className="account-row"><h2>最终设计余额总览</h2><button disabled={busy} onClick={reload}>{busy ? '加载中…' : '刷新'}</button></div>
-    <p>全站只读聚合（读取会被审计）。额度按审批人个人累计；预留为进行中战役，已交付含科学负结果。</p>
+  return <section className="account-panel" aria-label={t('Final designs balance overview')}>
+    <div className="account-row"><h2>{t('Final designs balance overview')}</h2><button disabled={busy} onClick={reload}>{busy ? t('Loading…') : t('Refresh')}</button></div>
+    <p>{t('Site-wide read-only aggregation (reads are audited). Allowances are cumulative per approver; reservations are campaigns in progress; delivered includes scientific negative results.')}</p>
     {error && <p className="account-error" role="alert">{error}</p>}
-    {busy && !value && <p role="status">正在读取最终设计余额…</p>}
+    {busy && !value && <p role="status">{t('Reading final designs balance…')}</p>}
     {value && <>
-      <div className="account-table-scroll"><table><thead><tr><th>人员</th><th>额度</th><th>已预留</th><th>已交付</th><th>剩余</th></tr></thead>
+      <div className="account-table-scroll"><table><thead><tr><th>{t('Person')}</th><th>{t('Allowance')}</th><th>{t('Reserved')}</th><th>{t('Delivered')}</th><th>{t('Remaining')}</th></tr></thead>
         <tbody>{value.subjects.map(subject => <tr key={subject.subject_id}>
           <td>{subject.display_name || subject.subject_id.slice(0, 12)}{subject.username ? <small>@{subject.username}</small> : null}</td>
-          <td>{subject.allowance === null ? '不限制' : subject.allowance}</td>
+          <td>{subject.allowance === null ? t('Unlimited') : subject.allowance}</td>
           <td>{subject.reserved}</td>
           <td>{subject.delivered}</td>
           <td className={subject.remaining !== null && subject.remaining <= 0 ? 'account-warn' : undefined}>
-            {subject.remaining === null ? '不限制' : subject.remaining}</td>
+            {subject.remaining === null ? t('Unlimited') : subject.remaining}</td>
         </tr>)}</tbody></table></div>
-      {value.subjects.length === 0 && <p>还没有任何最终设计预留记录。</p>}
-      <details><summary>计费规则</summary><p>{value.rule}</p></details>
-      <h3>最近预留记录（最多 200 条）</h3>
+      {value.subjects.length === 0 && <p>{t('No final-design reservation records yet.')}</p>}
+      <details><summary>{t('Billing rules')}</summary><p>{value.rule}</p></details>
+      <h3>{t('Recent reservations (up to 200)')}</h3>
       <FinalDesignsEntriesTable entries={value.entries}/>
     </>}
   </section>;
 }
 
 function Administration({session}: {session: AccountSession}) {
+  const { t } = useTranslation('account');
   const {value: data, error, busy, load} = useGuardedLoad<AdminData>();
   const [selection, setSelection] = useState<{id: string; name: string; kind: 'personal' | 'team'} | null>(null);
   const [resetUser, setResetUser] = useState<AccountUser | null>(null);
@@ -712,43 +734,48 @@ function Administration({session}: {session: AccountSession}) {
   const teams = data?.teams || [];
   const events = data?.events || [];
   return <>
-    <section className="account-panel"><div className="account-row"><h2>用户审核与管理</h2><button disabled={busy} onClick={() => {setSelection(null); refresh(0);}}>{busy ? '加载中…' : '刷新'}</button></div>
-      <p>管理员可只读查看全站项目；科学操作仍需项目所有者或团队角色授权。</p>
+    <section className="account-panel"><div className="account-row"><h2>{t('User review and management')}</h2><button disabled={busy} onClick={() => {setSelection(null); refresh(0);}}>{busy ? t('Loading…') : t('Refresh')}</button></div>
+      <p>{t('Administrators can view all projects read-only; scientific operations still require authorization from the project owner or a team role.')}</p>
       {error && <p className="account-error" role="alert">{error}</p>}
-      <div className="account-table-scroll"><table><thead><tr><th>用户</th><th>状态</th><th>角色</th><th>操作</th></tr></thead><tbody>{users.map(user => <tr key={user.id}>
-        <td>{user.display_name}<small>@{user.username}</small></td><td>{{pending:'待审核',active:'已启用',suspended:'已停用',rejected:'已拒绝'}[user.status]}</td><td>{user.role === 'admin' ? '系统管理员' : '用户'}</td>
+      <div className="account-table-scroll"><table><thead><tr><th>{t('User')}</th><th>{t('Status')}</th><th>{t('Role')}</th><th>{t('Actions')}</th></tr></thead><tbody>{users.map(user => <tr key={user.id}>
+        <td>{user.display_name}<small>@{user.username}</small></td><td>{t(USER_STATUS_LABELS[user.status] ?? user.status)}</td><td>{user.role === 'admin' ? t('System administrator') : t('User')}</td>
         <td className="account-actions">
-          {user.status !== 'active' && user.status !== 'rejected' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'active'}); refresh(0);})}>{user.status === 'pending' ? '批准注册' : '启用'}</button>}
-          {user.status === 'pending' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'rejected'}); refresh(0);})}>拒绝</button>}
-          {user.status === 'active' && <button disabled={action.busy} onClick={() => {if (window.confirm(`停用 ${user.display_name} 并撤销其登录会话？`)) void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'suspended'}); refresh(0);});}}>停用</button>}
-          {user.status !== 'rejected' && <button onClick={() => {setResetUser(user); setTemporaryPassword('');}}>重置密码</button>}
-          <button onClick={() => setSelection({id: user.id, name: user.display_name, kind: 'personal'})}>资源额度</button>
-          <a href={workspaceHref(user.id, 'easy')}>只读查看项目</a>
+          {user.status !== 'active' && user.status !== 'rejected' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'active'}); refresh(0);})}>{user.status === 'pending' ? t('Approve registration') : t('Enable')}</button>}
+          {user.status === 'pending' && <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'rejected'}); refresh(0);})}>{t('Reject')}</button>}
+          {user.status === 'active' && <button disabled={action.busy} onClick={() => {if (window.confirm(t('Suspend {{name}} and revoke their sign-in sessions?', {name: user.display_name}))) void action.run(async () => {await accountApi(`/admin/users/${user.id}`, session, {status:'suspended'}); refresh(0);});}}>{t('Suspend')}</button>}
+          {user.status !== 'rejected' && <button onClick={() => {setResetUser(user); setTemporaryPassword('');}}>{t('Reset password')}</button>}
+          <button onClick={() => setSelection({id: user.id, name: user.display_name, kind: 'personal'})}>{t('Resource quota')}</button>
+          <a href={workspaceHref(user.id, 'easy')}>{t('View projects read-only')}</a>
         </td></tr>)}</tbody></table></div>{action.feedback}
     </section>
-    {resetUser && <section className="account-panel"><h3>重置 {resetUser.display_name} 的密码</h3><p>旧会话会立即失效；用户下次登录必须修改临时密码。</p>
-      <form onSubmit={event => {event.preventDefault(); void action.run(async () => {await accountApi(`/admin/users/${resetUser.id}/password`, session, {password:temporaryPassword}); setTemporaryPassword(''); setResetUser(null);}, '密码已重置');}}>
-        <label>临时密码<input type="password" autoComplete="new-password" required minLength={12} maxLength={256} value={temporaryPassword} onChange={event => setTemporaryPassword(event.target.value)}/></label>
-        <button disabled={action.busy} className="account-primary">确认重置</button><button type="button" onClick={() => {setTemporaryPassword('');setResetUser(null);}}>取消</button>
+    {resetUser && <section className="account-panel"><h3>{t('Reset password for {{name}}', {name: resetUser.display_name})}</h3><p>{t('Existing sessions become invalid immediately; the user must change the temporary password at next sign-in.')}</p>
+      <form onSubmit={event => {event.preventDefault(); void action.run(async () => {await accountApi(`/admin/users/${resetUser.id}/password`, session, {password:temporaryPassword}); setTemporaryPassword(''); setResetUser(null);}, t('Password reset'));}}>
+        <label>{t('Temporary password')}<input type="password" autoComplete="new-password" required minLength={12} maxLength={256} value={temporaryPassword} onChange={event => setTemporaryPassword(event.target.value)}/></label>
+        <button disabled={action.busy} className="account-primary">{t('Confirm reset')}</button><button type="button" onClick={() => {setTemporaryPassword('');setResetUser(null);}}>{t('Cancel')}</button>
       </form>
     </section>}
-    <section className="account-panel"><h2>全站团队</h2>{teams.map(team => <div className="account-row" key={team.id}><strong>{team.name}</strong><span>{team.status === 'active' ? '已启用' : '已停用'}</span>
-      <a href={workspaceHref(team.id, 'easy')}>只读查看项目</a><button onClick={() => setSelection({id: team.id, name: team.name, kind: 'team'})}>团队额度</button>
-      <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/teams/${team.id}`, session, {status:team.status === 'active' ? 'suspended' : 'active'});refresh(0);})}>{team.status === 'active' ? '停用团队' : '启用团队'}</button>
+    <section className="account-panel"><h2>{t('All teams')}</h2>{teams.map(team => <div className="account-row" key={team.id}><strong>{team.name}</strong><span>{team.status === 'active' ? t('Active') : t('Suspended')}</span>
+      <a href={workspaceHref(team.id, 'easy')}>{t('View projects read-only')}</a><button onClick={() => setSelection({id: team.id, name: team.name, kind: 'team'})}>{t('Team quota')}</button>
+      <button disabled={action.busy} onClick={() => void action.run(async () => {await accountApi(`/admin/teams/${team.id}`, session, {status:team.status === 'active' ? 'suspended' : 'active'});refresh(0);})}>{team.status === 'active' ? t('Suspend team') : t('Enable team')}</button>
     </div>)}</section>
     {selection && <QuotaEditor key={selection.id} session={session} subject={selection.id} name={selection.name} subjectKind={selection.kind}/>}
     <FinalDesignsOverview session={session}/>
-    <section className="account-panel"><h2>最近审计记录</h2><div className="account-table-scroll"><table><thead><tr><th>时间</th><th>操作</th><th>操作人</th><th>对象</th></tr></thead><tbody>{events.map(item => <tr key={item.seq}><td>{when(item.created_at)}</td><td>{item.action}</td><td>{users.find(u => u.id === item.actor_id)?.username || '未认证请求'}</td><td><code>{item.target_id || item.scope_id || '—'}</code></td></tr>)}</tbody></table></div>
-      {events.length >= AUDIT_PAGE && events.length % AUDIT_PAGE === 0 && <button disabled={busy} onClick={() => refresh(events.length)}>加载更多</button>}
+    <section className="account-panel"><h2>{t('Recent audit records')}</h2><div className="account-table-scroll"><table><thead><tr><th>{t('Time')}</th><th>{t('Action')}</th><th>{t('Actor')}</th><th>{t('Target')}</th></tr></thead><tbody>{events.map(item => <tr key={item.seq}><td>{when(item.created_at)}</td><td>{item.action}</td><td>{users.find(u => u.id === item.actor_id)?.username || t('Unauthenticated request')}</td><td><code>{item.target_id || item.scope_id || '—'}</code></td></tr>)}</tbody></table></div>
+      {events.length >= AUDIT_PAGE && events.length % AUDIT_PAGE === 0 && <button disabled={busy} onClick={() => refresh(events.length)}>{t('Load more')}</button>}
     </section>
   </>;
 }
 
+const USER_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending review', active: 'Active', suspended: 'Suspended', rejected: 'Rejected',
+};
+
 const TABS: Array<[string, string]> = [
-  ['workspaces', '我的工作区'], ['teams', '团队协作'], ['usage', '资源用量'], ['password', '账号安全'],
+  ['workspaces', 'My workspaces'], ['teams', 'Team collaboration'], ['usage', 'Resource usage'], ['password', 'Account security'],
 ];
 
 export function AccountApp() {
+  const { t } = useTranslation('account');
   const [localSession, setLocalSession] = useState<AccountSession | null>(null);
   const [config, setConfig] = useState<AccountConfig | null>(null);
   const [tab, setTab] = useState('workspaces');
@@ -770,20 +797,20 @@ export function AccountApp() {
     fetchAccountConfig().then(value => {if (!disposed) setConfig(value);}).catch(() => {});
     return () => {disposed = true;};
   }, []);
-  if (machine.state.kind === 'checking' && session === null) return <main className="account-loading">正在检查会话…</main>;
+  if (machine.state.kind === 'checking' && session === null) return <main className="account-loading">{t('Checking session…')}</main>;
   if (!session) return <Login onLogin={setLocalSession} login={machineLogin}/>;
   const computeAvailable = config ? config.compute_available : true;
-  const tabs: Array<[string, string]> = session.user.role === 'admin' ? [...TABS, ['admin', '管理员后台']] : TABS;
+  const tabs: Array<[string, string]> = session.user.role === 'admin' ? [...TABS, ['admin', t('Administration')]] : TABS;
   const main: ReactNode = tab === 'workspaces' ? <Workspaces session={session} refresh={refresh}/>
     : tab === 'teams' ? <Teams session={session} refresh={refresh} computeAvailable={computeAvailable}/>
     : tab === 'usage' ? <Usage session={session}/>
     : tab === 'password' ? <Password session={session} changed={() => setLocalSession(null)}/>
     : <Administration session={session}/>;
-  return <div className="account-shell"><header className="account-header"><Brand/><strong>{session.user.display_name}</strong><span>{session.user.role === 'admin' ? '系统管理员' : '研究用户'}</span>
-    <button disabled={action.busy} onClick={() => void action.run(async () => {await machine.logout(); setLocalSession(null);setTab('workspaces');})}>退出登录</button>
+  return <div className="account-shell"><header className="account-header"><Brand/><strong>{session.user.display_name}</strong><span>{session.user.role === 'admin' ? t('System administrator') : t('Research user')}</span>
+    <button disabled={action.busy} onClick={() => void action.run(async () => {await machine.logout(); setLocalSession(null);setTab('workspaces');})}>{t('Sign out')}</button>
   </header>{action.feedback}
     {session.user.must_change_password ? <Password session={session} changed={() => setLocalSession(null)}/> : <>
-      <nav className="account-tabs">{tabs.map(([key,label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{label}</button>)}</nav>
+      <nav className="account-tabs">{tabs.map(([key,label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{t(label)}</button>)}</nav>
       <main>{tab === 'admin' && session.user.role !== 'admin' ? <Workspaces session={session} refresh={refresh}/> : main}</main>
     </>}
   </div>;

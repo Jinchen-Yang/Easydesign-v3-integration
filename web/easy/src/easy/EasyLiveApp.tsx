@@ -35,6 +35,7 @@ import { EasyStructureViewer } from './EasyStructureViewer';
 import {
   awaitingDecisionRecovery,
   shouldShowGateRiskDisclosure,
+  summarizeEasyDesignPlan,
   summarizeEasyActivity,
   summarizeGoal,
 } from './live-presentation';
@@ -654,6 +655,7 @@ function GatePanel({
     decision.gate === 1
       ? decision.options.filter((item) => item.option_id === decision.default_option_id)
       : decision.options;
+  const designPlanSummary = summarizeEasyDesignPlan(snapshot);
   const showRiskDisclosure = shouldShowGateRiskDisclosure(
     decision.gate,
     decision.warnings.length,
@@ -734,6 +736,27 @@ function GatePanel({
                 </strong>
                 <small>{normalizeLiveScientificChinese(fallback.description)}</small>
                 {item.design_labels && <em>热点残基：{item.design_labels.join(', ')}</em>}
+                {designPlanSummary && (
+                  <div className="easy-live-design-plan-summary" aria-label="设计方案规模">
+                    <strong>
+                      针对{designPlanSummary.siteLabel}，共设计 {designPlanSummary.planCount}{' '}
+                      种方案
+                    </strong>
+                    <ul>
+                      {designPlanSummary.plans.map((plan) => (
+                        <li key={plan.id}>
+                          {plan.label}：
+                          {plan.scaffoldCount > 0
+                            ? `${plan.scaffoldCount} 种 scaffold`
+                            : 'scaffold 数量待确认'}
+                        </li>
+                      ))}
+                    </ul>
+                    {designPlanSummary.yamlCount > 0 && (
+                      <small>合计 {designPlanSummary.yamlCount} 个可执行 YAML</small>
+                    )}
+                  </div>
+                )}
               </span>
             </label>
           );

@@ -140,6 +140,35 @@
   line-height: 1.45;
 }
 
+.easy-live-design-plan-summary {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(115, 97, 228, 0.2);
+}
+
+.easy-live-design-plan-summary strong {
+  color: #3f3950;
+  font-size: 14px;
+}
+
+.easy-live-design-plan-summary ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #625c70;
+  font-size: 13px;
+}
+
+.easy-live-design-plan-summary small {
+  color: #6553ce;
+  font-weight: 600;
+}
+
 .easy-live-gate details {
   margin: 14px 0;
   color: #6d6877;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   awaitingDecisionRecovery,
   shouldShowGateRiskDisclosure,
+  summarizeEasyDesignPlan,
   summarizeEasyActivity,
   summarizeGoal,
 } from '../../src/easy/live-presentation';
@@ -102,6 +103,47 @@ describe('Easy live presentation', () => {
     expect(shouldShowGateRiskDisclosure(3, 12, 8)).toBe(false);
     expect(shouldShowGateRiskDisclosure(5, 2, 1)).toBe(false);
     expect(shouldShowGateRiskDisclosure(3, 0, 0)).toBe(false);
+  });
+
+  it('summarizes the approved site, design arms, and scaffold YAML counts', () => {
+    const value = snapshot();
+    value.scientific_context.approved_site = {
+      selected_candidate_id: 'site-a',
+      selected_rank: 'A',
+      hotspots: {},
+    };
+    value.scientific_context.arms = [{ arm_id: 'arm-1' }, { arm_id: 'arm-2' }];
+    value.artifacts = [
+      ...['7eow', '7xl0', '8coh'].map((scaffold) => ({
+        id: `one-${scaffold}`,
+        label: `arm-1-scaffold-${scaffold}`,
+        url: `/one/${scaffold}`,
+        format: 'yaml',
+        sha256: scaffold.padEnd(64, '0'),
+        size_bytes: 1,
+        role: 'scientific-evidence',
+        candidate_id: null,
+      })),
+      ...['7eow', '7xl0'].map((scaffold) => ({
+        id: `two-${scaffold}`,
+        label: `arm-2-scaffold-${scaffold}`,
+        url: `/two/${scaffold}`,
+        format: 'yaml',
+        sha256: scaffold.padEnd(64, '1'),
+        size_bytes: 1,
+        role: 'scientific-evidence',
+        candidate_id: null,
+      })),
+    ];
+    expect(summarizeEasyDesignPlan(value)).toEqual({
+      siteLabel: '位点 A',
+      planCount: 2,
+      plans: [
+        { id: 'arm-1', label: '方案 1', scaffoldCount: 3 },
+        { id: 'arm-2', label: '方案 2', scaffoldCount: 2 },
+      ],
+      yamlCount: 5,
+    });
   });
 
   it('does not present an available continuation as active model work', () => {

@@ -51,6 +51,55 @@ export function shouldShowGateRiskDisclosure(
   return false;
 }
 
+export interface EasyDesignPlanSummary {
+  siteLabel: string;
+  planCount: number;
+  plans: { id: string; label: string; scaffoldCount: number }[];
+  yamlCount: number;
+}
+
+/** Build the Gate 3 summary from structured arms and compiled YAML artifacts. */
+export function summarizeEasyDesignPlan(
+  snapshot: ProductSnapshot,
+): EasyDesignPlanSummary | null {
+  if (snapshot.decision?.gate !== 3) return null;
+  const arms = snapshot.scientific_context.arms || [];
+  if (arms.length === 0) return null;
+  const rank = snapshot.scientific_context.approved_site?.selected_rank;
+  const selectedId = snapshot.scientific_context.approved_site?.selected_candidate_id;
+  const selectedSite = snapshot.scientific_context.sites.find(
+    (site) => site.id === selectedId || (rank && site.rank === rank),
+  );
+  const siteLabel = rank
+    ? `位点 ${rank}`
+    : selectedSite?.rank
+      ? `位点 ${selectedSite.rank}`
+      : selectedSite?.name || '已批准位点';
+  const plans = arms.map((arm, index) => {
+    const id = String(arm.arm_id || arm.id || `arm-${index + 1}`);
+    const declared = Array.isArray(arm.scaffold_ids)
+      ? new Set(arm.scaffold_ids.filter((value): value is string => typeof value === 'string'))
+      : new Set<string>();
+    const prefix = `${id}-scaffold-`;
+    const compiled = snapshot.artifacts
+      .filter(
+        (artifact) =>
+          ['yaml', 'yml'].includes(artifact.format.toLowerCase()) &&
+          artifact.label.startsWith(prefix),
+      )
+      .map((artifact) => artifact.label.slice(prefix.length))
+      .filter(Boolean);
+    const scaffolds = new Set([...declared, ...compiled]);
+    return { id, label: `方案 ${index + 1}`, scaffoldCount: scaffolds.size };
+  });
+  return {
+    siteLabel,
+    planCount: plans.length,
+    plans,
+    yamlCount: plans.reduce((total, plan) => total + plan.scaffoldCount, 0),
+  };
+}
+
 export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySummary[] {
   const raw = (snapshot.recent_activity || []).filter((item) => item.visible !== false);
   const awaiting = snapshot.project.status === 'awaiting_scientist' || snapshot.decision !== null;

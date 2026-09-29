@@ -26,6 +26,11 @@ import {
   normalizeLiveScientificChinese,
 } from './liveChinese';
 import { RabbitMascot } from './RabbitMascot';
+import {
+  formatProjectOpenTime,
+  loadRecentProjectOpens,
+  rememberProjectOpen,
+} from './recent-projects';
 import { EasyStructureViewer } from './EasyStructureViewer';
 import {
   awaitingDecisionRecovery,
@@ -986,6 +991,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [recentProjectOpens, setRecentProjectOpens] = useState(loadRecentProjectOpens);
   const autoContinuation = useRef<string | null>(null);
   useEffect(() => {
     const unsubscribe = adapter.subscribe((event) => setState(event.snapshot));
@@ -1039,6 +1045,11 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
   }, [snapshot?.revision]);
   useEffect(() => {
     setViewedIndex(null);
+  }, [snapshot?.project.id]);
+  useEffect(() => {
+    const project = snapshot?.project.id;
+    if (!project) return;
+    setRecentProjectOpens((current) => rememberProjectOpen(current, project));
   }, [snapshot?.project.id]);
   const issue = validateInput(input);
   const index = activeIndex(snapshot);
@@ -1613,6 +1624,7 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                   <th>设计</th>
                   <th>阶段</th>
                   <th>状态</th>
+                  <th>最近打开</th>
                   <th />
                 </tr>
               </thead>
@@ -1625,6 +1637,15 @@ export function EasyLiveApp({ adapter }: { adapter: EasyProductPort }) {
                     </td>
                     <td>{liveStageName(project.phase)}</td>
                     <td>{liveStatusName(project.status)}</td>
+                    <td className="easy-history-opened">
+                      {recentProjectOpens[project.id] ? (
+                        <time dateTime={new Date(recentProjectOpens[project.id]).toISOString()}>
+                          {formatProjectOpenTime(recentProjectOpens[project.id])}
+                        </time>
+                      ) : (
+                        <span title="本设备尚无打开记录">—</span>
+                      )}
+                    </td>
                     <td>
                       <div className="easy-history-actions">
                         <button

@@ -693,6 +693,16 @@
   gap: 8px;
 }
 
+.easy-history-opened {
+  min-width: 132px;
+  white-space: nowrap;
+}
+
+.easy-history-opened time {
+  color: #6f6978;
+  font-variant-numeric: tabular-nums;
+}
+
 .easy-delete-project,
 .easy-confirm-delete {
   display: inline-flex;

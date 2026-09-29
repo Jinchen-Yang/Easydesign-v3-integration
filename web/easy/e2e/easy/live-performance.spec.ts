@@ -10,6 +10,7 @@ test('live project open and Site switching stay within the interactive budget', 
   const yaml = 'schema_version: 1\narms:\n  - arm_id: arm-1\n';
   const yamlSha256 = createHash('sha256').update(yaml).digest('hex');
   let artifactRequests = 0;
+  let projectDeleted = false;
   const artifact = {
     id: sha256,
     label: 'Verified target',
@@ -103,8 +104,22 @@ test('live project open and Site switching stay within the interactive budget', 
     connection: 'connected',
   };
   await page.route('**/api/v1/projects?**', (route) =>
-    route.fulfill({ json: { items: [project], total: 1, offset: 0, limit: 5 } }),
+    route.fulfill({
+      json: {
+        items: projectDeleted ? [] : [project],
+        total: projectDeleted ? 0 : 1,
+        offset: 0,
+        limit: 5,
+      },
+    }),
   );
+  await page.route('**/api/v1/projects/performance-project', async (route) => {
+    expect(route.request().method()).toBe('DELETE');
+    projectDeleted = true;
+    await route.fulfill({
+      json: { id: project.id, deleted: true, recoverable: true },
+    });
+  });
   await page.route('**/api/v1/projects/performance-project/workbench', (route) =>
     route.fulfill({ json: snapshot }),
   );
@@ -235,4 +250,15 @@ test('live project open and Site switching stay within the interactive budget', 
   await expect(page.getByText('Blocks the verified extracellular vestibule.')).not.toBeVisible();
   await page.getByText(/查看详细 YAML/).click();
   await expect(page.getByText('schema_version: 1', { exact: false })).toBeVisible();
+
+  await page.locator('#my-designs').scrollIntoViewIfNeeded();
+  await page.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '确认删除这个设计？' })).toBeVisible();
+  await expect(page.getByText('底层科学运行记录仍保留在本地归档中')).toBeVisible();
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '确认删除这个设计？' })).toHaveCount(0);
+  await page.getByRole('button', { name: '删除', exact: true }).click();
+  await page.getByRole('button', { name: '确认删除', exact: true }).click();
+  await expect(page.locator('.easy-history-table tbody tr')).toHaveCount(0);
+  expect(projectDeleted).toBe(true);
 });

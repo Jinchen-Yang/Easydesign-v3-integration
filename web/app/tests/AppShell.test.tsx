@@ -31,11 +31,11 @@ describe('AppShell 统一壳（阶段 3）', () => {
     expect(screen.getByRole('link', { name: '账号与团队' })).toBeTruthy();
   });
 
-  it('network-error 面板可放弃并以访客继续', async () => {
+  it('network-error 面板可放弃并落到访客演示首页', async () => {
     render(<AppShell />);
     await screen.findByTestId('session-network-error');
     act(() => { screen.getByText('以访客继续').click(); });
-    expect((await screen.findByTestId('session-guest')).textContent).toContain('访客模式');
+    expect(await screen.findByText(/访客演示/)).toBeTruthy();
   });
 
   it('语言切换实时生效且持久化，不重新挂载应用', async () => {
@@ -62,7 +62,7 @@ describe('AppShell 统一壳（阶段 3）', () => {
     expect(pro.getAttribute('href')).toBe('#/projects');
   });
 
-  it('#/projects（未登录）Easy 视图给出登录引导而不是弹跳', async () => {
+  it('#/projects（未登录）给出登录引导屏而不是弹跳', async () => {
     const originalFetch = window.fetch;
     window.fetch = (async () => new Response(JSON.stringify({ error: { code: 'unauthorized' } }), {
       status: 401, headers: { 'Content-Type': 'application/json' },
@@ -70,8 +70,8 @@ describe('AppShell 统一壳（阶段 3）', () => {
     try {
       window.location.hash = '#/projects?scope=s1&view=easy';
       render(<AppShell />);
-      expect(await screen.findByText('请先登录')).toBeTruthy();
-      expect(screen.getByRole('link', { name: '前往账号与团队' })).toBeTruthy();
+      expect(await screen.findByText('登录后使用 Easy 工作区')).toBeTruthy();
+      expect(screen.getByRole('link', { name: '登录 / 注册' })).toBeTruthy();
       expect(window.location.hash).toBe('#/projects?scope=s1&view=easy');
     } finally {
       window.fetch = originalFetch;

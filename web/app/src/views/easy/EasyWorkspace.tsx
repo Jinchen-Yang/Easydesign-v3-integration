@@ -10,6 +10,9 @@ import { EasyLiveApp } from './EasyLiveApp';
 import { EasyProductAdapter } from './EasyProductAdapter';
 import type { EasyProductPort } from './EasyProductAdapter';
 import { workspaceHref } from './routeParams';
+import { SignInPrompt } from '../../shell/SignInPrompt';
+import './easyStyles';
+import '../workspaceStyles';
 import '../account/accounts.css';
 
 const defaultAdapterFactory = (transport: typeof fetch): EasyProductPort =>
@@ -84,11 +87,10 @@ export function EasyWorkspace(
     if (state.kind === 'checking') return <main className="account-loading">正在验证工作区权限…</main>;
     if (state.kind === 'guest') {
       return (
-        <main className="account-login">
-          <h1>请先登录</h1>
-          <p>登录后即可使用 Easy 工作区。</p>
-          <a className="account-primary" href="#/account">前往账号与团队</a>
-        </main>
+        <SignInPrompt
+          title="登录后使用 Easy 工作区"
+          description="当前为访客状态，登录后即可提交真实设计任务。"
+        />
       );
     }
     return <main className="account-login"><h1>暂时无法确认登录状态</h1><p role="alert">网络异常，请稍后重试。</p></main>;

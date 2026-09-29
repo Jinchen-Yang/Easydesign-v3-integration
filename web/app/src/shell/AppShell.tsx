@@ -1,25 +1,32 @@
-import { useEffect, useMemo } from 'react';
+import { Suspense, lazy, useEffect, useMemo, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { HashRouter, Link, Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { I18nProvider, useI18n } from './I18nProvider';
 import { SessionProvider, useSession } from './SessionProvider';
 import { SessionRecoveryModal } from './SessionRecoveryModal';
-import { EasyWorkspace } from '../views/easy/EasyWorkspace';
-import { EasyApp } from '../views/easy/EasyApp';
-import { EasyDemoAdapter } from '../views/easy/EasyDemoAdapter';
-import { ProWorkspace } from '../views/pro/ProWorkspace';
-import { AccountApp } from '../views/account/AccountApp';
 import { bindRouterNavigate, workspaceHref } from '../views/easy/routeParams';
 import { fetchProjects } from '../data/projects';
 import '../styles/shell.css';
 
 /**
- * Unified application shell (execution guide phase 3). Hash Router keeps every
- * deep link on the single `/app/` document; the shell chrome (nav + language +
- * session chip) wraps portal-style routes, while the two workspaces render
- * full-bleed with their own bars. `/demo` mounts the bilingual Easy demo until
- * phase 4 promotes it to the guest home.
+ * Unified application shell (execution guide phases 3-4).
+ *
+ * Route-level code splitting: the shell (nav, language, session machine,
+ * recovery overlay, home project list) ships in the main bundle; every view —
+ * both workspaces, the account portal and the guest demo — is a lazy chunk
+ * loaded on first navigation. Hash Router keeps all deep links on the single
+ * `/app/` document, so the backend needs no new routes.
  */
+const EasyWorkspace = lazy(() => import('../views/easy/EasyWorkspace').then((m) => ({ default: m.EasyWorkspace })));
+const ProWorkspace = lazy(() => import('../views/pro/ProWorkspace').then((m) => ({ default: m.ProWorkspace })));
+const AccountApp = lazy(() => import('../views/account/AccountApp').then((m) => ({ default: m.AccountApp })));
+const GuestView = lazy(() => import('../views/guest/GuestView').then((m) => ({ default: m.GuestView })));
+
+function RouteLoading() {
+  const { t } = useI18n();
+  return <main className="route-loading" role="status">{t('shell.routeLoading')}</main>;
+}
+
 export function AppShell() {
   const queryClient = useMemo(
     () =>
@@ -34,14 +41,16 @@ export function AppShell() {
         <SessionProvider>
           <HashRouter>
             <RouterBridge />
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/projects" element={<ProjectRoute />} />
-              <Route path="/projects/:id" element={<ProjectRoute />} />
-              <Route path="/account" element={<AccountRoute />} />
-              <Route path="/demo" element={<DemoRoute />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Routes>
+            <Suspense fallback={<RouteLoading />}>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/projects" element={<ProjectRoute />} />
+                <Route path="/projects/:id" element={<ProjectRoute />} />
+                <Route path="/account" element={<AccountRoute />} />
+                <Route path="/demo" element={<GuestDemoRoute />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Routes>
+            </Suspense>
           </HashRouter>
           <SessionRecoveryModal />
         </SessionProvider>
@@ -67,8 +76,8 @@ function LanguageToggle() {
   );
 }
 
-/** Shell chrome for portal-style pages; workspaces opt out (full-bleed). */
-function ShellFrame({ title, children }: { title: string; children?: React.ReactNode }) {
+/** Shell chrome for portal-style pages; workspaces and the demo are full-bleed. */
+function ShellFrame({ title, children }: { title: string; children?: ReactNode }) {
   const { t } = useI18n();
   const { state } = useSession();
   return (
@@ -98,7 +107,6 @@ function SessionStatus() {
   const { state, dismissRecovery } = useSession();
   const { t } = useI18n();
   if (state.kind === 'checking') return <p className="shell-status" data-testid="session-checking">{t('shell.loading')}</p>;
-  if (state.kind === 'guest') return <p className="shell-status" data-testid="session-guest">{t('shell.guest')}</p>;
   if (state.kind === 'network-error') {
     return (
       <div className="shell-status" data-testid="session-network-error">
@@ -111,7 +119,22 @@ function SessionStatus() {
   return null;
 }
 
+/** 首页：访客看到演示工作台（先看到，用时登录），已登录看到项目列表。 */
 function HomePage() {
+  const { state } = useSession();
+  const { t } = useI18n();
+  if (state.kind === 'guest') return <GuestView />;
+  if (state.kind === 'checking' || state.kind === 'network-error') {
+    return (
+      <ShellFrame title={t('nav.home')}>
+        <SessionStatus />
+      </ShellFrame>
+    );
+  }
+  return <ProjectListPage />;
+}
+
+function ProjectListPage() {
   const { t } = useI18n();
   const { state } = useSession();
   const [searchParams] = useSearchParams();
@@ -127,8 +150,7 @@ function HomePage() {
   });
   return (
     <ShellFrame title={t('nav.home')}>
-      <SessionStatus />
-      {enabled && scope && (state.kind === 'authenticated') && (
+      {enabled && scope && state.kind === 'authenticated' && (
         <div className="shell-projects">
           <div className="shell-projects-head">
             <span>{t('placeholder.projects')}</span>
@@ -165,17 +187,9 @@ function AccountRoute() {
   );
 }
 
-function DemoRoute() {
-  const { t } = useI18n();
-  return (
-    <ShellFrame title={t('nav.demo')}>
-      <EasyApp adapter={new EasyDemoAdapter(safeStorage())} />
-    </ShellFrame>
-  );
-}
-
-function safeStorage(): Storage | undefined {
-  try { return window.localStorage; } catch { return undefined; }
+/** 显式演示路由：与首页访客视图同一组件，已登录也可随时回看演示。 */
+function GuestDemoRoute() {
+  return <GuestView />;
 }
 
 function NotFoundPage() {

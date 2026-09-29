@@ -21,7 +21,8 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { loadLocale, saveLocale, translate, type Locale } from './i18n';
+import { useTranslation } from 'react-i18next';
+import { useI18n, type Locale } from '../../shell/I18nProvider';
 import { EasyStageDetails } from './EasyStageDetails';
 import { RabbitMascot } from './RabbitMascot';
 import { Brand } from '../../components/Brand';
@@ -53,19 +54,18 @@ function date(value: string, locale: Locale) {
   });
 }
 
-export function EasyApp({ adapter }: { adapter: EasyAdapter }) {
-  const [locale, setLocale] = useState<Locale>(loadLocale);
-  const t = (key: string, values?: Record<string, string | number>) =>
-    translate(locale, key, values);
+export function EasyApp({ adapter, guardCustomSubmit }: {
+  adapter: EasyAdapter;
+  /** 返回 false 表示拦截本次提交（访客自有输入的登录引导）；固定演示不受影响。 */
+  guardCustomSubmit?: () => boolean;
+}) {
+  // 语言唯一权威在 I18nProvider：壳层切换与演示页控件是同一个状态。
+  const { locale, changeLocale } = useI18n();
+  const { t } = useTranslation('easy');
   const freshInput = () => ({ ...emptyInput(), goal: t('Design a VHH binder for this target.') });
   useEffect(() => {
-    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
     document.title = `EasyDesign Easy · ${t('Start a design')}`;
   }, [locale]);
-  function changeLanguage(value: Locale) {
-    setLocale(value);
-    saveLocale(value);
-  }
 
   const [state, setState] = useState(() => adapter.load());
   const [input, setInput] = useState<EasyInput>(
@@ -185,6 +185,8 @@ export function EasyApp({ adapter }: { adapter: EasyAdapter }) {
       setError(issue);
       return;
     }
+    // 访客态：固定演示示例保持全流程可用；自有输入交由调用方转登录引导。
+    if (guardCustomSubmit && input.text.trim() !== t(EXAMPLE_GOAL).trim() && !guardCustomSubmit()) return;
     try {
       adapter.start(input, draftId);
       setStageView(null);
@@ -239,7 +241,7 @@ export function EasyApp({ adapter }: { adapter: EasyAdapter }) {
               lang="zh-CN"
               aria-label="中文"
               aria-pressed={locale === 'zh'}
-              onClick={() => changeLanguage('zh')}
+              onClick={() => changeLocale('zh')}
             >
               中文
             </button>
@@ -248,7 +250,7 @@ export function EasyApp({ adapter }: { adapter: EasyAdapter }) {
               lang="en"
               aria-label={t('English')}
               aria-pressed={locale === 'en'}
-              onClick={() => changeLanguage('en')}
+              onClick={() => changeLocale('en')}
             >
               EN
             </button>

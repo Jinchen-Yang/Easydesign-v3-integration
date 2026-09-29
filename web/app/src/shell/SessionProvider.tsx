@@ -3,7 +3,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  AccountApiError, accountApi, notifySessionChange,
+  AccountApiError, accountApi, notifySessionChange, subscribeSessionBroadcast,
   type AccountScope, type AccountSession,
 } from '../shared/account-client';
 import { draftRecovery, type DraftRecoveryModule } from '../data/draftRecovery';
@@ -192,6 +192,11 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
   }, [api, drafts]);
 
   useEffect(() => { void probe(); }, [probe]);
+
+  useEffect(() => {
+    // 其他标签页登出/换号：重新探测，本标签页跟随（不再整页跳转）。
+    return subscribeSessionBroadcast(() => { void probe(); });
+  }, [probe]);
 
   useEffect(() => {
     const handleExpired = (event: Event): void => {

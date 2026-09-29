@@ -1,1 +1,20 @@
-{}
+{
+  "Little lab companion": "Doudou",
+  "Chat with bunny": "Chat with Doudou",
+  "Bunny": "Doudou",
+  "Ask bunny…": "Ask Doudou…",
+  "Message bunny": "Message Doudou",
+  "EasyDesign bunny": "EasyDesign Doudou",
+  "Bunny controls": "Doudou settings",
+  "Close bunny controls": "Close Doudou settings",
+  "Bunny album": "Doudou album",
+  "Minimize bunny": "Minimize Doudou",
+  "Show bunny": "Show Doudou",
+  "Enable animation for bunny": "Enable animation for Doudou",
+  "Choose a bunny picture": "Choose a Doudou picture",
+  "Reset bunny position": "Reset Doudou position",
+  "guide.intake": "Choose one of eight input types, add your target, and select Start design. The demo moves through Target, Site, Design, Pilot, Scale and Candidates automatically.",
+  "guide.demo": "All outputs use a fixed lysozyme/VHH example: 8 pilot candidates → 24 scale candidates → 6 finalists. The design demo does not call a model or submit GPU jobs. Doudou chat separately uses the DeepSeek API.",
+  "guide.files": "Files stay in your browser. Structure files receive a lightweight coordinate check; PSE and Target Bundle dependencies still need backend validation. File bytes are not stored. Downloaded scores are illustrative, without synthesis-ready sequences.",
+  "guide.pro": "Your Pro workspace stays separate. Real backend integration will preserve scientific approvals and ask for your input when needed."
+}

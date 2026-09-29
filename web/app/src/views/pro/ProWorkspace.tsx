@@ -9,6 +9,8 @@ import { LiveWorkbenchAdapter } from '../../adapters/LiveWorkbenchAdapter';
 import type { LiveWorkbenchPort } from '../../adapters/LiveWorkbenchAdapter';
 import { LiveWorkbench } from './LiveWorkbench';
 import { workspaceHref } from '../easy/routeParams';
+import { SignInPrompt } from '../../shell/SignInPrompt';
+import '../workspaceStyles';
 import './live.css';
 
 const defaultAdapterFactory = (transport: typeof fetch): LiveWorkbenchPort =>
@@ -73,10 +75,10 @@ export function ProWorkspace(
     if (state.kind === 'checking') return <main className="account-pro-status">正在验证工作区权限…</main>;
     if (state.kind === 'guest') {
       return (
-        <main className="account-pro-status">
-          <p>请先登录后使用专业版工作台。</p>
-          <a href="#/account">前往账号与团队</a>
-        </main>
+        <SignInPrompt
+          title="登录后使用专业版工作台"
+          description="当前为访客状态，登录后即可审批科学 Gate 与查看真实项目。"
+        />
       );
     }
     return <main className="account-pro-status">暂时无法确认登录状态。</main>;

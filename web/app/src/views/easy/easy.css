@@ -1,4 +1,5 @@
-body {
+/* 只在 Easy 面生效：body 级背景绝不能泄漏到 Pro/账号页面（:has 与 accounts.css 同款）。 */
+body:has(.easy-app) {
   background: #fafafb;
 }
 .easy-app {

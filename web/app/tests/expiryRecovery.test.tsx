@@ -157,7 +157,7 @@ describe('会话过期：工作区保活与适配器稳定', () => {
     await screen.findByPlaceholderText(/NK2R/);
     await act(async () => { await machine.current!.logout(); });
     expect(machine.current?.state.kind).toBe('guest');
-    expect(await screen.findByText('请先登录')).toBeTruthy();
+    expect(await screen.findByText('登录后使用 Easy 工作区')).toBeTruthy();
     expect(fake.disposeCount).toBeGreaterThanOrEqual(1);
   });
 });

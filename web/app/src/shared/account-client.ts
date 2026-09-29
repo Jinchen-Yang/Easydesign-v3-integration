@@ -221,6 +221,19 @@ export function notifySessionChange(): void {
   channel.close();
 }
 
+/**
+ * 订阅**其他标签页**的会话变化（登录/登出）。新应用不做整页跳转，由
+ * SessionProvider 收到通知后重新探测，多标签页保持同一真相。
+ */
+export function subscribeSessionBroadcast(handler: () => void): () => void {
+  const channel = new BroadcastChannel('easydesign-account-session');
+  channel.onmessage = (event: MessageEvent) => {
+    const data = event.data as {origin?: string} | null;
+    if (data?.origin && data.origin !== PAGE_ID) handler();
+  };
+  return () => { channel.close(); };
+}
+
 export function watchSessionChanges(): () => void {
   const channel = new BroadcastChannel('easydesign-account-session');
   channel.onmessage = (event: MessageEvent) => {

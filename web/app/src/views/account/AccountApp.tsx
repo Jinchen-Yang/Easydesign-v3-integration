@@ -749,39 +749,40 @@ const TABS: Array<[string, string]> = [
 ];
 
 export function AccountApp() {
-  const [session, setSession] = useState<AccountSession | null>(null);
+  const [localSession, setLocalSession] = useState<AccountSession | null>(null);
   const [config, setConfig] = useState<AccountConfig | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [tab, setTab] = useState('workspaces');
   const action = useAction();
   const machine = useSession();
-  const refresh = useCallback(async () => setSession(await accountApi<AccountSession>('/accounts/me')), []);
+  // 唯一真相源是会话状态机；本地副本仅承载主动刷新（建团队/改配额/改密码后）
+  // 拿到的最新数据，登出或换号即丢弃，避免两个真相。
+  const session = localSession ?? (machine.state.kind === 'authenticated' ? machine.state.session : null);
+  const refresh = useCallback(async () => setLocalSession(await accountApi<AccountSession>('/accounts/me')), []);
   const machineLogin = useCallback(async (username: string, password: string): Promise<AccountSession> => {
     await machine.login(username, password);
     return accountApi<AccountSession>('/accounts/me');
   }, [machine]);
   useEffect(() => {
+    if (machine.state.kind !== 'authenticated') setLocalSession(null);
+  }, [machine.state.kind]);
+  useEffect(() => {
     let disposed = false;
-    accountApi<AccountSession>('/accounts/me').then(value => {if (!disposed) setSession(value);})
-      .catch(reason => {if (!disposed && !(reason instanceof AccountApiError && reason.status === 401)) setError(errorText(reason));})
-      .finally(() => {if (!disposed) setLoading(false);});
     fetchAccountConfig().then(value => {if (!disposed) setConfig(value);}).catch(() => {});
     return () => {disposed = true;};
   }, []);
-  if (loading) return <main className="account-loading">正在检查会话…</main>;
-  if (!session) return <>{error && <p role="alert" className="account-error">{error}</p>}<Login onLogin={setSession} login={machineLogin}/></>;
+  if (machine.state.kind === 'checking' && session === null) return <main className="account-loading">正在检查会话…</main>;
+  if (!session) return <Login onLogin={setLocalSession} login={machineLogin}/>;
   const computeAvailable = config ? config.compute_available : true;
   const tabs: Array<[string, string]> = session.user.role === 'admin' ? [...TABS, ['admin', '管理员后台']] : TABS;
   const main: ReactNode = tab === 'workspaces' ? <Workspaces session={session} refresh={refresh}/>
     : tab === 'teams' ? <Teams session={session} refresh={refresh} computeAvailable={computeAvailable}/>
     : tab === 'usage' ? <Usage session={session}/>
-    : tab === 'password' ? <Password session={session} changed={() => setSession(null)}/>
+    : tab === 'password' ? <Password session={session} changed={() => setLocalSession(null)}/>
     : <Administration session={session}/>;
   return <div className="account-shell"><header className="account-header"><Brand/><strong>{session.user.display_name}</strong><span>{session.user.role === 'admin' ? '系统管理员' : '研究用户'}</span>
-    <button disabled={action.busy} onClick={() => void action.run(async () => {await machine.logout(); setSession(null);setTab('workspaces');})}>退出登录</button>
+    <button disabled={action.busy} onClick={() => void action.run(async () => {await machine.logout(); setLocalSession(null);setTab('workspaces');})}>退出登录</button>
   </header>{action.feedback}
-    {session.user.must_change_password ? <Password session={session} changed={() => setSession(null)}/> : <>
+    {session.user.must_change_password ? <Password session={session} changed={() => setLocalSession(null)}/> : <>
       <nav className="account-tabs">{tabs.map(([key,label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{label}</button>)}</nav>
       <main>{tab === 'admin' && session.user.role !== 'admin' ? <Workspaces session={session} refresh={refresh}/> : main}</main>
     </>}

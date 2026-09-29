@@ -14,7 +14,7 @@ import { Brand } from '../components/Brand';
 import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
 import { fileTypes, inputLabel, readInputFile } from './inputs';
 import { productGoal, validateLiveInput } from './live-input';
-import { latestQueueCancellation } from './queue-presentation';
+import { latestQueueCancellation, projectListStatus } from './queue-presentation';
 import { RabbitMascot } from './RabbitMascot';
 import { EasyStructureViewer } from './EasyStructureViewer';
 import {
@@ -1241,7 +1241,13 @@ export function EasyLiveApp({
                       <small>{summarizeGoal(project.goal)}</small>
                     </td>
                     <td>{project.phase}</td>
-                    <td>{project.status}</td>
+                    <td>
+                      {projectListStatus(
+                        project,
+                        state.connection === 'connected' ? snapshot : null,
+                        state.pendingRequest,
+                      )}
+                    </td>
                     <td>
                       <button className="easy-outline" onClick={() => void openProject(project.id)}>
                         打开

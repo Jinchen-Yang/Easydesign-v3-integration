@@ -210,6 +210,18 @@ test('capacity: GPU queue survives a fresh page and scoped cancellation refreshe
   page,
 }) => {
   await install(page, true);
+  const project = { ...workbenchSnapshot().project, status: 'running' };
+  await page.route('**/projects?*', (route) =>
+    route.fulfill({
+      json: {
+        ...emptyPage,
+        total: 2,
+        items: [project, { ...project, id: 'unopened-project', title: 'Unopened design' }],
+      },
+    }),
+  );
+  const currentRow = page.getByRole('row').filter({ hasText: project.title });
+  const unopenedRow = page.getByRole('row').filter({ hasText: 'Unopened design' });
   let cancelled = false;
   await page.route('**/workbench', (route) => {
     const value = workbenchSnapshot();
@@ -267,12 +279,18 @@ test('capacity: GPU queue survives a fresh page and scoped cancellation refreshe
   });
   await page.goto('/easy/?scope=user-a&project=proj-1');
   await expect(page.getByText(/排队位置：3/)).toBeVisible();
+  await expect(currentRow.getByRole('cell', { name: '排队中', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '取消排队', exact: true }).click();
   await expect(page.getByRole('button', { name: '取消排队', exact: true })).toHaveCount(0);
   expect(cancelled).toBe(true);
   await expect(page.getByRole('heading', { name: '排队已取消' })).toBeVisible();
+  await expect(currentRow.getByRole('cell', { name: '排队已取消', exact: true })).toBeVisible();
+  await expect(
+    unopenedRow.getByRole('cell', { name: '打开查看执行状态', exact: true }),
+  ).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: '排队已取消' })).toBeVisible();
+  await expect(currentRow.getByRole('cell', { name: '排队已取消', exact: true })).toBeVisible();
   await expect(page.getByText('Agent 正在工作')).toHaveCount(0);
   await page.route('**/workbench', (route) => {
     const value = workbenchSnapshot();
@@ -305,4 +323,5 @@ test('capacity: GPU queue survives a fresh page and scoped cancellation refreshe
   await page.reload();
   await expect(page.getByText('Agent 正在工作')).toBeVisible();
   await expect(page.getByRole('heading', { name: '排队已取消' })).toHaveCount(0);
+  await expect(currentRow.getByRole('cell', { name: 'running', exact: true })).toBeVisible();
 });

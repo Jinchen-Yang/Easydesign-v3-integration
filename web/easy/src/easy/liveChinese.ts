@@ -133,6 +133,73 @@ export function gateIntro(gate: number): string {
   return GATE_INTROS[gate] || '请检查当前建议和风险后作出决定。';
 }
 
+const GATE4_OPTIONS: Record<string, { label: string; description: string }> = {
+  PROMOTE_TO_SCALE: {
+    label: '进入扩大验证',
+    description: '按已审查的策略和候选分配开展扩大验证。',
+  },
+  RUN_ANOTHER_PILOT: {
+    label: '再进行一轮小规模验证',
+    description: '制定新的小规模验证计划；再次获得你的明确批准后才会运行。',
+  },
+  REVISE_DESIGN: {
+    label: '修改设计方案',
+    description: '返回方案设计，根据本轮诊断修改设计约束与策略。',
+  },
+  REVISE_SITE: {
+    label: '重新选择结合位点',
+    description: '返回位点选择，同时保留已经验证的靶点证据。',
+  },
+  STOP: {
+    label: '停止本次设计',
+    description: '停止后续计算，并保留全部已有结果和审计记录。',
+  },
+};
+
+const GATE5_OPTIONS: Record<string, { label: string; description: string }> = {
+  'wet-lab-panel': {
+    label: '确认最终候选并生成交接方案',
+    description: '确认主候选与备选列表，生成模拟下单所需的交接信息；不会授权真实实验或采购。',
+  },
+  'revise-final-selection': {
+    label: '调整最终候选',
+    description: '返回候选筛选，根据现有证据调整主候选、备选及其排序。',
+  },
+  stop: {
+    label: '停止并保留结果',
+    description: '停止本次设计，不生成实验交接方案，并保留全部已有结果。',
+  },
+};
+
+function gate4ScaleDescription(decision: Decision): string | null {
+  const interpretation = decision.summary?.proposed_interpretation;
+  if (!interpretation || typeof interpretation !== 'object') return null;
+  const value = interpretation as Record<string, unknown>;
+  const strategies = Array.isArray(value.selected_strategy_ids)
+    ? value.selected_strategy_ids.filter((item): item is string => typeof item === 'string')
+    : [];
+  const requested =
+    typeof value.requested_scale_candidates === 'number'
+      ? value.requested_scale_candidates
+      : null;
+  const allocations =
+    value.production_strategy_allocations &&
+    typeof value.production_strategy_allocations === 'object'
+      ? (value.production_strategy_allocations as Record<string, unknown>)
+      : {};
+  if (!strategies.length || requested === null) return null;
+  const allocationText = strategies
+    .map((strategy) => {
+      const scaffold = strategy.includes('-scaffold-')
+        ? strategy.split('-scaffold-').pop()!.toUpperCase()
+        : strategy;
+      const count = allocations[strategy];
+      return typeof count === 'number' ? `骨架 ${scaffold}：${count} 个` : `骨架 ${scaffold}`;
+    })
+    .join('；');
+  return `将小规模验证支持的 ${strategies.length} 条策略进入扩大验证，共 ${requested} 个候选（${allocationText}）。`;
+}
+
 export function gateOptionFallback(
   decision: Decision,
   option: GateOption,
@@ -156,15 +223,31 @@ export function gateOptionFallback(
       description: blocked,
     };
   if (decision.gate === 4)
-    return {
-      label: `扩大验证方案${recommended}`,
-      description: blocked || '正在整理小规模验证结论。',
-    };
+    {
+      const copy = GATE4_OPTIONS[option.option_id] || {
+        label: `后续路径 ${index + 1}`,
+        description: '按当前小规模验证证据选择后续路径。',
+      };
+      const description =
+        option.option_id === 'PROMOTE_TO_SCALE'
+          ? gate4ScaleDescription(decision) || copy.description
+          : copy.description;
+      return {
+        label: `${copy.label}${recommended}`,
+        description: blocked ? `当前不可选择：${description}` : description,
+      };
+    }
   if (decision.gate === 5)
-    return {
-      label: `最终候选方案${recommended}`,
-      description: blocked || '正在整理候选排序和交付建议。',
-    };
+    {
+      const copy = GATE5_OPTIONS[option.option_id] || {
+        label: `候选处理路径 ${index + 1}`,
+        description: '根据候选排序和证据选择后续处理方式。',
+      };
+      return {
+        label: `${copy.label}${recommended}`,
+        description: blocked ? `当前不可选择：${copy.description}` : copy.description,
+      };
+    }
   return { label: `方案 ${index + 1}${recommended}`, description: blocked || '正在整理科学依据。' };
 }
 

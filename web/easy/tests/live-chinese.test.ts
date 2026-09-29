@@ -76,6 +76,59 @@ describe('Easy live Chinese presentation', () => {
     ).toBe('');
   });
 
+  it('presents every Gate 4 route as a distinct concise Chinese action', () => {
+    const gate4: Decision = {
+      ...decision,
+      gate: 4,
+      default_option_id: 'PROMOTE_TO_SCALE',
+      summary: {
+        proposed_interpretation: {
+          selected_strategy_ids: ['arm-1-scaffold-8coh', 'arm-1-scaffold-sonelokimab'],
+          requested_scale_candidates: 30,
+          production_strategy_allocations: {
+            'arm-1-scaffold-8coh': 15,
+            'arm-1-scaffold-sonelokimab': 15,
+          },
+        },
+      },
+    };
+    const routes = [
+      'PROMOTE_TO_SCALE',
+      'RUN_ANOTHER_PILOT',
+      'REVISE_DESIGN',
+      'REVISE_SITE',
+      'STOP',
+    ];
+    const copy = routes.map((option_id, index) =>
+      gateOptionFallback(gate4, { option_id, eligible: true, actions: ['approve'] }, index),
+    );
+    expect(copy.map((item) => item.label)).toEqual([
+      '进入扩大验证（推荐）',
+      '再进行一轮小规模验证',
+      '修改设计方案',
+      '重新选择结合位点',
+      '停止本次设计',
+    ]);
+    expect(copy[0].description).toBe(
+      '将小规模验证支持的 2 条策略进入扩大验证，共 30 个候选（骨架 8COH：15 个；骨架 SONELOKIMAB：15 个）。',
+    );
+    expect(copy.every((item) => !item.description.includes('正在整理'))).toBe(true);
+  });
+
+  it('presents Gate 5 routes without exposing internal route names', () => {
+    const gate5 = { ...decision, gate: 5, default_option_id: 'wet-lab-panel' };
+    expect(
+      gateOptionFallback(
+        gate5,
+        { option_id: 'wet-lab-panel', eligible: true, actions: ['approve'] },
+        0,
+      ),
+    ).toEqual({
+      label: '确认最终候选并生成交接方案（推荐）',
+      description: '确认主候选与备选列表，生成模拟下单所需的交接信息；不会授权真实实验或采购。',
+    });
+  });
+
   it('normalizes workflow terms retained by scientific localization without changing acronyms', () => {
     expect(
       normalizeLiveScientificChinese(

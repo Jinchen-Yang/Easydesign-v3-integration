@@ -96,9 +96,11 @@ describe('Easy live presentation', () => {
     expect(awaitingDecisionRecovery(value)).toBe(false);
   });
 
-  it('keeps target confirmation compact while preserving later-gate risk review', () => {
+  it('keeps risk and limitation lists out of every compact Easy approval card', () => {
     expect(shouldShowGateRiskDisclosure(1, 4, 6)).toBe(false);
-    expect(shouldShowGateRiskDisclosure(2, 4, 6)).toBe(true);
+    expect(shouldShowGateRiskDisclosure(2, 4, 6)).toBe(false);
+    expect(shouldShowGateRiskDisclosure(3, 12, 8)).toBe(false);
+    expect(shouldShowGateRiskDisclosure(5, 2, 1)).toBe(false);
     expect(shouldShowGateRiskDisclosure(3, 0, 0)).toBe(false);
   });
 

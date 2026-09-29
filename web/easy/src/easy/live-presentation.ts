@@ -39,17 +39,16 @@ export function awaitingDecisionRecovery(snapshot: ProductSnapshot): boolean {
 }
 
 /**
- * Gate 1 is a compact target/construct confirmation, not a scientific risk
- * review. The full warnings remain in the durable decision record and become
- * user-facing only at the later gates where they can affect site or design
- * authority.
+ * Easy keeps approval cards focused on the decision the scientist must make.
+ * Warnings and limitations remain in the durable decision record and the
+ * technical/audit surfaces, but are not expanded into the compact Easy flow.
  */
 export function shouldShowGateRiskDisclosure(
-  gate: number,
-  warningCount: number,
-  limitationCount: number,
+  _gate: number,
+  _warningCount: number,
+  _limitationCount: number,
 ): boolean {
-  return gate !== 1 && warningCount + limitationCount > 0;
+  return false;
 }
 
 export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySummary[] {

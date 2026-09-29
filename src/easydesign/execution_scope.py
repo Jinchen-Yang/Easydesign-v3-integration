@@ -6,9 +6,11 @@ approval. Only the trusted controller publishes scope files; workers can read th
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -118,6 +120,24 @@ def enforce_scoped_generation_budget(requested_candidates: int, run_root: Path) 
         )
 
 
+def _existing_scope_matches(path: Path, data: bytes) -> bool:
+    """Read an existing immutable record without following its final path component."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise PathPolicyError("Execution scope records cannot be symlinks") from error
+        raise
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise PathPolicyError("Execution scope records must be regular files")
+        if handle.read(len(data) + 1) != data:
+            raise ConfigurationError("Execution scope record identity conflict")
+    return True
+
+
 def publish_scope(
     *, root: Path, runtime_root: Path, declaration_path: Path, scope: ExecutionScope
 ) -> Path:
@@ -125,15 +145,15 @@ def publish_scope(
     parent = runtime_root / "state/execution-scopes"
     if not parent.resolve().is_relative_to(root.resolve()):
         raise PathPolicyError("Execution scope registry escaped the workspace")
-    parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "workspace_sha256": hashlib.sha256(declaration_path.read_bytes()).hexdigest(),
         "scope": scope.model_dump(mode="json"),
     }
     data = (json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n").encode()
     path = parent / (hashlib.sha256(data).hexdigest() + ".json")
-    if path.is_symlink():
-        raise PathPolicyError("Execution scope records cannot be symlinks")
+    if _existing_scope_matches(path, data):
+        return path
+    parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=".scope-", dir=parent)
     temporary = Path(temporary_name)
     try:
@@ -144,8 +164,10 @@ def publish_scope(
         try:
             os.link(temporary, path)
         except FileExistsError:
-            if path.read_bytes() != data:
-                raise ConfigurationError("Execution scope record identity conflict") from None
+            if not _existing_scope_matches(path, data):
+                raise ConfigurationError(
+                    "Execution scope record disappeared during publication"
+                ) from None
     finally:
         temporary.unlink()
     return path

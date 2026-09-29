@@ -193,18 +193,25 @@ class WorkspaceContext:
     def ensure_layout(self) -> None:
         """Create declared roots and runtime subdirectories without overwriting."""
 
-        directories = (
+        # Resolve every root before creating anything, and revalidate on each call.
+        runtime, projects, runs, archives = (
             self.runtime_root,
-            self.runtime_root / "cache",
-            self.runtime_root / "state",
-            self.runtime_root / "logs",
-            self.runtime_root / "tmp",
-            self.runtime_root / "validation",
-            self.runtime_root / "quarantine",
-            self.runtime_root / "home",
             self.projects_root,
             self.runs_root,
             self.archives_root,
+        )
+        directories = (
+            runtime,
+            runtime / "cache",
+            runtime / "state",
+            runtime / "logs",
+            runtime / "tmp",
+            runtime / "validation",
+            runtime / "quarantine",
+            runtime / "home",
+            projects,
+            runs,
+            archives,
         )
         for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)

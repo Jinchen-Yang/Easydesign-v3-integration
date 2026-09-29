@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useSession } from '../../shell/SessionProvider';
 import {
@@ -30,6 +31,7 @@ const defaultAdapterFactory = (transport: typeof fetch): EasyProductPort =>
 export function EasyWorkspace(
   { adapterFactory = defaultAdapterFactory }: { adapterFactory?: (transport: typeof fetch) => EasyProductPort } = {},
 ) {
+  const { t } = useTranslation('easy');
   const { state } = useSession();
   const [searchParams] = useSearchParams();
   const scopeId = searchParams.get('scope');
@@ -84,28 +86,28 @@ export function EasyWorkspace(
   }, [state.kind, adapter]);
 
   if (session === null || scope === null || adapter === null) {
-    if (state.kind === 'checking') return <main className="account-loading">正在验证工作区权限…</main>;
+    if (state.kind === 'checking') return <main className="account-loading">{t('Verifying workspace permissions…')}</main>;
     if (state.kind === 'guest') {
       return (
         <SignInPrompt
-          title="登录后使用 Easy 工作区"
-          description="当前为访客状态，登录后即可提交真实设计任务。"
+          title={t('Sign in to use the Easy workspace')}
+          description={t('You are currently a guest; after signing in you can submit real design tasks.')}
         />
       );
     }
-    return <main className="account-login"><h1>暂时无法确认登录状态</h1><p role="alert">网络异常，请稍后重试。</p></main>;
+    return <main className="account-login"><h1>{t('Unable to confirm sign-in state for now')}</h1><p role="alert">{t('Network error; please try again later.')}</p></main>;
   }
 
   return (
     <AccountTransportContext.Provider value={{ transport: contextTransport!, scope }}>
       <div className="account-workspace-bar">
         <strong>{session.user.display_name}</strong><span>{scope.name}</span>
-        <span>{scope.role === 'observer' ? '管理员只读访问 · 已审计' : scope.can_execute ? '可执行科学审批' : '团队协作成员'}</span>
-        {config && !config.compute_available && <span className="account-compute-off">未连接科学执行器</span>}
-        <label>切换工作区<select aria-label="切换工作区" value={scope.id} onChange={(event) => { location.hash = workspaceHref(event.target.value, 'easy'); }}>
+        <span>{scope.role === 'observer' ? t('Administrator read-only · audited') : scope.can_execute ? t('Can execute scientific approval') : t('Team collaborator')}</span>
+        {config && !config.compute_available && <span className="account-compute-off">{t('No scientific executor connected')}</span>}
+        <label>{t('Switch workspace')}<select aria-label={t('Switch workspace')} value={scope.id} onChange={(event) => { location.hash = workspaceHref(event.target.value, 'easy'); }}>
           {session.scopes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-        <a href="#/account">账号、团队与资源</a>
+        <a href="#/account">{t('Account, teams and resources')}</a>
       </div>
       <EasyLiveApp
         key={`${session.user.id}:${scope.id}`}

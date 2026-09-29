@@ -1,1 +1,23 @@
-{}
+{
+  "The current role cannot start compute; ask the project owner or a team admin to execute.": "当前身份不能启动计算，请由项目所有者或团队管理员执行。",
+  "The current role cannot approve or revise scientific Gates.": "当前身份不能批准或修改科学 Gate。",
+  "This server has no scientific executor connected (account-management mode): browsing and collaborative editing are available; compute start, approval, and project conversations are temporarily unavailable.": "当前服务未连接科学执行器（账号管理模式）：可以浏览与协作编辑，计算启动、审批与项目对话暂不可用。",
+  "Please sign in again": "会话需要重新登录",
+  "The current account session has expired or been revoked. A workspace token cannot replace account sign-in.": "当前账号会话已过期或被撤销。工作区令牌不能替代账号登录。",
+  "Back to account and teams": "返回账号与团队",
+  "Administrator read-only access: you cannot create projects, approve Gates, or start compute.": "管理员只读访问：不能创建项目、批准 Gate 或启动计算。",
+  "This server has no scientific executor connected (account-management mode): creating projects is temporarily unavailable; team draft collaboration remains available.": "服务未连接科学执行器（账号管理模式）：暂不能创建项目；团队草稿协作仍可用。",
+  "Team members cannot start compute; collaborate on team drafts and let a team admin create the project.": "团队成员不能启动计算；请协作编辑团队草稿，由团队管理员创建项目。",
+  "This is read-only access.": "当前是只读访问。",
+  "Verifying workspace permissions…": "正在验证工作区权限…",
+  "Sign in to use the Pro workbench": "登录后使用专业版工作台",
+  "You are currently a guest; after signing in you can approve scientific Gates and view real projects.": "当前为访客状态，登录后即可审批科学 Gate 与查看真实项目。",
+  "Unable to confirm sign-in state for now.": "暂时无法确认登录状态。",
+  "Administrator read-only · audited": "管理员只读访问 · 已审计",
+  "Scientific approver": "科研审批人",
+  "Collaborating member": "协作成员",
+  "No scientific executor connected": "未连接科学执行器",
+  "Switch workspace": "切换工作区",
+  "Account, teams and resources": "账号、团队与资源",
+  "Easy version": "Easy 版"
+}

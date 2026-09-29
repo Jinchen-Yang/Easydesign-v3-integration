@@ -39,7 +39,7 @@ export function RabbitChat({
   const account = useContext(AccountTransportContext);
   const transport = account?.transport || fetch;
   const readOnly = account ? !account.scope.can_edit : false;
-  const t = (key: string) => translate(locale, key);
+  const t = (key: string, values?: Record<string, string | number>) => translate(locale, key, values);
   const [messages, setMessages] = useState<Message[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [input, setInput] = useState('');
@@ -275,14 +275,10 @@ export function RabbitChat({
   }
   const errors: Record<string, string> = {
     stopped: account
-      ? locale === 'zh'
-        ? '已申请停止，请查看请求状态确认；不会自动重新调用。'
-        : 'Stop requested. Check request status to confirm; no automatic retry.'
+      ? 'Stop requested. Check request status to confirm; no automatic retry.'
       : 'Reply stopped.',
     paused: account
-      ? locale === 'zh'
-        ? '面板关闭时已申请停止，请先查看请求状态。'
-        : 'Stop requested when the panel closed. Check request status first.'
+      ? 'Stop requested when the panel closed. Check request status first.'
       : 'Reply paused when the panel closed. Retry when ready.',
     not_configured: 'Chat is not connected yet.',
     credentials: 'The model key is unavailable. Please check the server configuration.',
@@ -290,14 +286,14 @@ export function RabbitChat({
     timeout: 'The reply timed out. Please try again.',
     interrupted: 'The reply was interrupted. You can ask me to continue.',
     unavailable: 'Could not connect. Please try again.',
-    outcome_unknown: '结果未确认，不会自动重新调用。请先查看状态；重新提问可能再次计费。',
-    request_already_processed: '该请求已受理或已处理，不会重复调用。请查看请求状态。',
-    queue_full: '对话队列已满，请稍后重试。',
-    user_limit: '你已有对话正在处理或等待，请先完成或取消它。',
-    queue_timeout: '等待超时；本次未派发模型请求。',
-    cancelled: '对话请求已取消。',
-    budget_exhausted: '本次活动的对话调用额度已用完。',
-    authorization_revoked: '会话或工作区权限已变化，本次没有调用模型。请重新登录并确认权限。',
+    outcome_unknown: 'The outcome is unconfirmed; no automatic retry. Check the status first; asking again may be billed again.',
+    request_already_processed: 'This request was already accepted or processed; it will not be submitted again. Check the request status.',
+    queue_full: 'The chat queue is full; please try again later.',
+    user_limit: 'You already have a conversation being processed or waiting; finish or cancel it first.',
+    queue_timeout: 'Wait timed out; no model request was dispatched this time.',
+    cancelled: 'The chat request was cancelled.',
+    budget_exhausted: 'The conversation allowance for this activity is exhausted.',
+    authorization_revoked: 'The session or workspace permission changed; the model was not called this time. Sign in again and confirm permissions.',
   };
   if (!open) return null;
   return (
@@ -387,14 +383,14 @@ export function RabbitChat({
         {busy && requestStatus && (
           <p role="status" className="rabbit-chat-error">
             {requestStatus.state === 'queued'
-              ? '正在排队，轮到后自动开始；等待期间不重复提交。'
+              ? t('Queued; it starts automatically when your turn comes; no duplicate submission while waiting.')
               : requestStatus.state === 'cancelling'
-                ? '正在确认停止…'
-                : '正在准备回复…'}
+                ? t('Confirming stop…')
+                : t('Preparing a reply…')}
           </p>
         )}
         {readOnly && (
-          <p className="rabbit-chat-error">当前是只读访问，请切换到自己的工作区后使用豆豆。</p>
+          <p className="rabbit-chat-error">{t('This is read-only access; switch to your own workspace to use Doudou.')}</p>
         )}
         {error && (
           <div className="rabbit-chat-error" role="status">
@@ -418,27 +414,27 @@ export function RabbitChat({
                 disabled={readOnly || checkingStatus}
                 onClick={() => void send(retryText, retryAction)}
               >
-                {retryAction === 'new_request' ? '重新排队（新请求）' : '重试提交（原请求）'}
+                {retryAction === 'new_request' ? t('Re-queue (new request)') : t('Retry submission (original request)')}
               </button>
             )}
             {account && lastRequest.current && (
               <button disabled={checkingStatus} onClick={() => void checkStatus()}>
-                查看请求状态
+                {t('Check request status')}
               </button>
             )}
-            {statusFailed && <p>状态查询失败，尚不能确认是否派发；请稍后再查，不会重新调用。</p>}
-            {retryEvidence === 'not_found' && <p>未找到原请求记录。</p>}
+            {statusFailed && <p>{t('Status check failed; dispatch cannot be confirmed yet; check again shortly — no retry will be made.')}</p>}
+            {retryEvidence === 'not_found' && <p>{t('The original request record was not found.')}</p>}
             {retryEvidence && retryEvidence !== 'not_found' && retryEvidence.dispatched && (
-              <p>该请求已经派发，不会重放；再次提问可能再次计费。</p>
+              <p>{t('This request has been dispatched and will not be replayed; asking again may be billed again.')}</p>
             )}
             {retryAction === 'new_request' && (
               <p>
-                已确认原请求未派发。重新排队将使用新请求 ID 提交原问题，成功派发后会计入调用额度。
+                {t('The original request is confirmed as not dispatched. Re-queuing submits the original question with a new request ID; a successful dispatch counts toward the allowance.')}
               </p>
             )}
             {requestStatus && !busy && (
               <p>
-                请求状态：{requestStatus.state} · {requestStatus.request_id}
+                {t('Request status: {{state}} · {{id}}', { state: requestStatus.state, id: requestStatus.request_id })}
               </p>
             )}
           </div>

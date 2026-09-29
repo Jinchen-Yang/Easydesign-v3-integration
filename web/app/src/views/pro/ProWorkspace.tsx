@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useSession } from '../../shell/SessionProvider';
 import {
@@ -24,6 +25,7 @@ const defaultAdapterFactory = (transport: typeof fetch): LiveWorkbenchPort =>
 export function ProWorkspace(
   { adapterFactory = defaultAdapterFactory }: { adapterFactory?: (transport: typeof fetch) => LiveWorkbenchPort } = {},
 ) {
+  const { t } = useTranslation('pro');
   const { state } = useSession();
   const [searchParams] = useSearchParams();
   const scopeId = searchParams.get('scope');
@@ -72,27 +74,27 @@ export function ProWorkspace(
   }, [adapter]);
 
   if (session === null || scope === null || adapter === null) {
-    if (state.kind === 'checking') return <main className="account-pro-status">正在验证工作区权限…</main>;
+    if (state.kind === 'checking') return <main className="account-pro-status">{t('Verifying workspace permissions…')}</main>;
     if (state.kind === 'guest') {
       return (
         <SignInPrompt
-          title="登录后使用专业版工作台"
-          description="当前为访客状态，登录后即可审批科学 Gate 与查看真实项目。"
+          title={t('Sign in to use the Pro workbench')}
+          description={t('You are currently a guest; after signing in you can approve scientific Gates and view real projects.')}
         />
       );
     }
-    return <main className="account-pro-status">暂时无法确认登录状态。</main>;
+    return <main className="account-pro-status">{t('Unable to confirm sign-in state for now.')}</main>;
   }
 
   const easyUrl = workspaceHref(scope.id, 'easy', selectedProject);
   return (
     <div className="account-pro-root">
       <div className="account-pro-bar"><strong>{session.user.display_name}</strong><span>{scope.name}</span>
-        <span>{scope.role === 'observer' ? '管理员只读访问 · 已审计' : scope.can_execute ? '科研审批人' : '协作成员'}</span>
-        {config && !config.compute_available && <span className="account-compute-off">未连接科学执行器</span>}
-        <select aria-label="切换工作区" value={scope.id} onChange={(event) => { location.hash = workspaceHref(event.target.value, 'pro'); }}>
+        <span>{scope.role === 'observer' ? t('Administrator read-only · audited') : scope.can_execute ? t('Scientific approver') : t('Collaborating member')}</span>
+        {config && !config.compute_available && <span className="account-compute-off">{t('No scientific executor connected')}</span>}
+        <select aria-label={t('Switch workspace')} value={scope.id} onChange={(event) => { location.hash = workspaceHref(event.target.value, 'pro'); }}>
           {session.scopes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select><a href="#/account">账号、团队与资源</a><a href={easyUrl}>Easy 版</a>
+        </select><a href="#/account">{t('Account, teams and resources')}</a><a href={easyUrl}>{t('Easy version')}</a>
       </div>
       <LiveWorkbench
         key={`${session.user.id}:${scope.id}`}

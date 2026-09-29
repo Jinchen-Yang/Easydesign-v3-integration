@@ -274,11 +274,12 @@ export function EasyApp({ adapter, guardCustomSubmit }: {
           <h1>
             {locale === 'zh' ? (
               <>
-                开始<span>设计</span>
+                {t('Start (intro lead)')}
+                <span>{t('design (intro highlight)')}</span>
               </>
             ) : (
               <>
-                Start a <span>design</span>
+                {t('Start (intro lead)')} <span>{t('design (intro highlight)')}</span>
               </>
             )}
           </h1>

@@ -8,6 +8,9 @@ import {
 } from '../shared/account-client';
 import { draftRecovery, type DraftRecoveryModule } from '../data/draftRecovery';
 import { SESSION_EXPIRED_EVENT, type SessionExpiredDetail } from '../shared/sessionEvents';
+import { appI18n } from './I18nProvider';
+
+const commonT = (key: string): string => appI18n.t(key, { ns: 'common' });
 import { captureBootIntent, discardNextUrl, takeNextUrl } from './nextUrl';
 
 export { SESSION_EXPIRED_EVENT };
@@ -237,7 +240,7 @@ export function SessionProvider({ children, drafts = draftRecovery, api = defaul
   const recoverSession = useCallback(async (password: string): Promise<void> => {
     const current = stateRef.current;
     if (current.kind !== 'expired') {
-      throw new AccountApiError('invalid_state', '当前没有待恢复的会话', 409);
+      throw new AccountApiError('invalid_state', commonT('There is no session pending recovery'), 409);
     }
     const session = await api.login(current.previousSession.user.username, password);
     const scope = await resolveScope(session);

@@ -1,6 +1,9 @@
 // Value import from a leaf module: sessionEvents type-imports this file, so
 // the cycle stays type-only and erases at runtime.
 import { dispatchSessionExpired } from './sessionEvents';
+import { appI18n } from '../shell/I18nProvider';
+
+const commonT = (key: string): string => appI18n.t(key, { ns: 'common' });
 
 export interface AccountUser {
   id: string;
@@ -84,14 +87,14 @@ export async function accountApi<T>(path: string, session?: AccountSession | nul
       signal: AbortSignal.timeout(30_000),
     });
   } catch {
-    throw new AccountApiError('network_error', '网络异常，请稍后重试', 0);
+    throw new AccountApiError('network_error', commonT('Network error; please try again later'), 0);
   }
   // A proxy or partial outage can return HTML/text; never leak a parse crash as the error.
   const value: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = value as {error?: {code?: string; message?: string}} | null;
     throw new AccountApiError(
-      detail?.error?.code || 'request_failed', detail?.error?.message || '请求暂时无法完成', response.status,
+      detail?.error?.code || 'request_failed', detail?.error?.message || commonT('The request could not be completed for now'), response.status,
     );
   }
   return value as T;
@@ -359,7 +362,7 @@ async function scopedApi<T>(transport: typeof fetch, path: string, body?: unknow
   if (!response.ok) {
     const detail = value as {error?: {code?: string; message?: string}} | null;
     throw new AccountApiError(
-      detail?.error?.code || 'request_failed', detail?.error?.message || '操作暂时无法完成', response.status,
+      detail?.error?.code || 'request_failed', detail?.error?.message || commonT('The operation could not be completed for now'), response.status,
     );
   }
   return value as T;

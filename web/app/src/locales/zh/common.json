@@ -40,5 +40,11 @@
   "guest.promptBody": "演示只运行固定的溶菌酶示例，且不提交计算。你自己的设计需要一个账号。",
   "guest.promptDemo": "先看固定演示",
   "prompt.signIn": "登录 / 注册",
-  "prompt.backToDemo": "返回演示"
+  "prompt.backToDemo": "返回演示",
+  "Network error; please try again later": "网络异常，请稍后重试",
+  "The request could not be completed for now": "请求暂时无法完成",
+  "The operation could not be completed for now": "操作暂时无法完成",
+  "There is no session pending recovery": "当前没有待恢复的会话",
+  "The service could not return valid data for now; refresh and try again later.": "服务暂时无法返回有效数据，请稍后刷新重试。",
+  "The project list could not be loaded for now": "项目列表暂时无法加载"
 }

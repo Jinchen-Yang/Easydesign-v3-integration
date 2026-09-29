@@ -1,5 +1,8 @@
 import type { EasyInput } from './contracts';
 import { sequence, validateInput } from './inputs';
+import { appI18n } from '../../shell/I18nProvider';
+
+const easyT = (key: string): string => appI18n.t(key, { ns: 'easy' });
 
 export const MAX_PRODUCT_GOAL = 4000;
 
@@ -27,15 +30,15 @@ export function productGoal(input: EasyInput): string {
 
 export function validateLiveInput(input: EasyInput): string | null {
   if (input.type === 'sequence' && input.file && !/\.(fasta|fa|faa)$/i.test(input.file.name))
-    return '请上传 FASTA 文件，或直接粘贴序列。';
+    return easyT('Upload a FASTA file, or paste the sequence directly.');
   if (input.type === 'pdb-id' && /^pdb_/i.test(input.text.trim()))
-    return '当前原生后端仅支持四位 PDB ID；扩展 PDB ID 请改用结构文件上传。';
+    return easyT('The current native backend supports only four-character PDB IDs; for extended PDB IDs, upload a structure file instead.');
   if (input.type === 'uniprot' && input.text.includes('-'))
-    return '当前原生后端仅支持 canonical UniProt accession；isoform 请改用对应结构文件上传。';
+    return easyT('The current native backend supports only canonical UniProt accessions; for isoforms, upload the corresponding structure file instead.');
   return (
     validateInput(input) ||
     (productGoal(input).length > MAX_PRODUCT_GOAL
-      ? '完整设计目标不能超过 4,000 个字符，请缩短后再提交；系统不会截断目标。'
+      ? easyT('The complete design goal must not exceed 4,000 characters; shorten it before submitting — the system never truncates goals.')
       : null)
   );
 }

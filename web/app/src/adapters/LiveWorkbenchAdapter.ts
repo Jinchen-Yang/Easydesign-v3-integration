@@ -1,4 +1,7 @@
 import type { SnapshotAdapter } from './WorkbenchAdapter';
+import { appI18n } from '../shell/I18nProvider';
+
+const commonT = (key: string): string => appI18n.t(key, { ns: 'common' });
 import type {
   Candidate,
   GateInput,
@@ -133,7 +136,7 @@ export class LiveWorkbenchAdapter implements LiveWorkbenchPort {
     const value = await response.json().catch(() => {
       throw new ApiError(
         'invalid_response',
-        '服务暂时无法返回有效数据，请稍后刷新重试。',
+        commonT('The service could not return valid data for now; refresh and try again later.'),
         response.status,
       );
     });

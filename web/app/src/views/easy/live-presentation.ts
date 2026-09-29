@@ -1,4 +1,7 @@
 import type { ProductSnapshot } from './product-contracts';
+import { appI18n } from '../../shell/I18nProvider';
+
+const easyT = (key: string): string => appI18n.t(key, { ns: 'easy' });
 
 export interface EasyActivitySummary {
   id: string;
@@ -8,23 +11,23 @@ export interface EasyActivitySummary {
 }
 
 const RUNNING_COPY: Record<string, string> = {
-  target: '正在确认目标与结构',
-  site: '正在比较结合位点',
-  design: '正在整理设计方案',
-  pilot: '正在验证候选结构',
-  scale: '正在扩展候选验证',
-  candidates: '正在整理候选结论',
-  handoff: '正在准备最终交付',
+  target: 'Confirming the target and structure',
+  site: 'Comparing binding sites',
+  design: 'Preparing the design plan',
+  pilot: 'Validating candidate structures',
+  scale: 'Expanding candidate validation',
+  candidates: 'Preparing candidate conclusions',
+  handoff: 'Preparing the final handoff',
 };
 
 const READY_COPY: Record<string, string> = {
-  target: '目标与结构已整理',
-  site: '结合位点已整理',
-  design: '设计方案已整理',
-  pilot: '候选结构已整理',
-  scale: '扩展验证已整理',
-  candidates: '候选结论已整理',
-  handoff: '最终交付已整理',
+  target: 'Target and structure ready',
+  site: 'Binding sites ready',
+  design: 'Design plan ready',
+  pilot: 'Candidate structures ready',
+  scale: 'Expanded validation ready',
+  candidates: 'Candidate conclusions ready',
+  handoff: 'Final handoff ready',
 };
 
 export function summarizeGoal(goal: string, maximum = 120): string {
@@ -58,21 +61,24 @@ export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySu
   const rows: EasyActivitySummary[] = [
     {
       id: 'phase-summary',
-      title:
+      title: easyT(
         blocked && !awaiting
-          ? '当前执行未完成'
+          ? 'The current execution is incomplete'
           : awaiting || completed || available
-            ? READY_COPY[phase] || '当前阶段已整理'
-            : RUNNING_COPY[phase] || '正在推进当前阶段',
-      summary: awaiting
-        ? '推荐方案和必要证据已经整理完成。'
-        : completed
-          ? '当前设计流程已完成。'
-          : blocked
-            ? '当前执行已停止，证据与恢复状态已保留。'
-            : available
-              ? '当前步骤已准备好，系统将继续推进。'
-              : '科学 Agent 正在处理当前阶段。',
+            ? READY_COPY[phase] || 'Current stage ready'
+            : RUNNING_COPY[phase] || 'Advancing the current stage',
+      ),
+      summary: easyT(
+        awaiting
+          ? 'The recommended plan and required evidence are ready.'
+          : completed
+            ? 'The current design flow is complete.'
+            : blocked
+              ? 'The current execution has stopped; evidence and recovery state are retained.'
+              : available
+                ? 'The current step is ready; the system will continue.'
+                : 'The science Agent is working on the current stage.',
+      ),
       status:
         blocked && !awaiting
           ? 'waiting'
@@ -84,16 +90,16 @@ export function summarizeEasyActivity(snapshot: ProductSnapshot): EasyActivitySu
   if (reviewComplete) {
     rows.push({
       id: 'review-summary',
-      title: '独立审查已完成',
-      summary: '证据与规则检查已经记录。',
+      title: easyT('Independent review complete'),
+      summary: easyT('Evidence and rule checks have been recorded.'),
       status: 'completed',
     });
   }
   if (awaiting) {
     rows.push({
       id: 'approval-summary',
-      title: '等待你批准',
-      summary: '请检查推荐方案，然后选择批准或修改。',
+      title: easyT('Waiting for your approval'),
+      summary: easyT('Review the recommended plan, then choose approve or revise.'),
       status: 'waiting',
     });
   }

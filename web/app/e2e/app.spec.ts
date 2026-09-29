@@ -66,3 +66,13 @@ test('the language control drives the whole shell through one authority', async 
   await page.reload();
   await expect(page.getByRole('heading', { name: /^Start (a )?design$/ })).toBeVisible();
 });
+
+test('the guest Pro screen follows the same language authority', async ({ page }) => {
+  await page.goto('/app/#/projects?view=pro');
+  await expect(page.getByRole('heading', { name: '登录后使用专业版工作台' })).toBeVisible();
+  // 语言控件在演示视图里（工作区路由为全幅页面）：切 EN 后同一权威驱动 Pro 引导屏
+  await page.goto('/app/');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.goto('/app/#/projects?view=pro');
+  await expect(page.getByRole('heading', { name: 'Sign in to use the Pro workbench' })).toBeVisible();
+});

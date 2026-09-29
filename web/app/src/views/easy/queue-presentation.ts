@@ -1,4 +1,7 @@
 import type { ProductSnapshot, Project, RequestState } from './product-contracts';
+import { appI18n } from '../../shell/I18nProvider';
+
+const easyT = (key: string): string => appI18n.t(key, { ns: 'easy' });
 
 function currentRequests(
   projectId: string | undefined,
@@ -59,13 +62,13 @@ export function projectListStatus(
     const active = requests.filter((request) => ['accepted', 'running'].includes(request.state));
     if (active.length)
       return active.every((request) => request.result?.queue?.state === 'queued')
-        ? '排队中'
+        ? easyT('Queuing')
         : snapshot.project.status;
     if (
       latestQueueCancellation(project.id, snapshot.requests) &&
       latestQueueCancellation(project.id, requests)
     )
-      return '排队已取消';
+      return easyT('Queue cancelled');
   }
-  return project.status === 'running' ? '打开查看执行状态' : project.status;
+  return project.status === 'running' ? easyT('Open to view execution status') : project.status;
 }

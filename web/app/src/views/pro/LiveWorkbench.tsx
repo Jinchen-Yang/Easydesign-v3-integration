@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowRight,
   Check,
@@ -164,6 +165,7 @@ export function LiveWorkbench({
   access?: { id?: string; can_edit: boolean; can_execute: boolean; role: string };
   computeAvailable?: boolean;
 }) {
+  const { t } = useTranslation('pro');
   const { canExecute, canEdit, canDiscuss } = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState>();
   // 统一应用里 hash 属于路由器；Pro 内部页签只保留组件状态（?page= 仅作初始值）。
@@ -285,7 +287,7 @@ export function LiveWorkbench({
   };
   const create = (goal: string) => {
     if (!canExecute) {
-      setError('当前身份不能启动计算，请由项目所有者或团队管理员执行。');
+      setError(t('The current role cannot start compute; ask the project owner or a team admin to execute.'));
       return;
     }
     run(async () => {
@@ -394,7 +396,7 @@ export function LiveWorkbench({
       }[decision.gate]
     : '';
   const decide = async (input: GateInput) => {
-    if (!canExecute) throw new Error('当前身份不能批准或修改科学 Gate。');
+    if (!canExecute) throw new Error(t('The current role cannot approve or revise scientific Gates.'));
     await adapter.decide(input);
     setModal(null);
   };
@@ -404,7 +406,7 @@ export function LiveWorkbench({
     >
       {access && !computeAvailable && (
         <p className="account-permission-note account-compute-note">
-          当前服务未连接科学执行器（账号管理模式）：可以浏览与协作编辑，计算启动、审批与项目对话暂不可用。
+          {t('This server has no scientific executor connected (account-management mode): browsing and collaborative editing are available; compute start, approval, and project conversations are temporarily unavailable.')}
         </p>
       )}
       <ProjectSidebar
@@ -421,10 +423,10 @@ export function LiveWorkbench({
           <main className="landing">
             <div className="landing-center">
               <Brand />
-              <h1>会话需要重新登录</h1>
-              <p>当前账号会话已过期或被撤销。工作区令牌不能替代账号登录。</p>
+              <h1>{t('Please sign in again')}</h1>
+              <p>{t('The current account session has expired or been revoked. A workspace token cannot replace account sign-in.')}</p>
               <a className="primary-button" href="#/account">
-                返回账号与团队 <ArrowRight size={15} />
+                {t('Back to account and teams')} <ArrowRight size={15} />
               </a>
             </div>
           </main>
@@ -473,10 +475,10 @@ export function LiveWorkbench({
             createDisabledReason={
               access
                 ? access.role === 'observer'
-                  ? '管理员只读访问：不能创建项目、批准 Gate 或启动计算。'
+                  ? t('Administrator read-only access: you cannot create projects, approve Gates, or start compute.')
                   : !computeAvailable
-                    ? '服务未连接科学执行器（账号管理模式）：暂不能创建项目；团队草稿协作仍可用。'
-                    : '团队成员不能启动计算；请协作编辑团队草稿，由团队管理员创建项目。'
+                    ? t('This server has no scientific executor connected (account-management mode): creating projects is temporarily unavailable; team draft collaboration remains available.')
+                    : t('Team members cannot start compute; collaborate on team drafts and let a team admin create the project.')
                 : undefined
             }
             onNew={() => {
@@ -905,7 +907,7 @@ export function LiveWorkbench({
             onSubmit={(e) => {
               e.preventDefault();
               if (!canEdit) {
-                setError('当前是只读访问。');
+                setError(t('This is read-only access.'));
                 return;
               }
               run(async () => {

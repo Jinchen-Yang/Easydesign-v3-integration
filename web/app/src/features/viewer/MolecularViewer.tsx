@@ -19,12 +19,20 @@ export function residueNumbers(ranges: string[]): number[] {
     return Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
   });
 }
+/**
+ * Bundled demo structures live in the app's own public/ tree, so a root-relative
+ * reference must be resolved against the deployed base path (`/app/`) instead of
+ * the site root, or the local copy 404s and every load falls through to RCSB.
+ */
+function localAsset(url: string): string {
+  return url.startsWith('/') ? `${import.meta.env.BASE_URL}${url.slice(1)}` : url;
+}
 async function loadStructure(
   localUrl: string,
   remoteUrl: string,
   signal: AbortSignal,
 ): Promise<string> {
-  for (const url of [localUrl, remoteUrl]) {
+  for (const url of [localAsset(localUrl), remoteUrl]) {
     try {
       const response = await fetch(url, {
         signal: AbortSignal.any([signal, AbortSignal.timeout(4500)]),

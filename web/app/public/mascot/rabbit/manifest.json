@@ -1,0 +1,45 @@
+{
+  "originals": [
+    {
+      "file": "originals/01-welcome.jpg",
+      "original_filename": "codex-clipboard-c5d842af-2794-4e0f-ab9e-7436cb330df6.jpg",
+      "sha256": "094c8965e92bb9324810c660dcce098ab1134403485b0a4eb3937f2d9d529f84"
+    },
+    {
+      "file": "originals/02-discover.jpg",
+      "original_filename": "codex-clipboard-3e99493b-5be7-4583-b4d5-aeb8df4b6fe5.jpg",
+      "sha256": "fd5f755d9bc74c34ce7276391fdff7221bf934a748cd06f4342276bec86eeaf5"
+    },
+    {
+      "file": "originals/03-design.jpg",
+      "original_filename": "codex-clipboard-150eee9a-37dc-4691-8595-931727205a73.jpg",
+      "sha256": "745f79064539ff14e81691721f48b35dc71121778ffc2e7c56edd7eb6323fcc9"
+    },
+    {
+      "file": "originals/04-analyze.jpg",
+      "original_filename": "codex-clipboard-a67c0358-c9ff-4ddd-af63-599f1af72dd7.jpg",
+      "sha256": "da837e7ebbec26c507ffb927987b1c5813cc35c308662667c3522964d64f4a72"
+    },
+    {
+      "file": "originals/05-explore.jpg",
+      "original_filename": "codex-clipboard-196afdba-ff17-4100-bd99-c9135ad24b62.jpg",
+      "sha256": "bc70255d6c5100767f0a491b492925623a2a31baebdabd425cc28a8dd87097ee"
+    },
+    {
+      "file": "originals/06-easydesign.jpg",
+      "original_filename": "codex-clipboard-90950dd5-bf7e-4a89-a481-ebfc0fa2d40c.jpg",
+      "sha256": "115bc51af11ddb350986dd8e84f3338f80920405dcaa249412e295b919611caf"
+    },
+    {
+      "file": "originals/07-guide.jpg",
+      "original_filename": "codex-clipboard-3fab662a-0ef2-4afe-a624-ae048e5adc7a.jpg",
+      "sha256": "c07bb134dc66467df4065a96d478b858fca71d1346743899000cbe07dfc0f04c"
+    }
+  ],
+  "derived": {
+    "file": "rabbit-mascot.png",
+    "source": "originals/01-welcome.jpg",
+    "tool": "Built-in image_gen",
+    "sha256": "5b0b6e8395ca24633da4029d0747d0ceb6cc8c9832dceea2474f702368106f21"
+  }
+}

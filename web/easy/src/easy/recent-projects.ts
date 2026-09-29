@@ -10,18 +10,20 @@ export function loadRecentProjectOpens(
 ): RecentProjectOpens {
   if (!storage) return {};
   try {
-    const value = JSON.parse(storage.getItem(STORAGE_KEY) || '{}');
+    const value: unknown = JSON.parse(storage.getItem(STORAGE_KEY) || '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    return Object.fromEntries(
-      Object.entries(value).filter(
-        ([project, timestamp]) =>
-          project.length > 0 &&
-          project.length <= 256 &&
-          typeof timestamp === 'number' &&
-          Number.isFinite(timestamp) &&
-          timestamp > 0,
-      ),
-    );
+    const opened: RecentProjectOpens = {};
+    for (const [project, timestamp] of Object.entries(value)) {
+      if (
+        project.length > 0 &&
+        project.length <= 256 &&
+        typeof timestamp === 'number' &&
+        Number.isFinite(timestamp) &&
+        timestamp > 0
+      )
+        opened[project] = timestamp;
+    }
+    return opened;
   } catch {
     return {};
   }

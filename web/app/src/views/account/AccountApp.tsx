@@ -145,21 +145,21 @@ function Login({onLogin, login}: {onLogin: (session: AccountSession) => void; lo
         setPassword('');
         onLogin(session);
       }
-    }, register ? t('Registration submitted and awaiting administrator review. You can sign in once approved.') : '');
+    }, register ? t('Registration complete. You can sign in now.') : '');
   }
   return <main className="account-login">
-    <Brand/><h1>{register ? t('Apply for an EasyDesign account') : t('Sign in to EasyDesign')}</h1>
+    <Brand/><h1>{register ? t('Create an EasyDesign account') : t('Sign in to EasyDesign')}</h1>
     <p>{t('Personal workspaces are private; team projects are shared by permission.')}</p>
     {setup && <p role="status" className="account-notice">{t('The administrator has not completed setup; contact the deployment owner to finish the security bootstrap.')}</p>}
     <form onSubmit={submit}>
       <label>{t('Username')}<input required value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" minLength={3} maxLength={64}/></label>
       {register && <label>{t('Display name')}<input value={displayName} onChange={event => setDisplayName(event.target.value)} maxLength={100}/></label>}
       <label>{t('Password')}<input type="password" required value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 12 : undefined} maxLength={256}/></label>
-      {register && <small>{t('At least 12 characters. Registration requires administrator approval before workspace access.')}</small>}
-      <button className="account-primary" disabled={action.busy || setup}>{action.busy ? t('Processing…') : register ? t('Submit registration') : t('Sign in')}</button>
+      {register && <small>{t('At least 12 characters. You can sign in immediately after registration.')}</small>}
+      <button className="account-primary" disabled={action.busy || setup}>{action.busy ? t('Processing…') : register ? t('Create account') : t('Sign in')}</button>
       {action.feedback}
     </form>
-    <button className="account-link" onClick={() => {setRegister(!register); setPassword('');}}>{register ? t('Have an account? Back to sign in') : t('No account? Apply for registration')}</button>
+    <button className="account-link" onClick={() => {setRegister(!register); setPassword('');}}>{register ? t('Have an account? Back to sign in') : t('No account? Create one')}</button>
   </main>;
 }
 

@@ -403,7 +403,7 @@ class AccountStore:
         hashed = _password_hash(password)
         with self.db(write=True) as db:
             user = self._insert_user(
-                db, username, hashed, display_name, role="user", status="pending"
+                db, username, hashed, display_name, role="user", status="active"
             )
             self.audit_record(db, user.id, "account.register", target=user.id)
             return user

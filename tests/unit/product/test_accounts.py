@@ -25,17 +25,13 @@ def accounts(tmp_path: Path):
     return store, admin, store.user(alice.id), store.user(bob.id), clock
 
 
-def test_registration_requires_approval_and_passwords_are_not_public(tmp_path: Path):
+def test_registration_allows_immediate_login_and_passwords_are_not_public(tmp_path: Path):
     store = AccountStore(tmp_path / "accounts.sqlite")
     admin = store.bootstrap_admin("admin", PASSWORD, "管理员")
-    pending = store.register("Alice", PASSWORD, "Alice")
-    assert pending.status == "pending"
-    with pytest.raises(ProductError) as rejected:
-        store.login("alice", PASSWORD, peer="fixture")
-    assert rejected.value.code == "account_pending"
-    store.update_user(admin, pending.id, status="active")
+    registered = store.register("Alice", PASSWORD, "Alice")
+    assert registered.status == "active"
     session = store.login("ALICE", PASSWORD, peer="fixture")
-    assert store.authenticate(session.token).id == pending.id
+    assert store.authenticate(session.token).id == registered.id
     assert session.csrf_token and session.csrf_token != session.token
     assert PASSWORD not in json.dumps(store.users(admin))
     with sqlite3.connect(store.path) as db:
@@ -43,6 +39,15 @@ def test_registration_requires_approval_and_passwords_are_not_public(tmp_path: P
         assert all(PASSWORD not in row[0] for row in rows)
         assert len({row[0] for row in rows}) == 2
         assert db.execute("SELECT token_hash FROM sessions").fetchone()[0] != session.token
+
+
+@pytest.mark.parametrize("status", ["pending", "suspended", "rejected"])
+def test_open_registration_does_not_bypass_account_restrictions(accounts, status):
+    store, admin, alice, _bob, _clock = accounts
+    store.update_user(admin, alice.id, status=status)
+    with pytest.raises(ProductError) as rejected:
+        store.login("alice", PASSWORD, peer="fixture")
+    assert rejected.value.code == "account_" + status
 
 
 def test_password_reset_and_disable_revoke_sessions(accounts):
@@ -209,6 +214,8 @@ def test_login_attempts_are_rate_limited_and_error_details_do_not_leak_passwords
 
 def test_security_audit_is_append_only_and_excludes_credentials(accounts):
     store, admin, alice, _bob, _clock = accounts
+    store.update_user(admin, alice.id, status="suspended")
+    store.update_user(admin, alice.id, status="active")
     session = store.login("alice", PASSWORD, peer="fixture")
     store.logout(session.token)
     events = store.audit(admin)

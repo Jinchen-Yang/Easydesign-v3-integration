@@ -442,6 +442,11 @@ def population(
         ):
             panel = final.proposed_selection.model_dump(mode="json") if final else {}
             return list(pool.candidates), pool, {} if phase == "scale" else panel
+    # A running Scale campaign does not yet have its authoritative global pool.
+    # Falling through to the Pilot measurement makes the UI relabel old Pilot
+    # candidates as Scale results, which is scientifically false.
+    if phase == "scale":
+        return [], None, {}
     dossier = b.current_pilot_dossier()
     event = b.project_latest("phase34-pilot-measurement")
     measurement = (
@@ -1214,7 +1219,13 @@ def job_views(session: DomainSession, validation_only: bool) -> list[dict[str, A
     jobs: list[dict[str, Any]] = []
     for job in b.controller.list(project_id=b.project_id)[:40]:
         progress = job_progress(job, b.context.runs_root)
-        phase = {
+        run_id = str(job.run_id or "")
+        phase = (
+            "scale"
+            if run_id.startswith("scale-")
+            else "pilot"
+            if run_id.startswith("pilot-")
+            else {
             1: "target",
             2: "site",
             3: "design",
@@ -1222,8 +1233,9 @@ def job_views(session: DomainSession, validation_only: bool) -> list[dict[str, A
             5: "pilot",
             6: "scale",
             7: "candidates",
-        }.get(job.step, "unknown")
-        if progress is not None:
+            }.get(job.step, "unknown")
+        )
+        if progress is not None and not run_id.startswith(("pilot-", "scale-")):
             stage_id = str(progress["stage_id"])
             if stage_id.startswith(("04-", "05-")):
                 phase = "pilot"

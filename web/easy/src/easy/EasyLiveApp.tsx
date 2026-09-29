@@ -173,11 +173,7 @@ function ExecutionProgress({
   candidatePhase: CandidatePhase | null;
 }) {
   const phaseJobs = snapshot.jobs.filter((item) => item.phase === phase && item.progress);
-  const job = phaseJobs.reduce<(typeof phaseJobs)[number] | undefined>(
-    (best, item) =>
-      !best || (item.progress?.completed || 0) > (best.progress?.completed || 0) ? item : best,
-    undefined,
-  );
+  const job = phaseJobs.find((item) => ['running', 'queued'].includes(item.status)) ?? phaseJobs[0];
   const progress = job?.progress;
   const recorded = candidatePhase === phase ? candidates : [];
   const workflowComplete =
@@ -189,16 +185,26 @@ function ExecutionProgress({
   const currentIndex = PIPELINE_STEPS.findIndex(([id]) => id === current);
   const currentLabel = PIPELINE_STEPS.find(([id]) => id === current)?.[1];
   const pipelineComplete = workflowComplete && recorded.length > 0;
-  const completed =
-    workflowComplete && recorded.length ? recorded.length : progress?.completed || 0;
-  const total = recorded.length || progress?.total || 0;
+  const aggregate = phaseJobs.reduce(
+    (value, item) => ({
+      completed: value.completed + (item.progress?.completed || 0),
+      total: value.total + (item.progress?.total || 0),
+      completedTasks: value.completedTasks + (item.progress?.completed_tasks || 0),
+      totalTasks: value.totalTasks + (item.progress?.total_tasks || 0),
+      runningTasks: value.runningTasks + (item.progress?.running_tasks || 0),
+    }),
+    { completed: 0, total: 0, completedTasks: 0, totalTasks: 0, runningTasks: 0 },
+  );
+  const completed = workflowComplete && recorded.length ? recorded.length : aggregate.completed;
+  const total = workflowComplete && recorded.length ? recorded.length : aggregate.total;
   const completedTasks =
     workflowComplete && recorded.length
       ? new Set(recorded.map((item) => item.arm)).size
-      : progress?.completed_tasks || 0;
-  const totalTasks = recorded.length
-    ? new Set(recorded.map((item) => item.arm)).size
-    : progress?.total_tasks || 0;
+      : aggregate.completedTasks;
+  const totalTasks =
+    workflowComplete && recorded.length
+      ? new Set(recorded.map((item) => item.arm)).size
+      : aggregate.totalTasks;
   const overall = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
   const substage =
     progress?.substage_total && progress.substage_completed !== null
@@ -241,7 +247,7 @@ function ExecutionProgress({
       </div>
       <p>
         {completedTasks} / {totalTasks} 个设计策略任务完成
-        {progress?.running_tasks ? `，${progress.running_tasks} 个正在运行` : ''}
+        {aggregate.runningTasks ? `，${aggregate.runningTasks} 个正在运行` : ''}
       </p>
       {phase === 'pilot' &&
         totalTasks > 0 &&

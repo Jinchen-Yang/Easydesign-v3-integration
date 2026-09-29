@@ -47,6 +47,10 @@ export function RabbitChat({
   const [error, setError] = useState('');
   const [retryText, setRetryText] = useState('');
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [connectionError, setConnectionError] = useState('');
+  const [connectionCheck, setConnectionCheck] = useState(0);
+  const hasWorkspace = account !== null;
+  const chatBlocked = !hasWorkspace || readOnly || configured !== true;
   const [requestStatus, setRequestStatus] = useState<ChatStatus | null>(null);
   const [retryEvidence, setRetryEvidence] = useState<ChatStatus | 'not_found' | null>(null);
   const [acceptedFailure, setAcceptedFailure] = useState<boolean | null>(null);
@@ -62,14 +66,23 @@ export function RabbitChat({
       controller.current?.abort('panel-closed');
       return;
     }
+    setConfigured(null);
+    setConnectionError('');
+    if (!hasWorkspace) return;
     field.current?.focus();
     const abort = new AbortController();
     transport(CHAT_ENDPOINT, { signal: abort.signal })
-      .then((r) => r.json())
-      .then((v) => setConfigured(v.configured === true))
-      .catch(() => {});
+      .then(async (r) => {
+        if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'authorization_revoked' : 'unavailable');
+        const value = await r.json();
+        if (typeof value.configured !== 'boolean') throw new Error('unavailable');
+        if (!abort.signal.aborted) setConfigured(value.configured);
+      })
+      .catch((reason: unknown) => {
+        if (!abort.signal.aborted) setConnectionError(reason instanceof Error && reason.message === 'authorization_revoked' ? 'authorization_revoked' : 'unavailable');
+      });
     return () => abort.abort();
-  }, [open, transport]);
+  }, [open, transport, hasWorkspace, connectionCheck]);
   useEffect(
     () => () => {
       sequence.current++;
@@ -107,7 +120,7 @@ export function RabbitChat({
     : null;
   async function send(text = input, retrying: ChatRetryAction | false = false) {
     const content = text.trim();
-    if (!content || content.length > 4000 || controller.current || readOnly) return;
+    if (!content || content.length > 4000 || controller.current || chatBlocked) return;
     if (retrying && account && retrying !== retryAction) return;
     const id = ++sequence.current;
     let history = messages
@@ -337,7 +350,7 @@ export function RabbitChat({
             <p>{t('Hi! What would you like to know?')}</p>
             <div className="rabbit-chat-suggestions">
               {['What is happening in this step?', 'What is a VHH?'].map((s) => (
-                <button key={s} disabled={readOnly} onClick={() => void send(t(s))}>
+                <button key={s} disabled={chatBlocked} onClick={() => void send(t(s))}>
                   {t(s)}
                 </button>
               ))}
@@ -371,13 +384,21 @@ export function RabbitChat({
         {!busy && suggestions.length > 0 && (
           <div className="rabbit-chat-suggestions" role="group" aria-label={t('Keep chatting')}>
             {suggestions.map((question) => (
-              <button key={question} disabled={readOnly} onClick={() => void send(question)}>
+              <button key={question} disabled={chatBlocked} onClick={() => void send(question)}>
                 {question}
               </button>
             ))}
           </div>
         )}
-        {configured === false && !error && (
+        {!hasWorkspace && <div className="rabbit-chat-error" role="status">
+          <p>{t('Enter a workspace to chat with Doudou.')}</p>
+          <a href="#/account">{t('Sign in / choose a workspace')}</a>
+        </div>}
+        {hasWorkspace && connectionError && <div className="rabbit-chat-error" role="status">
+          <p>{t(connectionError === 'authorization_revoked' ? errors.authorization_revoked : 'Could not check the chat connection. Please try again.')}</p>
+          <button type="button" onClick={() => setConnectionCheck(value => value + 1)}>{t('Retry connection')}</button>
+        </div>}
+        {hasWorkspace && configured === false && !error && (
           <p className="rabbit-chat-error">{t(errors.not_configured)}</p>
         )}
         {busy && requestStatus && (
@@ -411,7 +432,7 @@ export function RabbitChat({
               )}
             {account && retryText && retryAction && (
               <button
-                disabled={readOnly || checkingStatus}
+                disabled={chatBlocked || checkingStatus}
                 onClick={() => void send(retryText, retryAction)}
               >
                 {retryAction === 'new_request' ? t('Re-queue (new request)') : t('Retry submission (original request)')}
@@ -452,7 +473,7 @@ export function RabbitChat({
           value={input}
           maxLength={4000}
           rows={2}
-          disabled={readOnly}
+          disabled={chatBlocked}
           placeholder={t('Ask bunny…')}
           aria-label={t('Message bunny')}
           onChange={(e) => setInput(e.target.value)}
@@ -479,7 +500,7 @@ export function RabbitChat({
             className="rabbit-chat-send"
             title={t('Send message')}
             aria-label={t('Send message')}
-            disabled={!input.trim() || readOnly}
+            disabled={!input.trim() || chatBlocked}
           >
             <ArrowUp size={20} />
           </button>

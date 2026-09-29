@@ -402,5 +402,9 @@
   "Target + partners": "靶标与相互作用伙伴",
   "Target chain highlighted": "已高亮靶标链",
   "Candidate complex": "候选复合物",
-  "English": "English"
+  "English": "English",
+  "Enter a workspace to chat with Doudou.": "进入个人或团队工作区后，即可与豆豆聊天。",
+  "Sign in / choose a workspace": "登录 / 选择工作区",
+  "Could not check the chat connection. Please try again.": "暂时无法确认聊天连接，请重试。",
+  "Retry connection": "重新连接"
 }

@@ -18,5 +18,9 @@
   "guide.files": "Files stay in your browser. Structure files receive a lightweight coordinate check; PSE and Target Bundle dependencies still need backend validation. File bytes are not stored. Downloaded scores are illustrative, without synthesis-ready sequences.",
   "guide.pro": "Your Pro workspace stays separate. Real backend integration will preserve scientific approvals and ask for your input when needed.",
   "Start (intro lead)": "Start a",
-  "design (intro highlight)": "design"
+  "design (intro highlight)": "design",
+  "Enter a workspace to chat with Doudou.": "Enter a workspace to chat with Doudou.",
+  "Sign in / choose a workspace": "Sign in / choose a workspace",
+  "Could not check the chat connection. Please try again.": "Could not check the chat connection. Please try again.",
+  "Retry connection": "Retry connection"
 }

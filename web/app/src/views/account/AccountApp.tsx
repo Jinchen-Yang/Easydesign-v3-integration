@@ -133,8 +133,12 @@ function Login({login}: {login: (username: string, password: string) => Promise<
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmationAttempted, setConfirmationAttempted] = useState(false);
+  const confirmationInput = useRef<HTMLInputElement>(null);
   const [setup, setSetup] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const showMismatch = register && (confirmPassword.length > 0 || confirmationAttempted) && password !== confirmPassword;
   const action = useAction();
   useEffect(() => {
     let disposed = false;
@@ -144,10 +148,15 @@ function Login({login}: {login: (username: string, password: string) => Promise<
   }, []);
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (register && password !== confirmPassword) {
+      setConfirmationAttempted(true);
+      confirmationInput.current?.focus();
+      return;
+    }
     void action.run(async () => {
       if (register) {
         await accountApi('/accounts/register', null, {username, password, display_name: displayName || username});
-        setPassword(''); setRegister(false);
+        setPassword(''); setConfirmPassword(''); setConfirmationAttempted(false); setRegister(false);
       } else {
         await login(username, password);
         setPassword('');
@@ -160,15 +169,17 @@ function Login({login}: {login: (username: string, password: string) => Promise<
     <div className="account-auth-mark"><Brand compact/></div><h1>{register ? t('Create an EasyDesign account') : t('Sign in to EasyDesign')}</h1>
     <p>{t('Personal workspaces are private; team projects are shared by permission.')}</p>
     {setup && <p role="status" className="account-notice">{t('The administrator has not completed setup; contact the deployment owner to finish the security bootstrap.')}</p>}
-    <form onSubmit={submit}>
-      <label>{t('Username')}<input required value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" minLength={3} maxLength={64}/></label>
-      {register && <label>{t('Display name')}<input value={displayName} onChange={event => setDisplayName(event.target.value)} maxLength={100}/></label>}
-      <label>{t('Password')}<span className="account-password-field"><input type={showPassword ? 'text' : 'password'} required value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 12 : undefined} maxLength={256}/><button type="button" aria-label={showPassword ? t('Hide password') : t('Show password')} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></span></label>
+    <form method="post" onSubmit={submit}>
+      <label htmlFor="account-username">{t('Username')}<input id="account-username" name="username" required value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={64}/></label>
+      {register && <label htmlFor="account-display-name">{t('Display name')}<input id="account-display-name" name="display_name" autoComplete="nickname" value={displayName} onChange={event => setDisplayName(event.target.value)} maxLength={100}/></label>}
+      <label htmlFor="account-password">{t('Password')}<span className="account-password-field"><input id="account-password" name="password" type={showPassword ? 'text' : 'password'} required value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 12 : undefined} maxLength={256}/><button type="button" aria-label={showPassword ? t('Hide password') : t('Show password')} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></span></label>
+      {register && <label htmlFor="account-confirm-password">{t('Confirm password')}<input ref={confirmationInput} id="account-confirm-password" name="password_confirmation" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required minLength={12} maxLength={256} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} aria-invalid={showMismatch} aria-describedby={showMismatch ? 'account-password-mismatch' : undefined}/></label>}
+      {showMismatch && <p id="account-password-mismatch" className="account-error" role="alert">{t('Passwords do not match. Please enter the same password twice.')}</p>}
       {register && <small>{t('At least 12 characters. You can sign in immediately after registration.')}</small>}
-      <button className="account-primary" disabled={action.busy || setup}>{action.busy ? t('Processing…') : register ? t('Create account') : t('Sign in')}</button>
+      <button type="submit" className="account-primary" disabled={action.busy || setup || (register && password !== confirmPassword)}>{action.busy ? t('Processing…') : register ? t('Create account') : t('Sign in')}</button>
       {action.feedback}
     </form>
-    <button className="account-link" onClick={() => {setRegister(!register); setPassword('');}}>{register ? t('Have an account? Back to sign in') : t('No account? Create one')}</button>
+    <button className="account-link" onClick={() => {setRegister(!register); setPassword(''); setConfirmPassword(''); setConfirmationAttempted(false); setShowPassword(false);}}>{register ? t('Have an account? Back to sign in') : t('No account? Create one')}</button>
     <a className="account-back-link" href="#/"><ArrowLeft size={15}/>{t('Back to workspace')}</a>
   </main><footer className="account-auth-footer">{t('A workspace for evidence-led protein design')}</footer></div>;
 }
@@ -180,12 +191,13 @@ function Password({session, changed}: {session: AccountSession; changed: () => v
   const action = useAction();
   return <section className="account-panel"><h2>{session.user.must_change_password ? t('Change your temporary password first') : t('Change password')}</h2>
     <p>{t('Changing the password invalidates all existing sessions; you will need to sign in again.')}</p>
-    <form onSubmit={event => {event.preventDefault(); void action.run(async () => {
+    <form method="post" onSubmit={event => {event.preventDefault(); void action.run(async () => {
       await accountApi('/accounts/password', session, {current_password: current, password: next});
       setCurrent(''); setNext(''); notifySessionChange(); changed();
     });}}>
-      <label>{t('Current password')}<input type="password" autoComplete="current-password" required value={current} onChange={event => setCurrent(event.target.value)}/></label>
-      <label>{t('New password')}<input type="password" autoComplete="new-password" minLength={12} maxLength={256} required value={next} onChange={event => setNext(event.target.value)}/></label>
+      <input type="hidden" name="username" autoComplete="username" value={session.user.username}/>
+      <label htmlFor="account-current-password">{t('Current password')}<input id="account-current-password" name="current_password" type="password" autoComplete="current-password" required value={current} onChange={event => setCurrent(event.target.value)}/></label>
+      <label htmlFor="account-new-password">{t('New password')}<input id="account-new-password" name="new_password" type="password" autoComplete="new-password" minLength={12} maxLength={256} required value={next} onChange={event => setNext(event.target.value)}/></label>
       <button className="account-primary" disabled={action.busy}>{t('Change and sign in again')}</button>{action.feedback}
     </form>
   </section>;

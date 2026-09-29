@@ -49,8 +49,11 @@ export function SessionRecoveryModal() {
         <h2>{t('recovery.title')}</h2>
         <p>{t('recovery.description')}</p>
         <p className="session-recovery-account">{t('recovery.account', { name: state.previousSession.user.display_name })}</p>
-        <form onSubmit={submit}>
+        <form method="post" onSubmit={submit}>
+          <input type="hidden" name="username" autoComplete="username" value={state.previousSession.user.username}/>
           <input
+            id="session-recovery-password"
+            name="password"
             type="password"
             value={password}
             autoFocus

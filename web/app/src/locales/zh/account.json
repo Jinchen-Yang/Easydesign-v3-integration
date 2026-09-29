@@ -233,5 +233,7 @@
   "Discard my edits and load the latest saved version": "放弃当前修改，载入最新版本",
   "You can view this workspace. Editing and scientific approval are unavailable for this role.": "当前身份可只读查看工作区，不能编辑或执行科学审批。",
   "Unable to refresh your session": "暂时无法确认登录状态，请重试。",
-  "Retry": "重试"
+  "Retry": "重试",
+  "Confirm password": "确认密码",
+  "Passwords do not match. Please enter the same password twice.": "两次密码不一致，请输入相同的密码。"
 }

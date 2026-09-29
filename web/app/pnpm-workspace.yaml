@@ -1,0 +1,6 @@
+overrides:
+  # vitest's vite range otherwise resolves a second vite (newer esbuild) whose
+  # types clash with the direct vite 6.1.0 dependency during typecheck.
+  vite: 6.1.0
+allowBuilds:
+  esbuild: true

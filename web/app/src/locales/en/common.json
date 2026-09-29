@@ -1,0 +1,30 @@
+{
+  "shell": {
+    "loading": "App Shell Loading...",
+    "guest": "Guest mode (demo workbench arrives in phase 4)",
+    "authenticated": "Signed in: {{name}} (project views migrate in phase 3)",
+    "expired": "Session expired. Unsaved input is kept (recovery overlay arrives in phase 2)",
+    "networkError": "Network problem; sign-in state cannot be confirmed.",
+    "retry": "Retry",
+    "giveUp": "Continue as guest",
+    "dismiss": "Dismiss recovery",
+    "language": "Language",
+    "brand": "EasyDesign"
+  },
+  "nav": {
+    "home": "Home",
+    "projects": "Projects",
+    "account": "Account & teams",
+    "demo": "Demo"
+  },
+  "placeholder": {
+    "projects": "Project list (migrates in phase 3)",
+    "projectView": "Project view · {{id}} (migrates in phase 3 · view={{view}})",
+    "account": "Account & teams (migrates in phase 3)",
+    "demo": "Demo mode (becomes the guest view in phase 4)"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "back": "Back to home"
+  }
+}

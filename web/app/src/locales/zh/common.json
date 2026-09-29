@@ -1,0 +1,30 @@
+{
+  "shell": {
+    "loading": "App Shell Loading...",
+    "guest": "访客模式（阶段 4 提供演示工作台）",
+    "authenticated": "已登录：{{name}}（项目视图阶段 3 迁入）",
+    "expired": "会话已过期，未保存的输入已暂存（阶段 2 提供恢复遮罩）",
+    "networkError": "网络异常，暂时无法确认登录状态。",
+    "retry": "重试",
+    "giveUp": "以访客继续",
+    "dismiss": "取消恢复",
+    "language": "语言",
+    "brand": "EasyDesign"
+  },
+  "nav": {
+    "home": "首页",
+    "projects": "项目",
+    "account": "账号与团队",
+    "demo": "演示"
+  },
+  "placeholder": {
+    "projects": "项目列表（阶段 3 迁入）",
+    "projectView": "项目视图 · {{id}}（阶段 3 迁入 · view={{view}}）",
+    "account": "账号与团队（阶段 3 迁入）",
+    "demo": "演示模式（阶段 4 转正为访客视图）"
+  },
+  "notFound": {
+    "title": "页面不存在",
+    "back": "返回首页"
+  }
+}

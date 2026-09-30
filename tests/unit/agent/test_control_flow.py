@@ -168,6 +168,55 @@ async def test_stale_pending_history_cannot_change_actual_dispatch(site_bridge: 
 
 
 @pytest.mark.asyncio
+async def test_product_target_to_site_boundary_starts_no_site_work_in_same_execution(
+    site_bridge: Any,
+) -> None:
+    from easydesign.agent.phase34_runtime import Phase34Runtime
+
+    runtime = Phase34Runtime(
+        site_bridge.project,
+        "product-phase-boundary-thread",
+        site_bridge.store,
+        through="handoff",
+        product_auto_continue=False,
+    )
+    runtime.store.event(runtime.thread, "product-title", {"title": "Synthetic product"})
+    execution = runtime.store.begin_execution(runtime.thread, "Prepare an exact PDB target")
+    runtime.store.event(
+        runtime.thread,
+        "runtime-action-timing",
+        {
+            "execution_id": execution["execution_id"],
+            "action_id": "target-action",
+            "stage": "not-prepared",
+            "tool": "task",
+            "specialist": "target-intelligence",
+            "status": "completed",
+        },
+    )
+    boundary = RuntimeCoordinator(
+        runtime,
+        "coordinator",
+        scripted_config(),
+        "Prepare an exact PDB target",
+        execution_id=execution["execution_id"],
+    )
+    request = SimpleNamespace(messages=[], system_message=SystemMessage(content="Runtime"))
+
+    async def forbidden(_: Any) -> Any:
+        pytest.fail("The coordinator model must not run at a product phase boundary")
+
+    result = await boundary.awrap_model_call(request, forbidden)
+    assert result.result[0].tool_calls == []
+    assert "separate bounded continuation" in result.result[0].content
+    assert not any(
+        event["kind"] == "runtime-dispatch"
+        and event["payload"].get("specialist") == "site-mechanism"
+        for event in runtime.store.events(runtime.thread)
+    )
+
+
+@pytest.mark.asyncio
 async def test_ended_checkpoint_recovers_stale_confirmation_in_same_execution(
     site_bridge: Any,
     monkeypatch: Any,

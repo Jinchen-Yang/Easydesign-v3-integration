@@ -150,7 +150,7 @@ class AccountHandler(Handler):
         origin = self.headers.get("Origin")
         if origin is not None and origin not in origins:
             raise ProductError("invalid_origin", "拒绝跨站请求", 403)
-        if self.command == "POST" and origin is None:
+        if self.command in {"POST", "DELETE"} and origin is None:
             raise ProductError("origin_required", "写操作需要同源请求", 403)
 
     def _token(self) -> str:
@@ -171,7 +171,7 @@ class AccountHandler(Handler):
             # 7-day Max-Age and undo the renewal.
             self._renewed_cookie = self._cookie(token)
         supplied = self.headers.get("X-CSRF-Token")
-        if self.command == "POST" or supplied is not None:
+        if self.command in {"POST", "DELETE"} or supplied is not None:
             if not supplied or not hmac.compare_digest(
                 supplied, self.server.accounts.csrf_token(token)
             ):
@@ -595,7 +595,8 @@ class AccountHandler(Handler):
             # New upstream write routes are denied until explicitly classified.
             if self.command == "POST":
                 allowed = (
-                    product_tail in (["projects"], ["inputs"], ["rabbit", "chat"])
+                    product_tail
+                    in (["projects"], ["inputs"], ["rabbit", "chat"], ["rabbit", "localize"])
                     or (product_tail[0] == "drafts" and len(product_tail) in {1, 2, 3})
                     or (
                         len(product_tail) == 3
@@ -615,6 +616,12 @@ class AccountHandler(Handler):
                 )
                 if not allowed:
                     raise ProductError("not_found", "操作不存在", 404)
+            elif (
+                self.command == "DELETE"
+                and len(product_tail) == 2
+                and product_tail[0] == "projects"
+            ):
+                self.server.accounts.scope(user, scope_id, edit=True)
             elif self.command == "GET":
                 if product_tail[0] not in {
                     "projects",
@@ -628,6 +635,16 @@ class AccountHandler(Handler):
             else:
                 raise ProductError("method_not_allowed", "请求方法不受支持", 405)
             with self.server.runtime.bind(user, scope_id) as service:
+                if product_tail == ["rabbit", "localize"] and self.command == "POST":
+                    self.server.accounts.scope(user, scope_id, edit=True)
+                    payload = self.json_body()
+                    self.send(
+                        200,
+                        self.server.rabbit_chat.localize(
+                            payload, actor_id=user.id, scope_id=scope_id
+                        ),
+                    )
+                    return
                 if product_tail[0] == "drafts":
                     self._drafts(service, product_tail)
                     return

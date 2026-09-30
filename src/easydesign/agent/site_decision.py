@@ -703,15 +703,15 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
         if question.get("status") != "VERIFIED":
             continue
         evidence = question.get("evidence", [])
-        question_text = " ".join(
+        interpretation = " ".join(
             [
                 str(question.get("question", "")),
                 str(question.get("decision_impact", "")),
                 *(str(item.get("claim", "")) for item in evidence),
             ]
         ).casefold()
-        if any(term in question_text for term in ("orthosteric", "正构")) and any(
-            term in question_text for term in ("deep", "pocket", "深", "口袋")
+        if any(term in interpretation for term in ("orthosteric", "正构")) and any(
+            term in interpretation for term in ("deep", "pocket", "深", "口袋")
         ):
             verified_orthosteric_card_ids.update(
                 str(item["card_id"]) for item in evidence if item.get("card_id")
@@ -808,12 +808,55 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
         None,
     )
     if mandatory_ids and first_selectable not in mandatory_ids:
-        raise ResearchConclusionMismatch(
-            "GPCR_ORTHOSTERIC_A_REQUIRED: rank one supplied extracellular deep-orthosteric "
-            "outer-pore candidate first: "
-            + ", ".join(sorted(mandatory_ids))
-            + ". approach_validation is not-performed, so speculative whole-VHH framework/CDR "
-            "access cannot demote it below a peripheral or shallow ECL candidate."
+        # This is an explicit product policy over already verified facts, so enforce it during
+        # deterministic hydration instead of consuming model-repair retries. Scientific content
+        # is retained; only the relative order and order-dependent prose are normalized.
+        original_order = list(decision.candidates)
+        required = next(item for item in original_order if item.candidate_id in mandatory_ids)
+        required_index = original_order.index(required)
+        selectable = [
+            item
+            for item in original_order
+            if runtime_block(candidates[item.candidate_id]) is None
+            and item.candidate_id != required.candidate_id
+        ]
+        blocked = [
+            item
+            for item in original_order
+            if runtime_block(candidates[item.candidate_id]) is not None
+        ]
+        required = required.model_copy(
+            update={
+                "tied_with_previous": False,
+                "tie_reason": None,
+                "why_ranked": (
+                    "Runtime GPCR policy ranks this verified extracellular deep-orthosteric "
+                    "outer-pore candidate A. Whole-VHH reach remains untested and must be "
+                    "evaluated downstream; that uncertainty cannot demote it before design."
+                ),
+            }
+        )
+        normalized_selectable = []
+        for item in selectable:
+            update: dict[str, Any] = {
+                "tied_with_previous": False,
+                "tie_reason": None,
+            }
+            if original_order.index(item) < required_index:
+                update["why_ranked"] = (
+                    "Retained as an extracellular alternative, but it is peripheral or "
+                    "shallower than the verified deep-orthosteric outer-pore candidate required "
+                    "by the objective."
+                )
+            normalized_selectable.append(item.model_copy(update=update))
+        normalized_blocked = [
+            item.model_copy(update={"tied_with_previous": False, "tie_reason": None})
+            for item in blocked
+        ]
+        decision = decision.model_copy(
+            update={
+                "candidates": [required, *normalized_selectable, *normalized_blocked],
+            }
         )
 
     # Ranked Site synthesis owns relative preference, not hard eligibility. In particular, a
@@ -831,13 +874,13 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
     entries: list[SitePortfolioEntry] = []
     ranked_count = 0
     preference_group = 0
-    for interpretation in decision.candidates:
-        candidate = candidates[interpretation.candidate_id]
+    for ranked_entry in decision.candidates:
+        candidate = candidates[ranked_entry.candidate_id]
         original = candidate["research_hypothesis"]
         block = runtime_block(candidate)
         rank = None if block else "ABC"[ranked_count]
         tied_id = None
-        if interpretation.tied_with_previous:
+        if ranked_entry.tied_with_previous:
             if block or not entries or not entries[-1].selectable:
                 raise ResearchConclusionMismatch(
                     "A tie must connect adjacent hard-valid candidates"
@@ -852,13 +895,13 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
                 **original,
                 "name": candidate_name(candidate),
                 "role": "primary" if rank == "A" else "backup",
-                "rationale": interpretation.why_ranked,
+                "rationale": ranked_entry.why_ranked,
             }
         )
         entries.append(
             SitePortfolioEntry.model_validate(
                 {
-                    **interpretation.model_dump(mode="json", exclude={"tied_with_previous"}),
+                    **ranked_entry.model_dump(mode="json", exclude={"tied_with_previous"}),
                     "tied_with_candidate_id": tied_id,
                     "preference_group": preference_group if rank else None,
                     "site": site,

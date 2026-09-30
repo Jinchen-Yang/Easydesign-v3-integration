@@ -2952,6 +2952,108 @@ async def test_final_site_citation_failure_is_safely_demoted_not_target_fatal(
     ]
 
 
+def test_resumed_site_handoff_demotes_citations_after_repair_budget_exhaustion(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.site_dossier import DecisionEvidenceQuestion
+    from tests.unit.agent.test_site_dossier import handoff
+
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Resume an exhausted citation repair")[
+        "execution_id"
+    ]
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    source = handoff().model_copy(
+        update={
+            "decision_questions": [
+                DecisionEvidenceQuestion.model_validate(
+                    {
+                        "query_ids": ["query-owned"],
+                        "question": "Does the focused passage support this mechanism?",
+                        "status": "VERIFIED",
+                        "evidence": [
+                            {
+                                "card_id": "passage-current",
+                                "excerpt": "This submitted excerpt is not verbatim.",
+                                "claim": "The mechanism is supported.",
+                                "relation": "supports",
+                                "strength": "E1",
+                                "transfer_limit": "Synthetic unit-test scope only.",
+                            }
+                        ],
+                        "limitations": ["No functional assay was performed."],
+                        "decision_impact": "Prefer candidate A.",
+                    }
+                )
+            ]
+        }
+    )
+    contract = "SiteResearchHandoff:evidence-citation"
+    for attempt, card_id in enumerate(("passage-old-a", "passage-old-b"), start=1):
+        assert (
+            b.store.reserve_keyed_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                f"prior citation repair {attempt}",
+                contract=contract,
+                repair_keys=(f"known-source:{card_id}",),
+                submission_attempt_id=f"prior-{attempt}",
+            )
+            == attempt
+        )
+    b.store.event(
+        b.thread,
+        "rejected-submission",
+        {
+            "role": "site",
+            "execution_id": eid,
+            "diagnostic": "CITATION_MISMATCH after resume",
+            "repair_contracts": [contract],
+            "repair_already_counted": False,
+            "submission_attempt_id": "resumed-submission",
+            "submitted_opinion": source.model_dump(mode="json"),
+            "repair_findings": {
+                "citation": [
+                    {
+                        "question_index": 0,
+                        "card_id": "passage-current",
+                        "source_kind": "focused-passage",
+                    }
+                ]
+            },
+            "model_text": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_dossier",
+        lambda _bridge, candidate: {
+            "status": candidate.decision_questions[0].status,
+            "evidence": candidate.decision_questions[0].evidence,
+        },
+    )
+    recovered = guard._recover_exhausted_site_citations()
+    assert recovered is not None
+    assert recovered.decision_questions[0].status == "UNRESOLVED"
+    assert recovered.decision_questions[0].evidence == []
+    demotion = [
+        event
+        for event in b.store.events(b.thread)
+        if event["kind"] == "site-research-citation-demotion"
+    ][-1]
+    assert demotion["payload"]["recovery"] == "exhausted-citation-repair-resume"
+    assert guard._recover_exhausted_site_citations() is None
+
+
 @pytest.mark.asyncio
 async def test_resumed_site_handoff_demotes_exhausted_invalid_citation(
     site_bridge: Any, monkeypatch: Any

@@ -521,10 +521,23 @@ def _search_matches(payload: dict[str, Any], query: str) -> list[dict[str, Any]]
 
 
 def resolve_unique_reviewed_uniprot_seed(
-    *, evidence_dir: Path, query: str, taxon_id: int, cache_mode: str = "prefer-cache"
+    *,
+    evidence_dir: Path,
+    query: str,
+    taxon_id: int,
+    cache_mode: str = "prefer-cache",
 ) -> dict[str, Any]:
-    """Resolve only an input seed; native Stage 01 still verifies target identity."""
-    with ScientificHttpClient(evidence_dir=evidence_dir, cache_mode=cache_mode) as client:
+    """Resolve a typed structural input to one reviewed exact UniProt seed.
+
+    This is deliberately only a seed for native Stage 01.  Stage 01 still has to
+    verify that the submitted sequence/structure maps to this identity before it
+    can become Target authority.
+    """
+
+    with ScientificHttpClient(
+        evidence_dir=evidence_dir,
+        cache_mode=cache_mode,
+    ) as client:
         payload = uniprot_search(client, query=query, taxon_id=taxon_id).json()
         if not isinstance(payload, dict):
             raise TargetInputError("UniProt search 响应必须是 mapping")
@@ -550,7 +563,9 @@ def resolve_unique_reviewed_uniprot_seed(
             "gene_names": selected["gene_names"],
             "reviewed": True,
             "resolution": "unique-reviewed-exact-search",
-            "retrieval_records": [record.model_dump(mode="json") for record in client.records],
+            "retrieval_records": [
+                record.model_dump(mode="json") for record in client.records
+            ],
         }
 
 
@@ -1029,12 +1044,13 @@ def _remote_selection(
             canonical_accession: str | None = None
             if source.identity.uniprot_accession is not None:
                 identity_payload = uniprot_accession(
-                    client, source.identity.uniprot_accession
+                    client,
+                    source.identity.uniprot_accession,
                 ).json()
                 if not isinstance(identity_payload, dict):
                     raise TargetInputError("UniProt accession 响应必须是 mapping")
-                canonical_accession, canonical_reference, canonical_identity = _uniprot_identity(
-                    identity_payload
+                canonical_accession, canonical_reference, canonical_identity = (
+                    _uniprot_identity(identity_payload)
                 )
                 if not canonical_identity["reviewed"]:
                     raise TargetInputError(
@@ -1060,7 +1076,10 @@ def _remote_selection(
                     return resolved_scope
                 expected, start, end, scope_report = resolved_scope
             else:
-                expected, start, end, scope_report = _scope(config, reference_sequence=reference)
+                expected, start, end, scope_report = _scope(
+                    config,
+                    reference_sequence=reference,
+                )
             candidate, path = _candidate(
                 client=client,
                 pdb_id=source.pdb_id.upper(),
@@ -1086,7 +1105,9 @@ def _remote_selection(
                 and identity_review_reason in candidate["reasons"]
                 and all(reason == identity_review_reason for reason in candidate["reasons"])
             )
-            identity_review_approved = approved_payload.get("action") == "approve-target-identity"
+            identity_review_approved = (
+                approved_payload.get("action") == "approve-target-identity"
+            )
             if identity_review_only and not identity_review_approved:
                 if config.workflow.execution_mode is ExecutionMode.UNATTENDED:
                     raise TargetInputError("target-identity-review-required: unattended 停止")
@@ -1120,7 +1141,10 @@ def _remote_selection(
                     ),
                     attempt_id=attempt_id,
                 )
-            if (not candidate["eligible"] and not identity_review_only) or path is None:
+            if (
+                (not candidate["eligible"] and not identity_review_only)
+                or path is None
+            ):
                 raise TargetInputError(
                     "显式 PDB ID 未通过 experimental-strict-v1；禁止自动换结构: "
                     f"{candidate['reasons']}"

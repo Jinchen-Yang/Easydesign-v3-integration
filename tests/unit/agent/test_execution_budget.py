@@ -604,3 +604,79 @@ async def test_cli_graph_steps_do_not_preempt_the_64_call_ledger(
     assert [c["call"] for c in calls] == list(range(1, 65))
     assert len({c["execution_id"] for c in calls}) == 1
     assert not bridge._jobs()
+
+
+def test_continuation_execution_is_idempotent_and_cannot_renew_after_supersession(
+    bridge: Any,
+) -> None:
+    store, thread = bridge.store, bridge.thread
+    continuation = "resume-site-0123456789"
+    first = store.begin_execution(
+        thread,
+        "Continue bounded Site research",
+        continuation_id=continuation,
+    )
+    repeated = store.begin_execution(
+        thread,
+        "Continue bounded Site research",
+        continuation_id=continuation,
+    )
+    assert repeated == first
+    assert repeated["continuation_id"] == continuation
+    assert len(
+        [
+            event
+            for event in store.events(thread)
+            if event["kind"] == "agent-execution"
+            and event["payload"].get("continuation_id") == continuation
+        ]
+    ) == 1
+
+    store.begin_execution(thread, "A later explicit user turn", followup=True)
+    with pytest.raises(AgentBoundaryError, match="old continuation"):
+        store.begin_execution(
+            thread,
+            "Continue bounded Site research",
+            continuation_id=continuation,
+        )
+
+
+@pytest.mark.asyncio
+async def test_explicit_continuation_replays_pending_checkpoint_with_new_bounded_execution_upstream(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    from langgraph.graph import START, MessagesState, StateGraph
+
+    from easydesign.agent import harness
+    from easydesign.agent.cli import run_session
+
+    executions: list[str] = []
+
+    def interrupted_graph(b, models, cfg, saver, goal, **kwargs):
+        async def bounded_step(state):
+            executions.append(b.store.latest_execution(b.thread)["execution_id"])
+            if len(executions) == 1:
+                raise RuntimeError("synthetic interrupted node")
+            return {"messages": [AIMessage(content="Recovered exact pending node.")]}
+
+        graph = StateGraph(MessagesState)
+        graph.add_node("bounded", bounded_step)
+        graph.add_edge(START, "bounded")
+        return graph.compile(checkpointer=saver)
+
+    monkeypatch.setattr(harness, "create_harness", interrupted_graph)
+    with pytest.raises(RuntimeError, match="interrupted node"):
+        await run_session(bridge, scripted_config(), {}, "Synthetic interrupted execution")
+    old_execution = executions[0]
+
+    await run_session(
+        bridge,
+        scripted_config(),
+        {},
+        "Synthetic interrupted execution",
+        continuation_id="resume-pending-0123456789",
+    )
+    assert executions[1] != old_execution
+    latest = bridge.store.latest_execution(bridge.thread)
+    assert latest["execution_id"] == executions[1]
+    assert latest["continuation_id"] == "resume-pending-0123456789"

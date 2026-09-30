@@ -48,7 +48,7 @@ def _schema_is_current(db: sqlite3.Connection) -> bool:
     if tables != {"requests", "project_labels", "product_projects"}:
         return False
     columns = {str(row["name"]) for row in db.execute("PRAGMA table_info(product_projects)")}
-    return {"surface", "projection"} <= columns
+    return {"surface", "projection", "target_input", "deleted_at"} <= columns
 
 
 class RequestJournal:
@@ -94,6 +94,15 @@ class RequestJournal:
                 self.db.execute("ALTER TABLE product_projects ADD COLUMN surface TEXT")
             if "projection" not in columns:
                 self.db.execute("ALTER TABLE product_projects ADD COLUMN projection TEXT")
+            if "target_input" not in columns:
+                self.db.execute("ALTER TABLE product_projects ADD COLUMN target_input TEXT")
+                self.db.execute(
+                    "UPDATE product_projects SET target_input=(SELECT "
+                    "json_extract(payload, '$.target_input') FROM requests "
+                    "WHERE requests.id=product_projects.request_id)"
+                )
+            if "deleted_at" not in columns:
+                self.db.execute("ALTER TABLE product_projects ADD COLUMN deleted_at REAL")
             self.db.commit()
         except BaseException:
             self.db.close()
@@ -176,7 +185,12 @@ class RequestJournal:
             return None
         value = dict(row)
         value["detail"] = json.loads(value["detail"])
-        value["projection"] = json.loads(value["projection"]) if value.get("projection") else None
+        value["projection"] = (
+            json.loads(value["projection"]) if value.get("projection") else None
+        )
+        value["target_input"] = (
+            json.loads(value["target_input"]) if value.get("target_input") else None
+        )
         return value
 
     def register_project(
@@ -189,6 +203,7 @@ class RequestJournal:
         thread: str,
         input_id: str | None,
         surface: str | None,
+        target_input: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Persist product identity before a scientific target/config exists."""
         with self.db:
@@ -207,6 +222,7 @@ class RequestJournal:
                 "thread": thread,
                 "input_id": input_id,
                 "surface": surface,
+                "target_input": target_input,
             }
             if previous is not None:
                 if any(previous[key] != value for key, value in expected.items()):
@@ -220,7 +236,7 @@ class RequestJournal:
             self.db.execute(
                 "INSERT INTO product_projects("
                 "id,request_id,title,goal,thread,input_id,state,detail,created,updated,surface,"
-                "projection) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL)",
+                "projection,target_input) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL,?)",
                 (
                     project,
                     request_id,
@@ -233,28 +249,69 @@ class RequestJournal:
                     now,
                     now,
                     surface,
+                    json.dumps(target_input) if target_input is not None else None,
                 ),
             )
         saved = self.project(project)
         assert saved is not None
         return saved, True
 
-    def project(self, project: str) -> dict[str, Any] | None:
+    def project(
+        self, project: str, *, include_deleted: bool = False
+    ) -> dict[str, Any] | None:
+        suffix = "" if include_deleted else " AND deleted_at IS NULL"
         return self._project_value(
-            self.db.execute("SELECT * FROM product_projects WHERE id=?", (project,)).fetchone()
+            self.db.execute(
+                "SELECT * FROM product_projects WHERE id=?" + suffix, (project,)
+            ).fetchone()
         )
 
     def projects(self) -> list[dict[str, Any]]:
         return [
             value
-            for row in self.db.execute("SELECT * FROM product_projects ORDER BY updated DESC,id")
+            for row in self.db.execute(
+                "SELECT * FROM product_projects WHERE deleted_at IS NULL "
+                "ORDER BY updated DESC,id"
+            )
             if (value := self._project_value(row)) is not None
         ]
+
+    def delete_easy_project(self, project: str) -> dict[str, Any]:
+        """Hide an idle Easy project while retaining its scientific workspace."""
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            row = self._project_value(
+                self.db.execute(
+                    "SELECT * FROM product_projects WHERE id=? AND deleted_at IS NULL",
+                    (project,),
+                ).fetchone()
+            )
+            if row is None or row.get("surface") != "easy":
+                raise ProductError("not_found", "Unknown Easy project", 404)
+            active = self.db.execute(
+                "SELECT 1 FROM requests WHERE project=? AND state IN ('accepted','running')",
+                (project,),
+            ).fetchone()
+            projection = row.get("projection")
+            if active or (
+                isinstance(projection, dict)
+                and projection.get("status") in {"running", "incomplete"}
+            ):
+                raise ProductError(
+                    "project_busy", "A running design cannot be deleted", 409
+                )
+            deleted_at = time.time()
+            self.db.execute(
+                "UPDATE product_projects SET deleted_at=?,updated=? WHERE id=?",
+                (deleted_at, deleted_at, project),
+            )
+        return {"id": project, "deleted": True, "recoverable": True}
 
     def update_project(self, project: str, state: str, detail: dict[str, Any]) -> None:
         with self.db:
             changed = self.db.execute(
-                "UPDATE product_projects SET state=?,detail=?,updated=?,projection=NULL WHERE id=?",
+                "UPDATE product_projects SET state=?,detail=?,updated=?,projection=NULL "
+                "WHERE id=? AND deleted_at IS NULL",
                 (state, json.dumps(detail), time.time(), project),
             ).rowcount
         if changed != 1:
@@ -269,7 +326,8 @@ class RequestJournal:
             if isinstance(projection, dict):
                 projection["title"] = title
             changed = self.db.execute(
-                "UPDATE product_projects SET title=?,updated=?,projection=? WHERE id=?",
+                "UPDATE product_projects SET title=?,updated=?,projection=? "
+                "WHERE id=? AND deleted_at IS NULL",
                 (
                     title,
                     time.time(),
@@ -285,17 +343,14 @@ class RequestJournal:
         encoded = json.dumps(projection, separators=(",", ":"), ensure_ascii=False)
         with self.db:
             changed = self.db.execute(
-                "UPDATE product_projects SET projection=? WHERE id=? AND "
+                "UPDATE product_projects SET projection=?,updated=? "
+                "WHERE id=? AND deleted_at IS NULL AND "
                 "COALESCE(projection,'')<>?",
-                (encoded, project, encoded),
+                (encoded, time.time(), project, encoded),
             ).rowcount
-            if (
-                changed == 0
-                and self.db.execute(
-                    "SELECT 1 FROM product_projects WHERE id=?", (project,)
-                ).fetchone()
-                is None
-            ):
+            if changed == 0 and self.db.execute(
+                "SELECT 1 FROM product_projects WHERE id=? AND deleted_at IS NULL", (project,)
+            ).fetchone() is None:
                 raise ProductError("not_found", "Unknown product project", 404)
 
     def for_project(self, project: str, limit: int = 10) -> list[dict[str, Any]]:

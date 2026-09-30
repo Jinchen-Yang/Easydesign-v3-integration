@@ -364,7 +364,7 @@ class Handler(BaseHTTPRequestHandler):
         cookie.load(self.headers.get("Cookie", ""))
         value = cookie.get("easydesign_session")
         valid = value is not None and hmac.compare_digest(value.value, self.server.token)
-        if valid and self.command == "POST" and not self.headers.get("Origin"):
+        if valid and self.command in {"POST", "DELETE"} and not self.headers.get("Origin"):
             raise ProductError(
                 "origin_required", "Browser writes require a same-origin request", 403
             )
@@ -422,6 +422,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         self.dispatch()
 
+    def do_DELETE(self) -> None:
+        self.dispatch()
+
     def dispatch(self) -> None:
         try:
             self.host_guard()
@@ -476,6 +479,16 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                 self.close_connection = True
                 return
+            if path == "/api/rabbit/localize":
+                if url.query or self.command != "POST":
+                    raise ProductError(
+                        "method_not_allowed", "Localization accepts POST without query", 405
+                    )
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                    raise ProductError("invalid_content_type", "Expected application/json", 415)
+                payload = json.loads(self.body(140 * 1024))
+                self.send(200, self.server.rabbit_chat.localize(payload))
+                return
             if path == "/api/compute/resources":
                 if self.command != "GET":
                     raise ProductError("method_not_allowed", "Resource telemetry is read-only", 405)
@@ -521,12 +534,20 @@ class Handler(BaseHTTPRequestHandler):
                             raise ProductError(
                                 "invalid_request", "Candidate view must be full or summary", 400
                             )
+                        phase = query.get("phase", [None])[0]
+                        if phase not in {None, "pilot", "scale", "candidates"}:
+                            raise ProductError(
+                                "invalid_request",
+                                "Candidate phase must be pilot, scale or candidates",
+                                400,
+                            )
                         result = service.candidates(
                             project,
                             offset,
                             limit,
                             tail[3] if len(tail) == 4 else None,
                             compact=view == "summary",
+                            phase=phase,
                         )
                     elif resource == "events" and len(tail) == 3:
                         result = service.events(project, int(query.get("after", ["0"])[0]), limit)
@@ -537,6 +558,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     raise ProductError("not_found", "Unknown API resource", 404)
                 self.send(200, result)
+            elif self.command == "DELETE" and len(tail) == 2 and tail[0] == "projects":
+                self.send(200, service.delete(tail[1]))
             elif tail == ["inputs"]:
                 self.authorize_upload()
                 self.body_size(32 * 1024**2)
@@ -799,6 +822,7 @@ def main(argv: list[str] | None = None) -> int:
             else None,
             limits=RabbitCapacityLimits(**capacity.ai),
             ledger_path=context.runtime_root / "state/product/rabbit-chat.sqlite",
+            cache_root=context.runtime_root / "state/product/localizations",
         ),
     )
     # The token is written to the owner-only state file.  Never duplicate it in

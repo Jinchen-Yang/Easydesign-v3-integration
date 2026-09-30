@@ -667,6 +667,145 @@ def test_canonical_local_structure_ignores_nonprotein_identity_chains(
     assert [chain.author_chain_id for chain in source_inventory.chains] == ["A", "D"]
 
 
+def test_explicit_pdb_with_identity_seed_builds_canonical_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    structure = tmp_path / "candidate.cif"
+    _partial_mmcif(structure)
+    initialized = initialize_project(
+        project_root=tmp_path / "pdb-canonical",
+        pdb_id="1abc",
+        chain="X",
+        identity_uniprot="P00001",
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev2",
+        code_commit="abcdef0",
+        run_id="pdb-canonical",
+    )
+
+    class FakeClient:
+        records: list[object] = []
+
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    entry = {
+        "rcsb_entry_container_identifiers": {"polymer_entity_ids": ["1"]},
+        "exptl": [{"method": "X-RAY DIFFRACTION"}],
+        "rcsb_entry_info": {"resolution_combined": [2.0]},
+    }
+    entity = {
+        "entity_poly": {"pdbx_seq_one_letter_code_can": "ACDE"},
+        "rcsb_polymer_entity_container_identifiers": {
+            "auth_asym_ids": ["X"],
+            "uniprot_ids": ["P00001"],
+        },
+    }
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.ScientificHttpClient",
+        FakeClient,
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_entry",
+        lambda *_: SimpleNamespace(json=lambda: entry),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_polymer_entity",
+        lambda *_: SimpleNamespace(json=lambda: entity),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_mmcif",
+        lambda *_: SimpleNamespace(artifact_path=structure),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.uniprot_accession",
+        lambda *_: SimpleNamespace(
+            json=lambda: {
+                "primaryAccession": "P00001",
+                "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                "organism": {"taxonId": 9606},
+                "sequence": {"value": "ACDE"},
+                "features": [],
+            }
+        ),
+    )
+
+    outcome = execute_stage01_source(prepared)
+
+    assert outcome.status == "succeeded"
+    assert outcome.built_bundle is not None
+    identity = json.loads(
+        outcome.built_bundle.bundle.identity_report.verify(outcome.run_root).read_text()
+    )
+    assert identity["canonical"]["accession"] == "P00001"
+    assert identity["biological_identity_status"] == "resolved"
+    assert any(
+        row["canonical_position"] == 1
+        for row in identity["design_scope"]["residues"]
+    )
+
+
+def test_typed_structural_seed_rejects_ambiguous_reviewed_identity_upstream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeClient:
+        records: list[object] = []
+
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    results = [
+        {
+            "primaryAccession": accession,
+            "uniProtkbId": entry,
+            "entryType": "UniProtKB reviewed (Swiss-Prot)",
+            "genes": [{"geneName": {"value": "TACR2"}}],
+            "proteinDescription": {
+                "recommendedName": {"fullName": {"value": name}}
+            },
+        }
+        for accession, entry, name in (
+            ("P21452", "NK2R_HUMAN", "Substance-K receptor"),
+            ("Q00001", "NK2R_TEST", "Second exact test record"),
+        )
+    ]
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.ScientificHttpClient",
+        FakeClient,
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.uniprot_search",
+        lambda *_args, **_kwargs: SimpleNamespace(json=lambda: {"results": results}),
+    )
+
+    with pytest.raises(
+        TargetInputError,
+        match="typed-target-canonical-identity-ambiguous",
+    ):
+        resolve_unique_reviewed_uniprot_seed(
+            evidence_dir=tmp_path / "evidence",
+            query="TACR2",
+            taxon_id=9606,
+        )
+
+
 def test_local_structure_without_protein_chain_fails_closed(tmp_path: Path) -> None:
     structure = tmp_path / "glycan-only.cif"
     _protein_with_nonprotein_chain_mmcif(structure, include_protein=False)

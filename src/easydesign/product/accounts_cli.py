@@ -108,6 +108,7 @@ def serve_accounts(
         )
         if os.environ.get("DEEPSEEK_API_KEY") and rabbit_script.is_file() and not accounts_only
         else None,
+        cache_root=context.runtime_root / "state/accounts/localizations",
         limits=RabbitCapacityLimits(**capacity.ai),
         ledger_path=context.runtime_root / "state/accounts/rabbit-chat.sqlite",
     )

@@ -253,8 +253,9 @@ def test_extracellular_deep_orthosteric_gpcr_candidate_must_rank_a(site_bridge):
         ]
     }
 
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
 
     corrected = case["decision"].model_copy(
         update={
@@ -316,8 +317,193 @@ def test_deep_gpcr_ligand_occupancy_mechanism_cannot_evade_rank_a_by_omitting_ke
         ]
     }
 
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
+
+
+def test_explicit_pdb_gpcr_pocket_occupancy_wording_still_requires_rank_a(site_bridge):
+    """Protect the exact mechanism wording observed in a fresh PDB-ID product run."""
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {
+                "status": "resolved",
+                "accession": "P21452",
+                "family_slug": "Tachykinin receptors",
+                "receptor_class": "Unknown",
+            },
+            "membrane": {
+                "status": "resolved",
+                "reliable": True,
+                "topology_reliable": True,
+                "helix_count": 7,
+            },
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = "inhibit.outer-vestibule"
+    shallow["research_hypothesis"]["rationale"] = (
+        "ECL2/ECL3 residues at the extracellular mouth provide steric blockade of ligand entry."
+    )
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "inhibit.transmembrane-pore"
+    deep["research_hypothesis"]["rationale"] = (
+        "Deeper pocket occlusion could block productive occupancy/closure. "
+        "Access/framework-membrane collision is unresolved."
+    )
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
+
+
+def test_structure_upload_kernel_outer_pore_name_still_requires_rank_a(site_bridge):
+    """Protect the canonical kernel label observed for an uploaded NK2R structure."""
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {"status": "resolved", "accession": "P21452"},
+            "membrane": {
+                "status": "resolved",
+                "reliable": True,
+                "topology_reliable": True,
+                "helix_count": 7,
+            },
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = "Outer-vestibule blockade (ECL2/ECL3 mouth)"
+    shallow["research_hypothesis"]["rationale"] = "Extracellular vestibule at the signed 7TM mouth."
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "Transmembrane outer-pore blockade"
+    deep["research_hypothesis"]["rationale"] = (
+        "Extracellular half of the 7TM pore, overlapping residues implicated in agonist "
+        "binding/selectivity. Deep-pore penetration by a whole VHH is uncertain."
+    )
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
+
+
+def test_verified_orthosteric_evidence_cannot_be_demoted_for_unmodeled_vhh_reach(site_bridge):
+    """A verified orthosteric evidence card plus outer-pore geometry survives wording drift."""
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    dossier["objective_requirements"] = {
+        "required_site_compartment": "extracellular",
+    }
+    dossier["receptor_context"] = [
+        {
+            "identity": {"status": "resolved"},
+            "membrane": {"status": "resolved", "reliable": True},
+        }
+    ]
+    dossier["approach_validation"] = {"status": "not-performed"}
+    dossier["decision_questions"] = [
+        {
+            "status": "VERIFIED",
+            "question": "Which residues define the deep orthosteric pocket?",
+            "decision_impact": "The upper-pore residues are ligand-binding determinants.",
+            "evidence": [
+                {
+                    "card_id": "passage-deep-pocket",
+                    "claim": "The deep orthosteric pocket reaches the TM6/TM7 residues.",
+                }
+            ],
+        }
+    ]
+    shallow, deep = dossier["candidate_comparison"][:2]
+    shallow["research_hypothesis"]["name"] = "outer-vestibule blockade"
+    shallow["research_hypothesis"]["rationale"] = "Accessible extracellular loop surface."
+    shallow["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_vestibule",
+                "pore_lining": False,
+                "axial_distance": 28.0,
+            }
+        ]
+    }
+    deep["research_hypothesis"]["name"] = "transmembrane-pore blockade"
+    deep["research_hypothesis"]["rationale"] = (
+        "Published selectivity residues define the deep NK2R pocket, but VHH reach is unresolved."
+    )
+    deep["research_hypothesis"]["evidence_card_ids"] = ["passage-deep-pocket"]
+    deep["location"] = {
+        "membrane_geometry": [
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 9.0,
+            },
+            {
+                "region": "outer_pore",
+                "pore_lining": True,
+                "axial_distance": 16.0,
+            },
+        ]
+    }
+
+    hydrated = compile_site_decision(dossier, case["decision"])
+    assert hydrated.portfolio[0].candidate_id == deep["candidate_id"]
+    assert hydrated.portfolio[0].rank == "A"
+    assert "Whole-VHH reach remains untested" in hydrated.portfolio[0].site.rationale
 
 
 @pytest.mark.parametrize(
@@ -342,8 +528,13 @@ def test_equivalent_gpcr_outer_pore_terms_preserve_existing_rank_policy(site_bri
     deep["location"] = {
         "membrane_geometry": [{"region": "outer_pore", "pore_lining": True, "axial_distance": 9.0}]
     }
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    intent = compile_site_decision(dossier, case["decision"])
+    assert intent.portfolio[0].candidate_id == deep["candidate_id"]
+    assert intent.portfolio[0].rank == "A"
+    assert (
+        intent.portfolio[0].site.hotspot_label_seq_ids
+        == deep["research_hypothesis"]["hotspot_label_seq_ids"]
+    )
 
 
 def test_verified_orthosteric_card_supports_gpcr_rank_without_keyword_in_hypothesis(site_bridge):
@@ -369,8 +560,13 @@ def test_verified_orthosteric_card_supports_gpcr_rank_without_keyword_in_hypothe
     deep["location"] = {
         "membrane_geometry": [{"region": "outer_pore", "pore_lining": True, "axial_distance": 9.0}]
     }
-    with pytest.raises(AgentBoundaryError, match="GPCR_ORTHOSTERIC_A_REQUIRED"):
-        compile_site_decision(dossier, case["decision"])
+    intent = compile_site_decision(dossier, case["decision"])
+    assert intent.portfolio[0].candidate_id == deep["candidate_id"]
+    assert intent.portfolio[0].rank == "A"
+    assert (
+        intent.portfolio[0].site.hotspot_label_seq_ids
+        == deep["research_hypothesis"]["hotspot_label_seq_ids"]
+    )
 
 
 def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):

@@ -188,6 +188,22 @@ def test_initialize_local_structure_materializes_identity_chain_namespace_and_fe
     }
 
 
+def test_initialize_pdb_materializes_canonical_identity_seed(tmp_path: Path) -> None:
+    initialized = initialize_project(
+        project_root=tmp_path / "pdb-project",
+        pdb_id="1abc",
+        chain="R",
+        identity_uniprot="P21452",
+    )
+    loaded = load_run_config(initialized.config_path)
+    source = loaded.config.target.source.model_dump(mode="json")
+
+    assert source["type"] == "pdb-id"
+    assert source["pdb_id"] == "1ABC"
+    assert source["chain"] == "R"
+    assert source["identity"]["uniprot_accession"] == "P21452"
+
+
 def test_initialize_sequence_project_can_materialize_precomputed_msa(
     tmp_path: Path,
 ) -> None:

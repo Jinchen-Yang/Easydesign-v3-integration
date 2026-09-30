@@ -52,6 +52,7 @@ from .projection import (
     activity_rows,
     activity_tasks,
     candidate_page,
+    job_views,
     project_view,
     workbench,
 )
@@ -140,13 +141,67 @@ class ProductService:
         self.launcher = launcher or self.launch
         self._cache_lock = threading.Lock()
         self._stable_snapshots: dict[str, dict[str, Any]] = {}
-        self._compact_candidate_pages: dict[tuple[str, int, int, str | None], dict[str, Any]] = {}
+        self._live_snapshots: dict[str, dict[str, Any]] = {}
+        self._compact_candidate_pages: dict[
+            tuple[str, int, int, str | None, str | None], dict[str, Any]
+        ] = {}
 
     def _invalidate_projection_cache(self, project: str) -> None:
         with self._cache_lock:
             self._stable_snapshots.pop(project, None)
+            self._live_snapshots.pop(project, None)
             for key in [key for key in self._compact_candidate_pages if key[0] == project]:
                 self._compact_candidate_pages.pop(key, None)
+
+    @staticmethod
+    def _request_signature(value: dict[str, Any]) -> tuple[tuple[str, str, float], ...]:
+        return tuple(
+            (str(row["id"]), str(row["state"]), float(row["updated"]))
+            for row in value.get("requests", [])
+        )
+
+    def _refresh_live_snapshot(self, project: str, cached: dict[str, Any]) -> dict[str, Any] | None:
+        """Refresh volatile job progress without rebuilding scientific history."""
+
+        if cached.get("project", {}).get("status") not in {"running", "incomplete"}:
+            return None
+        journal = self.journal()
+        try:
+            requests = [
+                self._request_with_journal(row["id"], journal)
+                for row in journal.for_project(project)
+            ]
+        finally:
+            journal.close()
+        if self._request_signature({"requests": requests}) != self._request_signature(cached):
+            return None
+        with self.gateway.session(project) as session:
+            row = session.bridge.store.db.execute(
+                "SELECT COALESCE(MAX(seq),0) FROM events WHERE thread=?",
+                (session.bridge.thread,),
+            ).fetchone()
+            if int(row[0]) != int(cached.get("event_cursor", -1)):
+                return None
+            jobs = job_views(session, bool(cached["project"].get("validation_only")))
+        value = deepcopy(cached)
+        value["jobs"] = jobs
+        # Keep the human-readable task ledger aligned with the authoritative
+        # controller receipts while the scientific event cursor is unchanged.
+        by_task = {str(task.get("task_id")): task for task in value.get("tasks", [])}
+        for job in jobs:
+            task = by_task.get("target-job-" + job["id"])
+            if task is None:
+                continue
+            task["status"] = (
+                "completed"
+                if job["status"] == "succeeded"
+                else "failed"
+                if job["status"] in {"failed", "operational-failed", "lost", "drained"}
+                else "pending"
+                if job["status"] == "queued"
+                else "running"
+            )
+        return value
 
     def _remember_project_view(
         self,
@@ -304,6 +359,9 @@ class ProductService:
         journal = self.journal()
         try:
             registered = journal.project(project)
+            deleted = journal.project(project, include_deleted=True)
+            if registered is None and deleted is not None:
+                raise ProductError("not_found", "Unknown project", 404)
             if registered is None:
                 with self.gateway.session(project):
                     pass  # Verify an accessible native session without changing it.
@@ -318,6 +376,14 @@ class ProductService:
         finally:
             journal.close()
         return {"id": project, "title": title}
+
+    def delete(self, project: str) -> dict[str, Any]:
+        self._invalidate_projection_cache(project)
+        journal = self.journal()
+        try:
+            return journal.delete_easy_project(project)
+        finally:
+            journal.close()
 
     def title(self, session: Any) -> str | None:
         journal = self.journal()
@@ -379,6 +445,12 @@ class ProductService:
             raise ProductError("invalid_filter", "Unknown product surface", 400)
         journal = self.journal()
         try:
+            deleted_ids = {
+                row[0]
+                for row in journal.db.execute(
+                    "SELECT id FROM product_projects WHERE deleted_at IS NOT NULL"
+                )
+            }
             registered = {
                 row["id"]: row
                 for row in journal.projects()
@@ -387,7 +459,7 @@ class ProductService:
         finally:
             journal.close()
         names = (
-            sorted(set(self.gateway.projects()) | set(registered))
+            sorted((set(self.gateway.projects()) | set(registered)) - deleted_ids)
             if surface is None
             else sorted(registered)
         )
@@ -469,7 +541,16 @@ class ProductService:
                         else "incompatible_session",
                     }
                 )
-        items.sort(key=lambda item: (-int(item["last_activity"]), item["id"]))
+        # Event cursors are local to each project and cannot order projects
+        # against one another (an old long project may have cursor 388 while a
+        # brand-new project has cursor 4). The lightweight registry timestamp is
+        # global and advances only when the persisted projection changes.
+        items.sort(
+            key=lambda item: (
+                -float(registered.get(item["id"], {}).get("updated", 0)),
+                item["id"],
+            )
+        )
         return {
             "total": len(items),
             "offset": offset,
@@ -602,6 +683,14 @@ class ProductService:
 
     def snapshot(self, project: str) -> dict[str, Any]:
         with self._cache_lock:
+            live = self._live_snapshots.get(project)
+        if live is not None:
+            refreshed = self._refresh_live_snapshot(project, live)
+            if refreshed is not None:
+                with self._cache_lock:
+                    self._live_snapshots[project] = deepcopy(refreshed)
+                return refreshed
+        with self._cache_lock:
             cached = self._stable_snapshots.get(project)
         awaiting_card = (
             cached is not None
@@ -616,11 +705,11 @@ class ProductService:
         finally:
             journal.close()
 
-    def _snapshot_from_journal(
-        self, project: str, journal: RequestJournal
-    ) -> dict[str, Any]:
+    def _snapshot_from_journal(self, project: str, journal: RequestJournal) -> dict[str, Any]:
         """Reuse one connection for this read; do not retain it or a read transaction."""
-        registered = journal.project(project)
+        registered = journal.project(project, include_deleted=True)
+        if registered is not None and registered.get("deleted_at") is not None:
+            raise ProductError("not_found", "Unknown project", 404)
         if (
             registered is not None
             and not (self.context.projects_root / project / "PROJECT.yaml").is_file()
@@ -639,8 +728,7 @@ class ProductService:
                     value["project"]["status"] = "blocked"
                     value["project"]["notice"] = registered["detail"].get("message")
         requests = [
-            self._request_with_journal(row["id"], journal)
-            for row in journal.for_project(project)
+            self._request_with_journal(row["id"], journal) for row in journal.for_project(project)
         ]
         value["conversation"].extend(messages(journal, project))
         value["requests"] = requests
@@ -690,6 +778,9 @@ class ProductService:
         ):
             with self._cache_lock:
                 self._stable_snapshots[project] = deepcopy(value)
+        elif value["project"]["status"] in {"running", "incomplete"}:
+            with self._cache_lock:
+                self._live_snapshots[project] = deepcopy(value)
         return value
 
     def candidates(
@@ -700,8 +791,9 @@ class ProductService:
         candidate: str | None = None,
         *,
         compact: bool = False,
+        phase: str | None = None,
     ) -> dict[str, Any]:
-        key = (project, offset, limit, candidate)
+        key = (project, offset, limit, candidate, phase)
         if compact:
             with self._cache_lock:
                 cached = self._compact_candidate_pages.get(key)
@@ -709,7 +801,13 @@ class ProductService:
                 return deepcopy(cached)
         with self.gateway.session(project) as session:
             value = candidate_page(
-                session, self.catalog, offset, limit, candidate, compact=compact
+                session,
+                self.catalog,
+                offset,
+                limit,
+                candidate,
+                compact=compact,
+                phase=phase,
             ).model_dump(mode="json")
         if compact:
             # Candidate pages are cached only after the same server instance has
@@ -806,6 +904,9 @@ class ProductService:
         self._invalidate_projection_cache(project)
         journal = self.journal()
         try:
+            registered = journal.project(project, include_deleted=True)
+            if registered is not None and registered.get("deleted_at") is not None:
+                raise ProductError("not_found", "Unknown project", 404)
             previous = journal.get(request.request_id)
             payload = {
                 "operation": "conversation" if request.action == "message" else "action",
@@ -828,6 +929,13 @@ class ProductService:
                     row, created = journal.reserve(project, payload)
         finally:
             journal.close()
+        # Close the small race between the first invalidation and reserving the
+        # request.  A concurrent workbench poll can otherwise rebuild and cache
+        # the still-awaiting Gate card before the request becomes visible.  The
+        # detached worker then advances native state, but cannot clear this
+        # server process's in-memory cache, leaving an already-approved Gate on
+        # screen until the product server restarts.
+        self._invalidate_projection_cache(project)
         if created:
             self.launcher(row["id"])
         return self.public_request(row)
@@ -873,6 +981,7 @@ class ProductService:
                 thread=thread,
                 input_id=artifact_id,
                 surface=request.surface,
+                target_input=(typed.model_dump(mode="json") if typed is not None else None),
             )
         finally:
             journal.close()
@@ -909,9 +1018,7 @@ class ProductService:
         finally:
             journal.close()
 
-    def _request_with_journal(
-        self, request_id: str, journal: RequestJournal
-    ) -> dict[str, Any]:
+    def _request_with_journal(self, request_id: str, journal: RequestJournal) -> dict[str, Any]:
         """Projection hook: scoped services must retain their live permission/queue checks."""
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,96}", request_id):
             raise ProductError("not_found", "Unknown request", 404)
@@ -950,6 +1057,9 @@ class ProductService:
             claimed = journal.retry(request_id)
         finally:
             journal.close()
+        # As in submit(), make the accepted retry visible before allowing a
+        # stable pre-retry projection to remain cached.
+        self._invalidate_projection_cache(row["project"])
         if claimed:
             self.launcher(request_id)
         return self.request(request_id)

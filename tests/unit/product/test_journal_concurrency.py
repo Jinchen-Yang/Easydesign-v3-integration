@@ -368,3 +368,42 @@ def test_reopening_a_replaced_database_checks_its_own_schema(tmp_path):
         assert project["projection"] == {"title": "Replacement projection"}
     finally:
         replacement.close()
+
+
+def test_legacy_typed_project_backfills_identity_from_its_original_request(tmp_path):
+    path = tmp_path / "legacy.sqlite"
+    journal = RequestJournal(path)
+    target = {"kind": "uniprot", "accession": "P21452"}
+    payload = {"operation": "create", "request_id": "legacy-create-0001", "target_input": target}
+    journal.reserve("legacy-project", payload)
+    journal.register_project(
+        "legacy-project",
+        request_id="legacy-create-0001",
+        title="Legacy",
+        goal="Synthetic goal",
+        thread="thread",
+        input_id=None,
+        surface="easy",
+    )
+    with journal.db:
+        journal.db.execute("ALTER TABLE product_projects DROP COLUMN target_input")
+        journal.db.execute("ALTER TABLE product_projects DROP COLUMN deleted_at")
+    journal.close()
+    migrated = RequestJournal(path)
+    try:
+        assert migrated.project("legacy-project")["target_input"] == target
+        saved, created = migrated.register_project(
+            "legacy-project",
+            request_id="legacy-create-0001",
+            title="Legacy",
+            goal="Synthetic goal",
+            thread="thread",
+            input_id=None,
+            surface="easy",
+            target_input=target,
+        )
+        assert not created
+        assert saved["target_input"] == target
+        assert migrated.get("legacy-create-0001")["payload"] == payload
+    finally:
+        migrated.close()

@@ -15,14 +15,20 @@ import pytest
 from easydesign.agent.cli import run_session
 from easydesign.agent.contracts import DecisionCard
 from easydesign.agent.harness import fingerprint
+from easydesign.agent.session_store import SessionStore
 from easydesign.product.artifacts import ArtifactCatalog, confined_bytes, immutable_json
 from easydesign.product.contracts import (
     ActionRequest,
+    ArtifactTargetInput,
     CreateProject,
+    PDBTargetInput,
     ProductError,
+    ProteinNameTargetInput,
+    UniProtTargetInput,
     WorkbenchProjection,
 )
 from easydesign.product.domain import DomainSession, NativeGateway, decision_view
+from easydesign.product.journal import RequestJournal
 from easydesign.product.projection import (
     activity,
     activity_rows,
@@ -116,6 +122,57 @@ def test_goal_only_create_is_immediately_persistent_and_reloadable(bridge, tmp_p
     assert restarted.snapshot(project)["project"]["title"] == "NK2R program"
 
 
+def test_product_resume_passes_request_identity_as_bounded_continuation(
+    site_bridge, monkeypatch
+):
+    captured = {}
+
+    async def bounded_resume(*args, **kwargs):
+        captured.update(kwargs)
+        return {"status": "incomplete-turn", "scientific_state": "site-not-proposed"}
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", bounded_resume)
+    session = DomainSession(
+        "target-test",
+        site_bridge,
+        "Continue an already verified synthetic target.",
+    )
+    revision = session.current()[2]
+    request = ActionRequest(
+        request_id="resume-site-0123456789",
+        revision=revision,
+        action="resume",
+    )
+    assert session.execute(
+        request,
+        scripted_config(),
+        {role: NoInference(role=role) for role in ROLES},
+        "synthetic-scientist",
+    )["scientific_state"] == "site-not-proposed"
+    assert captured["continuation_id"] == request.request_id
+
+
+def test_product_failure_context_reports_site_instead_of_target(site_bridge, tmp_path):
+    site_bridge.store.event(
+        site_bridge.thread,
+        "runtime-dispatch",
+        {
+            "execution_id": "turn-site",
+            "action_id": "site-action",
+            "stage": "site-not-proposed",
+            "tool": "task",
+            "specialist": "site-mechanism",
+        },
+    )
+    context = service_for(site_bridge, tmp_path)._failure_context(
+        site_bridge.store, site_bridge.thread
+    )
+    assert context["phase"] == "site"
+    assert context["title"] == "Site Intelligence"
+    assert context["task_id"] == "site-research"
+    assert "Site research paused" in context["project_message"]
+
+
 def test_easy_project_listing_is_explicit_recent_and_excludes_other_surfaces(bridge, tmp_path):
     service = service_for(bridge, tmp_path)
     professional = CreateProject(
@@ -168,6 +225,108 @@ def test_easy_project_listing_reuses_the_persisted_lightweight_projection(
 
     monkeypatch.setattr(service, "_bootstrap_project_view", must_not_open_the_scientific_project)
     assert service.projects(limit=5, surface="easy")["items"] == first["items"]
+
+
+def test_easy_project_listing_uses_global_projection_time_not_local_event_cursor(
+    bridge, tmp_path
+):
+    service = service_for(bridge, tmp_path)
+    older = service.create(
+        CreateProject(
+            request_id=str(uuid4()),
+            title="Older high-cursor design",
+            goal="Design an extracellular VHH.",
+            surface="easy",
+        )
+    )["project"]
+    newer = service.create(
+        CreateProject(
+            request_id=str(uuid4()),
+            title="Newer low-cursor design",
+            goal="Design another extracellular VHH.",
+            surface="easy",
+        )
+    )["project"]
+    service.projects(limit=5, surface="easy")
+    journal = service.journal()
+    try:
+        rows = {project: journal.project(project) for project in (older, newer)}
+        older_projection = {**rows[older]["projection"], "last_activity": 999}
+        newer_projection = {**rows[newer]["projection"], "last_activity": 1}
+        with journal.db:
+            journal.db.execute(
+                "UPDATE product_projects SET projection=?,updated=? WHERE id=?",
+                (json.dumps(older_projection), 100.0, older),
+            )
+            journal.db.execute(
+                "UPDATE product_projects SET projection=?,updated=? WHERE id=?",
+                (json.dumps(newer_projection), 200.0, newer),
+            )
+    finally:
+        journal.close()
+    listed = service.projects(limit=5, surface="easy")["items"]
+    assert [item["id"] for item in listed[:2]] == [newer, older]
+
+
+def test_easy_project_delete_is_recoverable_scoped_and_rejects_active_work(
+    bridge, tmp_path
+):
+    service = service_for(bridge, tmp_path)
+    active = service.create(
+        CreateProject(
+            request_id=str(uuid4()),
+            title="Active Easy design",
+            goal="Design an extracellular VHH.",
+            surface="easy",
+        )
+    )
+    with pytest.raises(ProductError, match="running design") as busy:
+        service.delete(active["project"])
+    assert busy.value.code == "project_busy"
+
+    request_id = str(uuid4())
+    removable = service.create(
+        CreateProject(
+            request_id=request_id,
+            title="Removable Easy design",
+            goal="Design another extracellular VHH.",
+            surface="easy",
+        )
+    )
+    professional_request = str(uuid4())
+    professional = service.create(
+        CreateProject(
+            request_id=professional_request,
+            title="Professional design",
+            goal="Review a professional workflow.",
+            surface="professional",
+        )
+    )
+    journal = service.journal()
+    try:
+        journal.update(request_id, "succeeded", {"status": "ready"})
+        journal.update(professional_request, "succeeded", {"status": "ready"})
+    finally:
+        journal.close()
+
+    with http_api(service) as client:
+        deleted = client.delete(f"/api/v1/projects/{removable['project']}")
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {
+            "id": removable["project"],
+            "deleted": True,
+            "recoverable": True,
+        }
+        assert removable["project"] not in {
+            item["id"]
+            for item in client.get("/api/v1/projects?surface=easy&limit=100").json()["items"]
+        }
+        assert client.get(
+            f"/api/v1/projects/{removable['project']}/workbench"
+        ).status_code == 404
+        assert client.delete(f"/api/v1/projects/{professional['project']}").status_code == 404
+
+    assert (tmp_path / "workspace/projects" / removable["project"]).is_dir()
 
 
 def test_gate1_remote_structure_candidates_have_checksum_bound_previews(tmp_path):
@@ -323,11 +482,14 @@ def test_goal_bootstrap_and_runtime_reentry_share_one_worker_event_loop(
         store.close()
 
 
-def test_product_api_keeps_uploaded_structure_as_optional_seed(bridge, tmp_path):
+def test_product_api_keeps_uploaded_structure_as_optional_seed(
+    bridge, tmp_path, monkeypatch
+):
     from easydesign.orchestration.config import LocalFileSourceConfig, load_run_config
     from easydesign.orchestration.local_project import project_config_path
     from tests.agent_support import structure
 
+    patch_structural_identity_seed(monkeypatch)
     service = service_for(bridge, tmp_path)
     uploaded = service.upload("optional-seed.pdb", structure("A").encode())
     request = CreateProject(
@@ -967,6 +1129,145 @@ def test_rabbit_chat_rejects_injection_and_sanitizes_provider_failure(bridge, tm
         assert response.json()["error"]["code"] == "not_configured"
 
 
+def test_scientific_localization_is_bounded_validated_and_cached(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    received = []
+
+    def provider(request):
+        received.append(request)
+        yield {
+            "type": "delta",
+            "text": json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": "site.why",
+                            "text": "ECL2与TM6邻近，并保留残基273和7.39的编号。",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+        }
+        yield {"type": "done"}
+
+    chat = RabbitChatService(provider)
+    payload = {
+        "locale": "zh",
+        "passages": [
+            {
+                "id": "site.why",
+                "text": "ECL2 is adjacent to TM6; residue 273 and 7.39 remain uncertain.",
+            }
+        ],
+        "context": {"stage": "Site", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=chat) as client:
+        first = client.post("/api/rabbit/localize", json=payload)
+        assert first.status_code == 200, first.text
+        assert first.json()["locale"] == "zh-CN"
+        assert "ECL2" in first.json()["items"]["site.why"]
+        assert client.post("/api/rabbit/localize", json=payload).json() == first.json()
+        assert len(received) == 1
+        assert received[0]["purpose"] == "scientific-localization"
+        assert "messages" not in received[0]
+
+        invalid = {**payload, "passages": [{"id": "bad id", "text": "source"}]}
+        assert client.post("/api/rabbit/localize", json=invalid).status_code == 400
+
+
+def test_scientific_localization_rejects_mutated_scientific_identifiers(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+
+    def provider(_request):
+        yield {
+            "type": "delta",
+            "text": json.dumps({"items": [{"id": "site.why", "text": "中文但编号被删除"}]}),
+        }
+        yield {"type": "done"}
+
+    payload = {
+        "locale": "zh",
+        "passages": [{"id": "site.why", "text": "VHH reaches ECL2 residue 273."}],
+        "context": {"stage": "Site", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=RabbitChatService(provider)) as client:
+        response = client.post("/api/rabbit/localize", json=payload)
+        assert response.status_code == 502
+        assert response.json()["error"]["code"] == "localization_unavailable"
+
+
+def test_scientific_localization_preserves_chinese_and_repairs_only_failed_english(
+    bridge, tmp_path
+):
+    service = service_for(bridge, tmp_path)
+    received = []
+
+    def provider(request):
+        received.append(request)
+        passages = request["passages"]
+        if len(received) == 1:
+            items = [
+                {"id": passages[0]["id"], "text": "规范生物学身份未经确认。"},
+                {"id": passages[1]["id"], "text": passages[1]["text"]},
+            ]
+        else:
+            items = [{"id": passages[0]["id"], "text": "参考序列完整性未知。"}]
+        yield {"type": "delta", "text": json.dumps({"items": items}, ensure_ascii=False)}
+        yield {"type": "done"}
+
+    payload = {
+        "locale": "zh",
+        "passages": [
+            {"id": "warning.0", "text": "坐标覆盖率约0.75，需下游核验。"},
+            {
+                "id": "limitation.0",
+                "text": "Canonical biological identity is unconfirmed.",
+            },
+            {
+                "id": "limitation.1",
+                "text": "Reference completeness is unknown.",
+            },
+        ],
+        "context": {"stage": "Target", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=RabbitChatService(provider)) as client:
+        response = client.post("/api/rabbit/localize", json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["items"] == {
+            "warning.0": "坐标覆盖率约0.75，需下游核验。",
+            "limitation.0": "规范生物学身份未经确认。",
+            "limitation.1": "参考序列完整性未知。",
+        }
+        assert [item["id"] for item in received[0]["passages"]] == [
+            "limitation.0",
+            "limitation.1",
+        ]
+        assert [item["id"] for item in received[1]["passages"]] == ["limitation.1"]
+
+
+def test_scientific_localization_preserves_opaque_runtime_markers(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    marker = "region-A-has-2-spatial-components;user-members-preserved"
+
+    def provider(_request):
+        yield {
+            "type": "delta",
+            "text": json.dumps({"items": [{"id": "warning.0", "text": marker}]}),
+        }
+        yield {"type": "done"}
+
+    payload = {
+        "locale": "zh",
+        "passages": [{"id": "warning.0", "text": marker}],
+        "context": {"stage": "Design", "goal": "NK2R VHH"},
+    }
+    with http_api(service, rabbit_chat=RabbitChatService(provider)) as client:
+        response = client.post("/api/rabbit/localize", json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["items"]["warning.0"] == marker
+
+
 def test_local_gpu_monitor_is_fixed_read_only_cached_and_fails_stale():
     now = [0.0]
     fail = [False]
@@ -1071,7 +1372,7 @@ def test_product_resume_binds_request_to_bounded_continuation(site_bridge, monke
     assert captured["continuation_id"] == request.request_id
 
 
-def test_product_failure_context_reports_site_instead_of_target(site_bridge, tmp_path):
+def test_product_failure_context_reports_site_instead_of_target_upstream(site_bridge, tmp_path):
     site_bridge.store.event(
         site_bridge.thread,
         "runtime-dispatch",
@@ -1394,6 +1695,37 @@ def test_failed_gate_action_resubmission_retries_same_request(site_bridge, tmp_p
     assert launched == [action.request_id, action.request_id]
 
 
+def test_gate_submit_clears_snapshot_rebuilt_before_request_reservation(
+    site_bridge, tmp_path, monkeypatch
+):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    prime(b, "Synthetic Gate cache race")
+    service = service_for(b, tmp_path)
+    view = service.snapshot("target-test")
+    assert service._stable_snapshots["target-test"]["decision"] is not None
+    action = ActionRequest(
+        request_id=str(uuid4()),
+        revision=view["revision"],
+        action="approve",
+        card_id=view["decision"]["id"],
+        selected_option_id=view["decision"]["options"][0]["option_id"],
+    )
+    stale = json.loads(json.dumps(view))
+    original_reserve = RequestJournal.reserve
+
+    def reserve_after_racing_poll(journal, *args, **kwargs):
+        # submit() already performed its first invalidation. Reproduce a poll
+        # that observes the old Gate immediately before the request is reserved.
+        service._stable_snapshots["target-test"] = stale
+        return original_reserve(journal, *args, **kwargs)
+
+    monkeypatch.setattr(RequestJournal, "reserve", reserve_after_racing_poll)
+    service.submit("target-test", action)
+    assert "target-test" not in service._stable_snapshots
+
+
 def test_frozen_pilot_query_is_read_only(design_bridge, tmp_path):
     from easydesign.agent.phase34_runtime import Phase34Runtime
     from tests.unit.agent.test_design_runtime import design_card, propose_design
@@ -1569,30 +1901,33 @@ def test_native_candidate_product_projection_preserves_fail_and_missing(tmp_path
     compact = candidate_view(session, rows[0], pool, {}, catalog, compact=True)
     assert compact.metrics == []
     assert compact.id == values[0].id
+    assert compact.scaffold == rows[0].lineage.strategy_id.rsplit("-scaffold-", 1)[1]
     assert compact.sequence_sha256 == values[0].sequence_sha256
-    assert compact.artifacts == values[0].artifacts
+    assert compact.sequence is None
+    assert compact.artifacts == []
+    assert compact.structure_roles == {}
 
 
 def test_http_compact_candidate_view_is_explicit(bridge, tmp_path, monkeypatch):
     service = service_for(bridge, tmp_path)
     observed = []
 
-    def candidates(project, offset, limit, candidate=None, *, compact=False):
-        observed.append((project, offset, limit, candidate, compact))
+    def candidates(project, offset, limit, candidate=None, *, compact=False, phase=None):
+        observed.append((project, offset, limit, candidate, compact, phase))
         return {"items": [], "total": 0, "offset": offset, "limit": limit}
 
     monkeypatch.setattr(service, "candidates", candidates)
     with http_api(service) as client:
         response = client.get("/api/v1/projects/example/candidates?offset=0&limit=20&view=summary")
         assert response.status_code == 200
-        assert observed == [("example", 0, 20, None, True)]
+        assert observed == [("example", 0, 20, None, True, None)]
         assert client.get("/api/v1/projects/example/candidates?view=unknown").status_code == 400
 
 
 def test_compact_candidate_cache_is_project_scoped_and_invalidated(bridge, tmp_path, monkeypatch):
     service = service_for(bridge, tmp_path)
     cached = {"items": [], "total": 0, "offset": 0, "limit": 20}
-    service._compact_candidate_pages[("project", 0, 20, None)] = cached
+    service._compact_candidate_pages[("project", 0, 20, None, None)] = cached
 
     def must_not_open(_project):
         raise AssertionError("A stable compact candidate page must not reopen the project")
@@ -1601,6 +1936,50 @@ def test_compact_candidate_cache_is_project_scoped_and_invalidated(bridge, tmp_p
     assert service.candidates("project", 0, 20, compact=True) == cached
     service._invalidate_projection_cache("project")
     assert service._compact_candidate_pages == {}
+
+
+def test_running_snapshot_refreshes_jobs_without_reprojecting_scientific_history(
+    bridge, tmp_path, monkeypatch
+):
+    service = service_for(bridge, tmp_path)
+    baseline = {
+        "project": {"status": "running", "validation_only": False},
+        "event_cursor": 7,
+        "requests": [],
+        "jobs": [],
+        "tasks": [],
+    }
+    service._live_snapshots["target-test"] = baseline
+
+    class Cursor:
+        @staticmethod
+        def execute(*_args, **_kwargs):
+            return SimpleNamespace(fetchone=lambda: (7,))
+
+    @contextmanager
+    def unchanged_session(_project):
+        yield SimpleNamespace(
+            bridge=SimpleNamespace(
+                store=SimpleNamespace(db=Cursor()),
+                thread="thread",
+                controller=SimpleNamespace(list=lambda **_kwargs: []),
+                project_id="target-test",
+                context=SimpleNamespace(runs_root=tmp_path),
+            )
+        )
+
+    monkeypatch.setattr(service.gateway, "session", unchanged_session)
+
+    def must_not_reproject(*_args, **_kwargs):
+        raise AssertionError("unchanged live event cursor must use the lightweight job path")
+
+    monkeypatch.setattr("easydesign.product.service.workbench", must_not_reproject)
+    refreshed = service.snapshot("target-test")
+    assert refreshed["event_cursor"] == baseline["event_cursor"]
+    assert refreshed["project"]["status"] == "running"
+
+    service._invalidate_projection_cache("target-test")
+    assert "target-test" not in service._live_snapshots
 
 
 def test_gate3_decision_is_bound_to_current_pilot_plan(design_bridge, tmp_path):
@@ -1825,3 +2204,224 @@ def test_project_rename_persists_without_changing_scientific_authority(site_brid
     assert after["revision"] == before["revision"]
     assert after["decision"] == before["decision"]
     assert b.store.events(b.thread) == events
+
+
+def patch_structural_identity_seed(monkeypatch):
+    from easydesign.agent.bootstrap import GoalTargetIntent
+
+    async def resolve_goal_target(**_kwargs):
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Bounded identity discovery for the supplied material.",
+            limitations=["Native Stage 01 must verify the material-to-identity mapping."],
+        )
+
+    monkeypatch.setattr(
+        "easydesign.agent.bootstrap.resolve_goal_target", resolve_goal_target
+    )
+    monkeypatch.setattr(
+        "easydesign.product.service.resolve_unique_reviewed_uniprot_seed",
+        lambda **_kwargs: {
+            "schema_version": "0.1",
+            "status": "verified-seed",
+            "authority": "stage01-input-only",
+            "query": "TACR2",
+            "taxon_id": 9606,
+            "accession": "P21452",
+            "entry_id": "NK2R_HUMAN",
+            "recommended_name": "Substance-K receptor",
+            "gene_names": ["tacr2"],
+            "reviewed": True,
+            "resolution": "unique-reviewed-exact-search",
+            "retrieval_records": [],
+        },
+    )
+
+
+def test_product_api_binds_typed_database_inputs_without_flattening_into_goal(
+    bridge, tmp_path, monkeypatch
+):
+    from easydesign.agent.bootstrap import GoalTargetIntent
+    from easydesign.orchestration.config import (
+        PdbIdSourceConfig,
+        UniProtSearchSourceConfig,
+        UniProtSourceConfig,
+        load_run_config,
+    )
+    from easydesign.orchestration.local_project import project_config_path
+
+    async def stop_after_native_bootstrap(*args, **kwargs):
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    async def resolve_explicit_name(**kwargs):
+        if "Explicit target name:" in kwargs["goal"]:
+            assert "Explicit target name: TACR2" in kwargs["goal"]
+            assert "Explicit organism: Homo sapiens" in kwargs["goal"]
+        return GoalTargetIntent(
+            target_label="NK2R",
+            uniprot_query="this model value must not replace TACR2",
+            organism="Homo sapiens",
+            taxon_id=9606,
+            interpretation="Explicit product input mapped only to a bounded search.",
+            limitations=["Stage 1 still verifies identity and structure authority."],
+        )
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_native_bootstrap)
+    monkeypatch.setattr("easydesign.agent.bootstrap.resolve_goal_target", resolve_explicit_name)
+    monkeypatch.setattr(
+        "easydesign.product.service.resolve_unique_reviewed_uniprot_seed",
+        lambda **_kwargs: {
+            "schema_version": "0.1",
+            "status": "verified-seed",
+            "authority": "stage01-input-only",
+            "query": "TACR2",
+            "taxon_id": 9606,
+            "accession": "P21452",
+            "entry_id": "NK2R_HUMAN",
+            "recommended_name": "Substance-K receptor",
+            "gene_names": ["tacr2"],
+            "reviewed": True,
+            "resolution": "unique-reviewed-exact-search",
+            "retrieval_records": [],
+        },
+    )
+    service = service_for(bridge, tmp_path)
+    cases = [
+        (
+            ProteinNameTargetInput(kind="protein-name", name="TACR2", organism="Homo sapiens"),
+            UniProtSearchSourceConfig,
+            ("query", "TACR2"),
+        ),
+        (
+            UniProtTargetInput(kind="uniprot", accession="P21452"),
+            UniProtSourceConfig,
+            ("accession", "P21452"),
+        ),
+        (
+            PDBTargetInput(kind="pdb-id", pdb_id="9w1j", chain="R"),
+            PdbIdSourceConfig,
+            ("pdb_id", "9W1J"),
+        ),
+    ]
+    for index, (target_input, source_type, expected) in enumerate(cases):
+        request = CreateProject(
+            request_id=f"typed-target-input-{index:02d}-fixed",
+            title=f"Typed target {index}",
+            goal="Design an inhibitory extracellular VHH binder.",
+            target_input=target_input,
+            surface="easy",
+        )
+        accepted = service.create(request)
+        service.run(request.request_id)
+        loaded = load_run_config(
+            project_config_path(service.context.projects_root / accepted["project"])
+        ).config
+        configured = loaded.target.source
+        assert isinstance(configured, source_type)
+        assert getattr(configured, expected[0]) == expected[1]
+        assert loaded.workflow.cache_mode == "prefer-cache"
+        if isinstance(configured, PdbIdSourceConfig):
+            assert configured.identity.uniprot_accession == "P21452"
+        journal = service.journal()
+        try:
+            registered = journal.project(accepted["project"])
+        finally:
+            journal.close()
+        assert registered is not None
+        assert registered["target_input"] == target_input.model_dump(mode="json")
+
+
+def test_product_api_binds_typed_sequence_artifact_by_checksum(bridge, tmp_path, monkeypatch):
+    from easydesign.orchestration.config import (
+        LocalFileSourceConfig,
+        TargetInputFormat,
+        load_run_config,
+    )
+    from easydesign.orchestration.local_project import project_config_path
+
+    async def stop_after_native_bootstrap(*args, **kwargs):
+        return {"status": "awaiting-human-approval", "scientific_state": "gate1-ready"}
+
+    monkeypatch.setattr("easydesign.agent.cli.run_session", stop_after_native_bootstrap)
+    patch_structural_identity_seed(monkeypatch)
+    service = service_for(bridge, tmp_path)
+    sequence = b">NK2R construct\n" + (
+        b"MNGTEGPNFYVPFSNKTGVVRSPFEYPQYYLAEPWQFSMLAAYMFLLIVLGFPINFLTLYVTVQH\n"
+    )
+    uploaded = service.upload("nk2r.fasta", sequence)
+    assert uploaded["kind"] == "sequence"
+    request = CreateProject(
+        request_id="typed-sequence-input-fixed",
+        title="Typed sequence target",
+        goal="Design an inhibitory extracellular VHH binder.",
+        target_input=ArtifactTargetInput(kind="sequence", artifact_id=uploaded["id"]),
+        surface="easy",
+    )
+    accepted = service.create(request)
+    service.run(request.request_id)
+    assert service.request(request.request_id)["state"] == "succeeded"
+    root = service.context.projects_root / accepted["project"]
+    configured = load_run_config(project_config_path(root))
+    assert isinstance(configured.config.target.source, LocalFileSourceConfig)
+    assert configured.config.workflow.cache_mode == "prefer-cache"
+    assert configured.config.target.source.format is TargetInputFormat.FASTA
+    assert configured.config.target.source.identity.uniprot_accession == "P21452"
+    assert configured.source_path is not None
+    assert configured.source_path.read_bytes() == sequence
+    store = SessionStore(root)
+    try:
+        seeds = [
+            event["payload"]["seed"]
+            for event in store.events(service._thread(request.request_id))
+            if event["kind"] == "product-canonical-target-seed"
+        ]
+    finally:
+        store.close()
+    assert seeds[-1]["authority"] == "stage01-input-only"
+
+
+def test_product_api_rejects_invalid_or_mistyped_sequence_artifacts(bridge, tmp_path):
+    service = service_for(bridge, tmp_path)
+    with pytest.raises(ProductError, match="exactly one FASTA"):
+        service.upload("two.fasta", b">a\nACDE\n>b\nACDE\n")
+    with pytest.raises(ProductError, match="standard amino acids"):
+        service.upload("ambiguous.fasta", b">a\nACDEX\n")
+    from tests.agent_support import structure
+
+    uploaded = service.upload("target.pdb", structure("A").encode())
+    with pytest.raises(ProductError, match="does not match"):
+        service.create(
+            CreateProject(
+                request_id="mistyped-sequence-input-fixed",
+                title="Mistyped sequence target",
+                goal="Design a VHH binder.",
+                target_input=ArtifactTargetInput(kind="sequence", artifact_id=uploaded["id"]),
+            )
+        )
+
+
+def test_awaiting_scientist_shell_without_card_is_never_a_stable_snapshot(
+    site_bridge, tmp_path
+):
+    b = site_bridge
+    setup_portfolio(b)
+    review_card(b)
+    result = prime(b, "Synthetic ranked Site decision")
+    assert result["status"] == "awaiting-human-approval"
+    service = service_for(b, tmp_path)
+    complete = service.snapshot("target-test")
+    assert complete["project"]["status"] == "awaiting_scientist"
+    assert complete["decision"]["gate"] == 2
+
+    # Reproduce the race observed by the browser: an early projection saw the
+    # awaiting-scientist action just before its immutable card and was retained
+    # in the stable cache.  A later read must recover from native authority.
+    transitional = json.loads(json.dumps(complete))
+    transitional["decision"] = None
+    service._stable_snapshots["target-test"] = transitional
+    recovered = service.snapshot("target-test")
+    assert recovered["decision"]["id"] == complete["decision"]["id"]
+    assert service._stable_snapshots["target-test"]["decision"] is not None

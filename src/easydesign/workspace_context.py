@@ -349,6 +349,10 @@ class WorkspaceContext:
             LOCAL_WRITE_ROOTS_ENV: os.pathsep.join(str(path) for path in self.write_roots()),
             "PYTHONPATH": os.pathsep.join(str(path) for path in python_path),
         }
+        if selected_code_root:
+            # Keep an explicitly selected immutable release in grandchildren too.
+            # Otherwise a scoped worker's next child silently imports the base tree.
+            values[CODE_ROOT_ENVIRONMENT_VARIABLE] = str(code_root)
         if self.execution_scope is not None:
             if self.execution_scope_path is None:
                 raise PathPolicyError("Execution scope was not published by the controller")
@@ -382,6 +386,7 @@ class WorkspaceContext:
             "NODE_EXTRA_CA_CERTS",
             LOCAL_WRITE_ROOTS_ENV,
             "PYTHONPATH",
+            CODE_ROOT_ENVIRONMENT_VARIABLE,
             EXECUTION_SCOPE_ENV,
             "CUDA_VISIBLE_DEVICES",
         }

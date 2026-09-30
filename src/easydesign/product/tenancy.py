@@ -450,6 +450,15 @@ class ScopedProductService(ProductService):
             )
         return super().rename(project, title)
 
+    def delete(self, project: str) -> dict[str, Any]:
+        self.access(edit=True)
+        result = super().delete(project)
+        with self.accounts.db(write=True) as db:
+            self.accounts.audit_record(
+                db, self.user.id, "project.hide", scope=self.scope_id, target=project
+            )
+        return result
+
     def apply_lab_order(self, project: str, command: LabOrderCommand) -> dict[str, Any]:
         self.access(edit=True, execute=True)
         return super().apply_lab_order(project, command)

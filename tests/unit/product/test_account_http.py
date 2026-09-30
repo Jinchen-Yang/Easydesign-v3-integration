@@ -249,3 +249,87 @@ def test_scoped_response_urls_cannot_fall_back_to_the_unscoped_api(product):
     assert rendered["artifacts"][0]["url"] == f"/api/v1/scopes/{scope}/artifacts/abc"
     assert response["artifacts"][0]["url"] == "/api/v1/artifacts/abc"
     assert rendered["artifacts"][0]["sha256"] == "b" * 64
+
+
+def test_migrated_easy_delete_requires_csrf_scope_and_retains_evidence(product):
+    server, accounts, _admin, users, _context = product
+    alice, bob = users
+    with server.runtime.bind(alice, alice.id) as service:
+        journal = service.journal()
+        try:
+            journal.register_project(
+                "idle-easy",
+                request_id="synthetic-hide-request",
+                title="Idle design",
+                goal="Synthetic goal",
+                thread="thread",
+                input_id=None,
+                surface="easy",
+            )
+            journal.update_projection("idle-easy", {"status": "awaiting_scientist"})
+        finally:
+            journal.close()
+        evidence = service.context.projects_root / "idle-easy" / "keep.txt"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text("Synthetic scientific evidence remains unchanged.")
+    path = f"/api/v1/scopes/{alice.id}/projects/idle-easy"
+    with client(server, "alice") as owner:
+        assert owner.delete(path, headers={"X-CSRF-Token": ""}).status_code == 403
+        with client(server, "bob") as outsider:
+            assert outsider.delete(path).status_code == 404
+        with client(server, "admin") as administrator:
+            assert administrator.delete(path).status_code == 403
+        result = owner.delete(path)
+        assert result.status_code == 200, result.text
+        assert result.json()["recoverable"] is True
+        assert owner.get(path + "/workbench").status_code == 404
+        assert owner.get(f"/api/v1/scopes/{alice.id}/projects?surface=easy").json()["items"] == []
+    assert evidence.read_text() == "Synthetic scientific evidence remains unchanged."
+    with server.runtime.bind(alice, alice.id) as service:
+        journal = service.journal()
+        try:
+            assert journal.project("idle-easy") is None
+            assert journal.project("idle-easy", include_deleted=True)["deleted_at"] is not None
+        finally:
+            journal.close()
+
+
+def test_migrated_localization_stays_in_authorized_scope(product):
+    from easydesign.product.rabbit_chat import RabbitChatService
+
+    server, _accounts, _admin, users, _context = product
+    calls = []
+
+    def provider(request):
+        calls.append(request)
+        yield {
+            "type": "delta",
+            "text": json.dumps({"items": [{"id": "why", "text": "保持科学结论。"}]}),
+        }
+        yield {"type": "done"}
+
+    server.rabbit_chat = RabbitChatService(provider)
+    payload = {
+        "locale": "zh",
+        "passages": [{"id": "why", "text": "Keep the scientific conclusion."}],
+        "context": {"stage": "Site", "goal": "Synthetic design"},
+    }
+    alice = users[0]
+    with client(server, "bob") as outsider:
+        assert (
+            outsider.post(f"/api/v1/scopes/{alice.id}/rabbit/localize", json=payload).status_code
+            == 404
+        )
+    with client(server, "admin") as administrator:
+        assert (
+            administrator.post(
+                f"/api/v1/scopes/{alice.id}/rabbit/localize", json=payload
+            ).status_code
+            == 403
+        )
+    with client(server, "alice") as owner:
+        path = f"/api/v1/scopes/{alice.id}/rabbit/localize"
+        first = owner.post(path, json=payload)
+        assert first.status_code == 200, first.text
+        assert owner.post(path, json=payload).json() == first.json()
+    assert len(calls) == 1

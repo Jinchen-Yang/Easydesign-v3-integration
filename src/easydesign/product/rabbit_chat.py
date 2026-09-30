@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import selectors
 import subprocess
 import sys
@@ -21,6 +23,155 @@ ChatProvider = Callable[[dict[str, Any]], Iterator[dict[str, Any]]]
 _STAGES = {"Idle", "Target", "Site", "Design", "Pilot", "Scale", "Candidates"}
 _STATUSES = {"idle", "draft", "running", "paused", "complete"}
 _ERRORS = {"credentials", "rate_limit", "timeout", "interrupted", "unavailable"}
+_LOCALIZATION_PURPOSE = "scientific-localization"
+
+
+def validate_localization_request(value: Any) -> dict[str, Any]:
+    """Accept bounded scientific prose, never arbitrary model instructions."""
+    if not isinstance(value, dict) or value.get("locale") != "zh":
+        raise ProductError("invalid_request", "Localization request is invalid", 400)
+    raw_passages = value.get("passages")
+    if not isinstance(raw_passages, list) or not 1 <= len(raw_passages) <= 48:
+        raise ProductError("invalid_request", "Localization request is invalid", 400)
+    passages: list[dict[str, str]] = []
+    seen: set[str] = set()
+    total = 0
+    for raw in raw_passages:
+        if not isinstance(raw, dict):
+            raise ProductError("invalid_request", "Localization request is invalid", 400)
+        identity, source = raw.get("id"), raw.get("text")
+        if (
+            not isinstance(identity, str)
+            or not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,96}", identity)
+            or identity in seen
+            or not isinstance(source, str)
+            or not source.strip()
+            or len(source) > 8000
+        ):
+            raise ProductError("invalid_request", "Localization request is invalid", 400)
+        seen.add(identity)
+        total += len(source)
+        passages.append({"id": identity, "text": source.strip()})
+    if total > 32000:
+        raise ProductError("invalid_request", "Localization request is invalid", 400)
+    raw_context = value.get("context")
+    if not isinstance(raw_context, dict):
+        raise ProductError("invalid_request", "Localization request is invalid", 400)
+    stage, goal = raw_context.get("stage"), raw_context.get("goal")
+    if stage not in _STAGES or not isinstance(goal, str) or len(goal) > 1200:
+        raise ProductError("invalid_request", "Localization request is invalid", 400)
+    return {
+        "purpose": _LOCALIZATION_PURPOSE,
+        "locale": "zh",
+        "passages": passages,
+        "context": {"stage": stage, "goal": goal},
+    }
+
+
+def _protected_tokens(value: str) -> set[str]:
+    """Identifiers whose mutation could change scientific meaning."""
+    tokens = set(
+        re.findall(
+            r"(?<![\w])(?:[A-Z]{1,8}[A-Z0-9:+./-]*\d[A-Z0-9:+./-]*|\d+(?:\.\d+)?)(?![\w])",
+            value,
+        )
+    )
+    tokens.update(re.findall(r"\b(?:VHH|GPCR|PDB|AF3|AFO|CDR[123]?|ECL[123]?|ICL[123]?)\b", value))
+    return tokens
+
+
+def _requires_chinese(value: str) -> bool:
+    if value.startswith(("site-", "candidate-", "arm-", "phase")):
+        return False
+    # Runtime warnings can be opaque, semicolon-delimited machine markers such
+    # as ``region-A-has-2-spatial-components;user-members-preserved``.  They
+    # must remain byte-for-byte auditable and should not make an otherwise
+    # valid localization batch fail merely because they contain no Han text.
+    if not re.search(r"\s", value) and re.fullmatch(r"[A-Za-z0-9_.:+/;-]+", value):
+        return False
+    return any(not word.isupper() for word in re.findall(r"[A-Za-z]{3,}", value))
+
+
+def _contains_chinese(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff]", value))
+
+
+def _valid_translation(source: str, translated: Any) -> bool:
+    return (
+        isinstance(translated, str)
+        and bool(translated.strip())
+        and len(translated) <= max(80, len(source) * 4)
+        and (not _requires_chinese(source) or bool(re.search(r"[\u3400-\u9fff]", translated)))
+        and all(token in translated for token in _protected_tokens(source))
+    )
+
+
+def _parse_localization(text: str, passages: list[dict[str, str]]) -> dict[str, Any]:
+    clean = text.strip()
+    if clean.startswith("```"):
+        clean = clean.split("\n", 1)[1] if "\n" in clean else ""
+        clean = clean.rsplit("```", 1)[0].strip()
+    try:
+        value = json.loads(clean)
+    except json.JSONDecodeError as error:
+        raise ProductError(
+            "localization_unavailable", "Academic Chinese is unavailable", 502
+        ) from error
+    raw_items = value.get("items") if isinstance(value, dict) else None
+    if not isinstance(raw_items, list) or len(raw_items) != len(passages):
+        raise ProductError("localization_unavailable", "Academic Chinese is unavailable", 502)
+    source = {item["id"]: item["text"] for item in passages}
+    localized: dict[str, str] = {}
+    for item in raw_items:
+        if not isinstance(item, dict):
+            raise ProductError("localization_unavailable", "Academic Chinese is unavailable", 502)
+        identity, translated = item.get("id"), item.get("text")
+        if identity not in source or identity in localized or not isinstance(translated, str):
+            raise ProductError("localization_unavailable", "Academic Chinese is unavailable", 502)
+        translated = translated.strip()
+        if not _valid_translation(source[identity], translated):
+            raise ProductError("localization_unavailable", "Academic Chinese is unavailable", 502)
+        localized[identity] = translated
+    if set(localized) != set(source):
+        raise ProductError("localization_unavailable", "Academic Chinese is unavailable", 502)
+    return {"locale": "zh-CN", "items": localized}
+
+
+def _parse_localization_candidates(text: str, passages: list[dict[str, str]]) -> dict[str, str]:
+    """Keep only complete, scientifically valid items from a provider attempt.
+
+    A fast translation model may occasionally echo one passage or omit one item in
+    an otherwise useful batch.  Those items must be retried, but valid translations
+    should not be discarded or exposed before the full response is complete.
+    """
+    clean = text.strip()
+    if clean.startswith("```"):
+        clean = clean.split("\n", 1)[1] if "\n" in clean else ""
+        clean = clean.rsplit("```", 1)[0].strip()
+    try:
+        value = json.loads(clean)
+    except json.JSONDecodeError:
+        return {}
+    raw_items = value.get("items") if isinstance(value, dict) else None
+    if not isinstance(raw_items, list):
+        return {}
+    source = {item["id"]: item["text"] for item in passages}
+    localized: dict[str, str] = {}
+    duplicates: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        identity, translated = item.get("id"), item.get("text")
+        if identity not in source or not isinstance(translated, str):
+            continue
+        if identity in localized or identity in duplicates:
+            localized.pop(identity, None)
+            duplicates.add(identity)
+            continue
+        translated = translated.strip()
+        if _valid_translation(source[identity], translated):
+            localized[identity] = translated
+    return localized
 
 
 def validate_chat_request(value: Any) -> dict[str, Any]:
@@ -201,12 +352,18 @@ class RabbitChatService:
         provider: ChatProvider | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
+        cache_root: Path | None = None,
         ledger_path: Path | None = None,
         limits: RabbitCapacityLimits | None = None,
     ) -> None:
         self.provider, self.clock = provider, clock
         self.limits = limits or RabbitCapacityLimits()
         self._capacity = RabbitCapacity(self.limits, ledger_path, clock)
+        self.cache_root = cache_root
+        if self.cache_root is not None:
+            self.cache_root.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._localization_cache: dict[str, dict[str, Any]] = {}
 
     def status(self) -> dict[str, Any]:
         return {"configured": self.provider is not None, "model": "deepseek-flash"}
@@ -362,6 +519,119 @@ class RabbitChatService:
                     self._capacity.finish(ticket, state, code)
 
         return _ChatStream(generate(), self._capacity, ticket)
+
+    def localize(
+        self, value: Any, *, actor_id: str = "legacy", scope_id: str = "legacy"
+    ) -> dict[str, Any]:
+        request = validate_localization_request(value)
+        if self.provider is None:
+            raise ProductError("not_configured", "Academic Chinese is not configured", 503)
+        key = hashlib.sha256(
+            json.dumps(
+                {"scope": scope_id, "request": request}, ensure_ascii=False, sort_keys=True
+            ).encode()
+        ).hexdigest()
+        cache_path = self.cache_root / f"{key}.json" if self.cache_root is not None else None
+        with self._lock:
+            cached = self._localization_cache.get(key)
+            if cached is None and cache_path is not None and cache_path.is_file():
+                try:
+                    candidate = json.loads(cache_path.read_text())
+                    items = candidate.get("items")
+                    sources = {item["id"]: item["text"] for item in request["passages"]}
+                    valid_items = (
+                        isinstance(items, dict)
+                        and set(items) == set(sources)
+                        and all(
+                            _valid_translation(source, items[identity])
+                            for identity, source in sources.items()
+                        )
+                    )
+                    if candidate.get("source_sha256") == key and valid_items:
+                        cached = candidate
+                        self._localization_cache[key] = cached
+                except (OSError, json.JSONDecodeError, AttributeError):
+                    cached = None
+            if cached is not None:
+                return cached
+        ticket = self._capacity.reserve(actor_id, scope_id, uuid.uuid4().hex, request)
+        if self._capacity.poll(ticket) != "running":
+            self._capacity.abandon(ticket)
+            raise ProductError("rate_limit", "Academic Chinese is busy; try again shortly", 429)
+        if not self._capacity.dispatch(ticket):
+            self._capacity.abandon(ticket)
+            raise ProductError("rate_limit", "Academic Chinese is busy; try again shortly", 429)
+        succeeded = False
+        try:
+            sources = {item["id"]: item["text"] for item in request["passages"]}
+            localized = {
+                identity: source
+                for identity, source in sources.items()
+                if _contains_chinese(source) or not _requires_chinese(source)
+            }
+            pending = [item for item in request["passages"] if item["id"] not in localized]
+
+            def translate(batch: list[dict[str, str]]) -> dict[str, str]:
+                chunks: list[str] = []
+                terminal = False
+                provider_request = {**request, "passages": batch}
+                assert self.provider is not None
+                for raw in self.provider(provider_request):
+                    event = public_event(raw)
+                    if event is None:
+                        continue
+                    if event["type"] == "delta":
+                        chunks.append(event["text"])
+                        if sum(map(len, chunks)) > 200000:
+                            raise ProductError(
+                                "localization_unavailable",
+                                "Academic Chinese is unavailable",
+                                502,
+                            )
+                    elif event["type"] == "done":
+                        terminal = True
+                        break
+                    elif event["type"] == "error":
+                        raise ProductError(
+                            "localization_unavailable", "Academic Chinese is unavailable", 502
+                        )
+                if not terminal:
+                    raise ProductError(
+                        "localization_unavailable", "Academic Chinese is unavailable", 502
+                    )
+                return _parse_localization_candidates("".join(chunks), batch)
+
+            if pending:
+                localized.update(translate(pending))
+                unresolved = [item for item in pending if item["id"] not in localized]
+                if unresolved:
+                    localized.update(translate(unresolved))
+            if set(localized) != set(sources) or not all(
+                _valid_translation(source, localized.get(identity))
+                for identity, source in sources.items()
+            ):
+                raise ProductError(
+                    "localization_unavailable", "Academic Chinese is unavailable", 502
+                )
+            result = {"locale": "zh-CN", "items": localized}
+            result["source_sha256"] = key
+            with self._lock:
+                self._localization_cache[key] = result
+                if cache_path is not None and not cache_path.exists():
+                    temporary = cache_path.with_suffix(
+                        cache_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
+                    )
+                    temporary.write_text(json.dumps(result, ensure_ascii=False, sort_keys=True))
+                    os.chmod(temporary, 0o600)
+                    os.replace(temporary, cache_path)
+            succeeded = True
+            return result
+        finally:
+            self._capacity.finish(
+                ticket,
+                "completed" if succeeded else "failed",
+                None if succeeded else "localization_unavailable",
+            )
 
 
 class _ChatStream(Iterator[dict[str, Any]]):

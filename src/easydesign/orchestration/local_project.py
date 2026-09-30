@@ -173,8 +173,12 @@ def resolve_project_run(
             return summary
 
     if run_id is not None:
+        # A run id is scoped to its project. Concurrent projects may start in the
+        # same second and legitimately share the timestamp-based id, so resolve the
+        # indexed project/run path instead of the workspace-wide bare id.
+        selector = f"{project_id}/{run_id}"
         try:
-            summary = show_run(context.runs_root, f"{project_id}/{run_id}")
+            summary = show_run(context.runs_root, selector)
         except ManifestStateError as error:
             # Preserve the public project API's historical "no matching run"
             # contract while allowing genuine manifest-integrity failures to

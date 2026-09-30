@@ -95,7 +95,16 @@ class SessionStore:
         row = self.db.execute("SELECT * FROM threads WHERE id=?", (thread_id,)).fetchone()
         if row is not None:
             if row["fingerprint"] != fingerprint:
-                raise AgentBoundaryError("Incompatible harness/model/skills; create a new thread")
+                approved = self.db.execute(
+                    "SELECT 1 FROM events WHERE thread=? AND kind='harness-upgrade-approved' "
+                    "AND json_extract(payload,'$.original_fingerprint')=? "
+                    "AND json_extract(payload,'$.target_fingerprint')=? LIMIT 1",
+                    (thread_id, row["fingerprint"], fingerprint),
+                ).fetchone()
+                if approved is None:
+                    raise AgentBoundaryError(
+                        "Incompatible harness/model/skills; create a new thread"
+                    )
             if goal is not None and goal != row["goal"]:
                 raise AgentBoundaryError("Thread goal is immutable; use a new thread")
             return str(row["goal"])
@@ -105,6 +114,43 @@ class SessionStore:
             self.db.execute("INSERT INTO threads VALUES(?,?,?)", (thread_id, fingerprint, goal))
         self.event(thread_id, "user", {"text": goal})
         return goal
+
+    def approve_harness_upgrade(
+        self, thread_id: str, *, previous: str, target: str, release: str
+    ) -> bool:
+        """Record a reviewed deployment upgrade without rewriting thread authority.
+
+        Called only by release administration, never by a scientific tool or API.
+        The prior fingerprint must already be accepted by this exact thread.
+        Model or skill configurations producing any other hash remain rejected.
+        """
+        import re
+
+        if not all(re.fullmatch(r"[0-9a-f]{64}", value) for value in (previous, target)):
+            raise AgentBoundaryError("Invalid harness fingerprint")
+        if not re.fullmatch(r"[0-9a-f]{40}", release):
+            raise AgentBoundaryError("An exact reviewed release commit is required")
+        self.thread(thread_id, previous)
+        row = self.db.execute("SELECT fingerprint FROM threads WHERE id=?", (thread_id,)).fetchone()
+        assert row is not None
+        existing = self.db.execute(
+            "SELECT 1 FROM events WHERE thread=? AND kind='harness-upgrade-approved' "
+            "AND json_extract(payload,'$.target_fingerprint')=? LIMIT 1",
+            (thread_id, target),
+        ).fetchone()
+        if existing is not None:
+            return False
+        self.event(
+            thread_id,
+            "harness-upgrade-approved",
+            {
+                "original_fingerprint": row[0],
+                "previous_fingerprint": previous,
+                "target_fingerprint": target,
+                "release": release,
+            },
+        )
+        return True
 
     def event(self, thread: str, kind: str, payload: Any) -> None:
         with self.db:

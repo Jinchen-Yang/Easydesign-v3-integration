@@ -119,7 +119,8 @@ class TargetBridge:
         confined(self.project, path)
         loaded = load_run_config(path, source_base_dir=self.project)
         if not isinstance(
-            loaded, (LoadedStructureRunConfig, LoadedSequenceRunConfig, LoadedRemoteRunConfig)
+            loaded,
+            (LoadedStructureRunConfig, LoadedSequenceRunConfig, LoadedRemoteRunConfig),
         ):
             raise AgentBoundaryError(
                 "Phase 1 supports local structures, local sequences or canonical remote sources"
@@ -138,11 +139,15 @@ class TargetBridge:
             raise AgentBoundaryError(
                 "Existing project must already be review-gated and stop after target preparation"
             )
-        if isinstance(source, LocalFileSourceConfig) and (
-            config.structure_prediction is not None
-            or (
-                source.identity.uniprot_accession is not None
-                and not getattr(self, "is_phase2", False)
+        if (
+            isinstance(loaded, LoadedStructureRunConfig)
+            and isinstance(source, LocalFileSourceConfig)
+            and (
+                config.structure_prediction is not None
+                or (
+                    source.identity.uniprot_accession is not None
+                    and not getattr(self, "is_phase2", False)
+                )
             )
         ):
             raise AgentBoundaryError(
@@ -236,7 +241,9 @@ class TargetBridge:
         with self.store.writer():
             loaded = self.validate_project()
             source = loaded.config.target.source
-            if isinstance(source, LocalFileSourceConfig):
+            if isinstance(loaded, LoadedStructureRunConfig) and isinstance(
+                source, LocalFileSourceConfig
+            ):
                 source_identity = source.identity
                 if getattr(self, "is_phase2", False) and source_identity.uniprot_accession is None:
                     from .target_identity import (
@@ -700,6 +707,12 @@ class TargetBridge:
                 )
             request_hash = canonical_model_sha256(request)
             refs.append(f"{path.relative_to(root).as_posix()}#sha256={sha256_file(path)}")
+            # A local source path is not necessarily a coordinate file.  Sequence
+            # projects also snapshot their FASTA under ``input-snapshot`` and may
+            # legitimately pause at a native Stage 1 decision before coordinates
+            # exist.  Only coordinate-backed projects have a chain inventory at
+            # this boundary; parsing FASTA as PDB/mmCIF turns a valid scientific
+            # gate into an operational TargetInputError.
             inventory = (
                 inventory_structure(source)
                 if isinstance(current, LoadedStructureRunConfig)

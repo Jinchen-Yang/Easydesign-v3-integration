@@ -224,7 +224,9 @@ def initialize_project(
     if uniprot_query is not None and taxon_id is None:
         raise ConfigurationError("--uniprot-query 必须同时提供 --taxon-id")
     if identity_uniprot is not None and target is None and pdb_id is None:
-        raise ConfigurationError("--identity-uniprot 只能配合本地 --target 或显式 --pdb-id")
+        raise ConfigurationError(
+            "--identity-uniprot 只能配合本地 --target 或显式 --pdb-id"
+        )
 
     source: Path | None = None
     msa_source: Path | None = None

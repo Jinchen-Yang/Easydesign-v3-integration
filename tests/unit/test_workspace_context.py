@@ -131,6 +131,12 @@ def test_child_environment_accepts_only_an_explicit_internal_git_code_root(
     environment = context.child_environment()
     paths = environment["PYTHONPATH"].split(os.pathsep)
     assert paths[-1] == str(candidate / "src")
+    assert environment[CODE_ROOT_ENVIRONMENT_VARIABLE] == str(candidate)
+    with monkeypatch.context() as child:
+        child.setenv(CODE_ROOT_ENVIRONMENT_VARIABLE, environment[CODE_ROOT_ENVIRONMENT_VARIABLE])
+        assert context.child_environment()["PYTHONPATH"].split(os.pathsep)[-1] == str(
+            candidate / "src"
+        )
     assert all(Path(path).is_relative_to(context.runtime_root) for path in paths)
 
     monkeypatch.setenv(CODE_ROOT_ENVIRONMENT_VARIABLE, str(tmp_path.parent))

@@ -1,5 +1,5 @@
 /** Product API v1. No Agent objects, model prose parsing, or filesystem paths. */
-export type GateAction = 'approve' | 'revise' | 'reject' | 'override';
+export type GateAction = "approve" | "revise" | "reject" | "override";
 export interface Artifact {
   id: string;
   label: string;
@@ -15,7 +15,7 @@ export interface Metric {
   label: string;
   value: number | string | boolean | null;
   unit: string | null;
-  direction: 'lower' | 'higher' | 'context';
+  direction: "lower" | "higher" | "context";
   status: string;
   rule_result: string | null;
   threshold: number | null;
@@ -84,7 +84,7 @@ export interface Decision {
 }
 export interface Site {
   id: string;
-  rank: string;
+  rank: string | null;
   name: string;
   selectable: boolean;
   design_labels: number[];
@@ -110,7 +110,7 @@ export interface RequestState {
     status?: string;
     resource_waiting?: boolean;
     queue?: {
-      state: 'queued' | 'starting';
+      state: "queued" | "starting";
       position: number | null;
       reason: string;
       cancellable: boolean;
@@ -120,11 +120,11 @@ export interface RequestState {
   updated: number;
 }
 export interface ProductLabOrderRequirements {
-  format: 'VHH' | 'VHH-Fc';
+  format: "VHH" | "VHH-Fc";
   amount: string;
   host: string;
   buffer: string;
-  profile: 'simulation-lab';
+  profile: "simulation-lab";
   preferred_date: string;
   purchase_order: string;
   sds_purity: string;
@@ -134,7 +134,7 @@ export interface ProductLabOrderRequirements {
   notes: string;
 }
 export interface ProductLabOrderDraft {
-  schema_version: '1';
+  schema_version: "1";
   candidate_ids: string[];
   requirements: ProductLabOrderRequirements;
   reviewed: true;
@@ -149,22 +149,22 @@ export interface ProductLabOrderCandidate {
 }
 export interface ProductLabOrderQuote {
   quote_id: string;
-  provider: 'mock-lab-v1';
-  environment: 'simulation';
+  provider: "mock-lab-v1";
+  environment: "simulation";
   draft_sha256: string;
   sample_count: number;
   illustrative_total: number;
-  currency: 'USD';
-  turnaround: 'simulation-only';
+  currency: "USD";
+  turnaround: "simulation-only";
   non_binding: true;
   external_request_sent: false;
 }
 export interface ProductLabOrderReceipt {
   receipt_id: string;
   order_id: string;
-  provider: 'mock-lab-v1';
-  environment: 'simulation';
-  status: 'simulated-accepted';
+  provider: "mock-lab-v1";
+  environment: "simulation";
+  status: "simulated-accepted";
   project_id: string;
   handoff_sha256: string;
   quote_id: string;
@@ -174,13 +174,13 @@ export interface ProductLabOrderReceipt {
   financial_commitment: false;
   external_request_sent: false;
   experiment_authorized: false;
-  ordering_status: 'simulation-only-not-ordered';
+  ordering_status: "simulation-only-not-ordered";
   receipt_sha256: string;
 }
 export interface ProductLabOrder {
-  schema_version: '1';
-  mode: 'simulation';
-  provider: 'mock-lab-v1';
+  schema_version: "1";
+  mode: "simulation";
+  provider: "mock-lab-v1";
   project_id: string;
   handoff_sha256: string;
   handoff_status: string;
@@ -190,12 +190,17 @@ export interface ProductLabOrder {
   draft: ProductLabOrderDraft | null;
   quote: ProductLabOrderQuote | null;
   receipt: ProductLabOrderReceipt | null;
-  capabilities: { save: boolean; quote: boolean; submit: boolean; real_order: false };
+  capabilities: {
+    save: boolean;
+    quote: boolean;
+    submit: boolean;
+    real_order: false;
+  };
   disclaimer: string;
 }
 export interface ProductSnapshot {
-  schema_version: '1';
-  mode: 'live';
+  schema_version: "1";
+  mode: "live";
   revision: string;
   project: Project;
   workflow: {
@@ -203,9 +208,14 @@ export interface ProductSnapshot {
     label: string;
     status: string;
     gate: number | null;
-    subtasks?: { label: string; status: 'waiting' | 'running' | 'complete' }[];
+    subtasks?: { label: string; status: "waiting" | "running" | "complete" }[];
   }[];
-  current_action: { id: string; stage: string; message: string; resumable: boolean };
+  current_action: {
+    id: string;
+    stage: string;
+    message: string;
+    resumable: boolean;
+  };
   specialists: { role: string; status: string; description?: string }[];
   scientific_context: {
     target?: Record<string, unknown>;
@@ -253,7 +263,7 @@ export interface ProductSnapshot {
   artifacts: Artifact[];
   conversation?: {
     id: string;
-    kind: 'user' | 'summary' | 'note';
+    kind: "user" | "summary" | "note";
     text: string;
     phase: string;
     retry_request_id?: string;
@@ -302,15 +312,24 @@ export interface Page<T> {
 }
 export interface LiveState {
   connection:
-    | 'loading'
-    | 'connected'
-    | 'reconnecting'
-    | 'authentication-required'
-    | 'access-denied';
+    | "loading"
+    | "connected"
+    | "reconnecting"
+    | "authentication-required"
+    | "access-denied";
   projects: Page<Project>;
   snapshot: ProductSnapshot | null;
   candidates: Page<Candidate>;
   selectedCandidate: Candidate | null;
+  candidatePhase?: "pilot" | "scale" | "candidates" | null;
+  transitionPhase?:
+    | "target"
+    | "site"
+    | "design"
+    | "pilot"
+    | "scale"
+    | "candidates"
+    | null;
   selectedProject: string | null;
   pending: boolean;
   error: string | null;
@@ -327,8 +346,77 @@ export interface GateInput {
 
 /** Target input variants accepted by CreateProject on the Product API. */
 export type ProductTargetInput =
-  | { kind: 'description'; description: string }
-  | { kind: 'protein-name'; name: string; organism: string }
-  | { kind: 'uniprot'; accession: string }
-  | { kind: 'pdb-id'; pdb_id: string }
-  | { kind: 'structure' | 'sequence'; artifact_id: string };
+  | { kind: "description"; description: string }
+  | { kind: "protein-name"; name: string; organism: string }
+  | { kind: "uniprot"; accession: string }
+  | { kind: "pdb-id"; pdb_id: string }
+  | { kind: "structure" | "sequence"; artifact_id: string };
+
+export interface LocalizationPassage {
+  id: string;
+  text: string;
+}
+export interface LocalizationResult {
+  locale: "zh-CN";
+  items: Record<string, string>;
+  source_sha256: string;
+}
+export interface GateInput {
+  action: GateAction;
+  selected_option_id: string;
+  instruction?: string;
+  revision_target?: string;
+  acknowledgement?: string;
+  reason?: string;
+}
+
+export interface LabOrderCandidate {
+  id: string;
+  selection_class: string;
+  selection_rank: number;
+  sequence_length: number;
+  sequence_sha256: string;
+  sequence_ready: boolean;
+}
+
+export interface LabOrderView {
+  schema_version: "1";
+  mode: "simulation";
+  provider: "mock-lab-v1";
+  project_id: string;
+  handoff_sha256: string;
+  handoff_status: string;
+  ordering_status: string;
+  revision: string;
+  candidates: LabOrderCandidate[];
+  draft: Record<string, unknown> | null;
+  quote: Record<string, unknown> | null;
+  receipt: Record<string, unknown> | null;
+  capabilities: {
+    save: boolean;
+    quote: boolean;
+    submit: boolean;
+    real_order: false;
+  };
+  disclaimer: string;
+}
+
+export interface LabOrderDraftInput {
+  schema_version: "1";
+  candidate_ids: string[];
+  requirements: {
+    format: "VHH" | "VHH-Fc";
+    amount: string;
+    host: string;
+    buffer: string;
+    profile: "simulation-lab";
+    preferred_date: string;
+    purchase_order: string;
+    sds_purity: string;
+    sec_purity: string;
+    endotoxin: string;
+    concentration: string;
+    notes: string;
+  };
+  reviewed: true;
+}

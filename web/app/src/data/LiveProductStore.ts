@@ -1,6 +1,8 @@
-import type { SnapshotAdapter } from '../adapters/WorkbenchAdapter';
+import type { SnapshotAdapter } from "../adapters/WorkbenchAdapter";
 import type {
   Candidate,
+  LocalizationPassage,
+  LocalizationResult,
   GateInput,
   LiveState,
   Page,
@@ -9,9 +11,9 @@ import type {
   ProductSnapshot,
   Project,
   RequestState,
-} from './product-contracts';
-import { appI18n } from '../shell/I18nProvider';
-import { needsPermissionRefresh } from '../shared/sessionEvents';
+} from "./product-contracts";
+import { appI18n } from "../shell/I18nProvider";
+import { needsPermissionRefresh } from "../shared/sessionEvents";
 
 export class ApiError extends Error {
   constructor(
@@ -20,10 +22,10 @@ export class ApiError extends Error {
     public status: number,
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
-const commonT = (key: string): string => appI18n.t(key, { ns: 'common' });
+const commonT = (key: string): string => appI18n.t(key, { ns: "common" });
 
 // Authentication recovery and uncertain server/transport failures retain identity.
 // Definitively rejected commands may be corrected and sent as a fresh request.
@@ -45,7 +47,16 @@ export interface LiveProductPort extends SnapshotAdapter<LiveState> {
   clearProject(): void;
   projectPage(offset: number): Promise<void>;
   renameProject(id: string, title: string): Promise<void>;
-  candidatePage(offset: number): Promise<void>;
+  candidatePage(
+    offset: number,
+    phase?: "pilot" | "scale" | "candidates",
+  ): Promise<void>;
+  deleteProject(id: string): Promise<void>;
+  artifactText(url: string): Promise<string>;
+  localizeScientific(
+    passages: LocalizationPassage[],
+    context: { stage: string; goal: string },
+  ): Promise<LocalizationResult>;
   selectCandidate(id: string): Promise<void>;
   createProject(
     title: string,
@@ -60,16 +71,42 @@ export interface LiveProductPort extends SnapshotAdapter<LiveState> {
   cancelRequest(id: string): Promise<void>;
 }
 interface ProductProjection {
-  surface?: 'easy';
+  surface?: "easy";
   projectLimit: number;
-  candidateView?: 'summary';
+  candidateView?: "summary";
 }
 
-const emptyPage = <T>(): Page<T> => ({ items: [], total: 0, offset: 0, limit: 20 });
+type TransitionPhase = NonNullable<LiveState["transitionPhase"]>;
+
+export function approvedTransitionPhase(
+  decision: ProductSnapshot["decision"],
+  input: GateInput,
+): TransitionPhase | null {
+  if (!decision || !["approve", "override"].includes(input.action)) return null;
+  if (decision.gate === 1) return "site";
+  if (decision.gate === 2) return "design";
+  if (decision.gate === 3) return "pilot";
+  if (decision.gate === 4) {
+    if (input.selected_option_id === "PROMOTE_TO_SCALE") return "scale";
+    if (input.selected_option_id === "REVISE_DESIGN") return "design";
+    if (input.selected_option_id === "REVISE_SITE") return "site";
+    return "pilot";
+  }
+  if (decision.gate === 5) return "candidates";
+  return null;
+}
+
+/** Poll serially after a response. A slow Runtime never accumulates overlapping GETs. */
+const emptyPage = <T>(): Page<T> => ({
+  items: [],
+  total: 0,
+  offset: 0,
+  limit: 20,
+});
 /** Poll serially after a response. A slow Runtime never accumulates overlapping GETs. */
 export class LiveProductStore implements LiveProductPort {
   protected state: LiveState = {
-    connection: 'loading',
+    connection: "loading",
     projects: emptyPage(),
     snapshot: null,
     candidates: emptyPage(),
@@ -79,16 +116,28 @@ export class LiveProductStore implements LiveProductPort {
     error: null,
     pendingRequest: null,
   };
-  private listeners = new Set<(event: { type: 'snapshot'; snapshot: LiveState }) => void>();
+  private candidatePageKey = "";
+  private candidatePages = new Map<string, Promise<void>>();
+  private candidateDetails = new Map<string, Promise<Candidate | null>>();
+  private listeners = new Set<
+    (event: { type: "snapshot"; snapshot: LiveState }) => void
+  >();
   private timer?: ReturnType<typeof setTimeout>;
   private stopped = false;
   private started = false;
   private suspended = false;
   private readDenied = false;
-  private readonly page = typeof document === 'undefined' ? undefined : document;
+  private readonly page =
+    typeof document === "undefined" ? undefined : document;
   private readonly visibilityChanged = () => {
     clearTimeout(this.timer);
-    if (this.started && !this.stopped && !this.suspended && !this.readDenied && !this.page?.hidden)
+    if (
+      this.started &&
+      !this.stopped &&
+      !this.suspended &&
+      !this.readDenied &&
+      !this.page?.hidden
+    )
       void this.refresh();
   };
   private refreshing?: Promise<void>;
@@ -101,25 +150,28 @@ export class LiveProductStore implements LiveProductPort {
     private interval = 2000,
     private readonly projection: ProductProjection = { projectLimit: 20 },
   ) {
-    this.page?.addEventListener('visibilitychange', this.visibilityChanged);
+    this.page?.addEventListener("visibilitychange", this.visibilityChanged);
   }
   private nextRefreshDelay() {
     if (
       this.state.pending ||
       (this.state.pendingRequest &&
-        ['accepted', 'running'].includes(this.state.pendingRequest.state)) ||
+        ["accepted", "running"].includes(this.state.pendingRequest.state)) ||
       this.state.snapshot?.requests.some((request) =>
-        ['accepted', 'running'].includes(request.state),
+        ["accepted", "running"].includes(request.state),
       ) ||
-      ['running', 'incomplete'].includes(this.state.snapshot?.project.status || '')
+      ["running", "incomplete"].includes(
+        this.state.snapshot?.project.status || "",
+      )
     )
       return this.interval;
-    if (this.state.snapshot?.project.status === 'awaiting_scientist') return 10000;
+    if (this.state.snapshot?.project.status === "awaiting_scientist")
+      return 10000;
     // Finished projects are immutable until an explicit user action. A slow
     // heartbeat keeps multi-tab changes visible without a permanent 2 s poll.
     if (
-      ['available', 'complete', 'blocked', 'stopped'].includes(
-        this.state.snapshot?.project.status || '',
+      ["available", "complete", "blocked", "stopped"].includes(
+        this.state.snapshot?.project.status || "",
       )
     )
       return 60000;
@@ -128,13 +180,14 @@ export class LiveProductStore implements LiveProductPort {
   private emit(update: Partial<LiveState>) {
     if (this.stopped) return;
     this.state = { ...this.state, ...update };
-    for (const listener of this.listeners) listener({ type: 'snapshot', snapshot: this.state });
+    for (const listener of this.listeners)
+      listener({ type: "snapshot", snapshot: this.state });
   }
   async load() {
     await this.refresh();
     return this.state;
   }
-  subscribe(cb: (event: { type: 'snapshot'; snapshot: LiveState }) => void) {
+  subscribe(cb: (event: { type: "snapshot"; snapshot: LiveState }) => void) {
     this.listeners.add(cb);
     return () => {
       this.listeners.delete(cb);
@@ -143,7 +196,7 @@ export class LiveProductStore implements LiveProductPort {
   dispose() {
     this.stopped = true;
     clearTimeout(this.timer);
-    this.page?.removeEventListener('visibilitychange', this.visibilityChanged);
+    this.page?.removeEventListener("visibilitychange", this.visibilityChanged);
     this.listeners.clear();
   }
   /** 会话过期时暂停轮询：状态与请求编号表全部保留，等待恢复登录。 */
@@ -154,29 +207,33 @@ export class LiveProductStore implements LiveProductPort {
   resumePolling() {
     if (!this.suspended) return;
     this.suspended = false;
-    if (this.started && !this.stopped && !this.page?.hidden) void this.refresh();
+    if (this.started && !this.stopped && !this.page?.hidden)
+      void this.refresh();
   }
   protected async api<T>(path: string, init?: RequestInit): Promise<T> {
-    if (this.stopped) throw new Error(commonT('This workspace is no longer active.'));
-    const response = await this.transport('/api/v1' + path, {
+    if (this.stopped)
+      throw new Error(commonT("This workspace is no longer active."));
+    const response = await this.transport("/api/v1" + path, {
       ...init,
-      credentials: 'same-origin',
+      credentials: "same-origin",
       signal: AbortSignal.timeout(120000),
     });
     if (response.status === 401) {
       this.pausePolling();
-      this.emit({ connection: 'authentication-required' });
+      this.emit({ connection: "authentication-required" });
     }
     const value = await response.json().catch(() => {
       throw new ApiError(
-        'invalid_response',
-        commonT('The service could not return valid data for now; refresh and try again later.'),
+        "invalid_response",
+        commonT(
+          "The service could not return valid data for now; refresh and try again later.",
+        ),
         response.status,
       );
     });
     if (!response.ok) {
       if (
-        (init?.method ?? 'GET').toUpperCase() === 'GET' &&
+        (init?.method ?? "GET").toUpperCase() === "GET" &&
         needsPermissionRefresh(response.status, value?.error?.code)
       ) {
         // An inaccessible read must not leave former permissions/evidence on screen.
@@ -187,19 +244,22 @@ export class LiveProductStore implements LiveProductPort {
         this.projectsAt = 0;
         clearTimeout(this.timer);
         this.emit({
-          connection: 'access-denied',
-          error: value.error.message || commonT('Workspace access is unavailable.'),
+          connection: "access-denied",
+          error:
+            value.error.message || commonT("Workspace access is unavailable."),
           projects: emptyPage(),
           snapshot: null,
           candidates: emptyPage(),
           selectedCandidate: null,
+          candidatePhase: null,
+          transitionPhase: null,
           selectedProject: null,
           pendingRequest: null,
         });
       }
       throw new ApiError(
-        value.error?.code || 'request_failed',
-        value.error?.message || 'Request failed',
+        value.error?.code || "request_failed",
+        value.error?.message || "Request failed",
         response.status,
       );
     }
@@ -207,14 +267,17 @@ export class LiveProductStore implements LiveProductPort {
   }
   private post<T>(path: string, payload: unknown) {
     return this.api<T>(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
   }
   private observeRequest(request: RequestState) {
-    this.emit({ pendingRequest: request });
-    if (['succeeded', 'failed'].includes(request.state)) {
+    this.emit({
+      pendingRequest: request,
+      ...(request.state === "failed" ? { transitionPhase: null } : {}),
+    });
+    if (["succeeded", "failed"].includes(request.state)) {
       for (const [signature, id] of this.commands) {
         const { body } = JSON.parse(signature);
         // A completed turn may leave the same authorized step unfinished. A new
@@ -223,14 +286,15 @@ export class LiveProductStore implements LiveProductPort {
         // their revision/card binding.
         if (
           id === request.id &&
-          (['resume', 'message'].includes(body.action) || body.title !== undefined)
+          (["resume", "message"].includes(body.action) ||
+            body.title !== undefined)
         )
           this.commands.delete(signature);
       }
     }
   }
   async authenticate(token: string) {
-    await this.post('/session', { token });
+    await this.post("/session", { token });
     this.resumePolling();
   }
   private scheduleRefresh() {
@@ -269,45 +333,126 @@ export class LiveProductStore implements LiveProductPort {
         );
         if (generation !== this.generation || this.stopped) return;
         this.projectsAt = Date.now();
-        this.emit({ projects, connection: 'connected', error: null });
+        this.emit({ projects, connection: "connected", error: null });
       }
       if (
         this.state.pendingRequest &&
-        ['accepted', 'running'].includes(this.state.pendingRequest.state)
+        ["accepted", "running"].includes(this.state.pendingRequest.state)
       ) {
         const pendingRequest = await this.api<RequestState>(
-          '/requests/' + this.state.pendingRequest.id,
+          "/requests/" + this.state.pendingRequest.id,
         );
         if (generation !== this.generation || this.stopped) return;
         this.observeRequest(pendingRequest);
       }
       const id = this.state.selectedProject;
       if (id) {
-        const snapshot = await this.api<ProductSnapshot>(`/projects/${id}/workbench`);
+        const snapshot = await this.api<ProductSnapshot>(
+          `/projects/${id}/workbench`,
+        );
         if (generation !== this.generation || this.stopped) return;
+        const previous = this.state.snapshot;
         const changed =
           this.state.snapshot?.revision !== snapshot.revision ||
           this.state.snapshot?.event_cursor !== snapshot.event_cursor;
         // Approval revisions remain fixed while workers update progress, requests,
         // conversation and permissions. Publish every server snapshot in both views.
-        this.emit({ snapshot, connection: 'connected', error: null });
-        if (changed) await this.candidatePage(this.state.candidates.offset);
+        this.emit({
+          snapshot,
+          connection: "connected",
+          error: null,
+          ...(this.state.transitionPhase === snapshot.project.phase
+            ? { transitionPhase: null }
+            : {}),
+        });
+        const phaseChanged = previous?.project.phase !== snapshot.project.phase;
+        const executionFinished =
+          previous &&
+          ["running", "incomplete"].includes(previous.project.status) &&
+          !["running", "incomplete"].includes(snapshot.project.status);
+        if (
+          changed &&
+          (this.projection.surface !== "easy" ||
+            phaseChanged ||
+            executionFinished ||
+            !this.state.candidates.items.length)
+        )
+          void this.candidatePage(this.state.candidates.offset).catch(
+            () => undefined,
+          );
       }
     } catch (error) {
       if (generation !== this.generation || this.stopped) return;
       this.emit({
         connection:
           error instanceof ApiError && error.status === 401
-            ? 'authentication-required'
-            : 'reconnecting',
+            ? "authentication-required"
+            : "reconnecting",
         error: String((error as Error).message),
       });
     }
   }
-  async renameProject(id: string, title: string) {
-    const saved = await this.post<{ id: string; title: string }>(`/projects/${id}/title`, {
-      title,
+  async deleteProject(id: string) {
+    await this.api<{ id: string; deleted: boolean; recoverable: boolean }>(
+      `/projects/${id}`,
+      {
+        method: "DELETE",
+      },
+    );
+    if (this.state.selectedProject === id) this.clearProject();
+    this.projectsAt = 0;
+    const projects = await this.api<Page<Project>>(
+      this.projectsPath(this.state.projects.offset),
+    );
+    this.projectsAt = Date.now();
+    this.emit({ projects, connection: "connected", error: null });
+  }
+  async artifactText(url: string) {
+    if (
+      !/^\/api\/v1\/(?:scopes\/[a-zA-Z0-9_-]+\/)?artifacts\/[0-9a-f]{64}$/.test(
+        url,
+      )
+    )
+      throw new ApiError("invalid_artifact", "Invalid artifact identity", 400);
+    const response = await this.transport(url, {
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(120000),
     });
+    if (!response.ok)
+      throw new ApiError(
+        "artifact_unavailable",
+        "Design YAML is unavailable",
+        response.status,
+      );
+    return response.text();
+  }
+  async localizeScientific(
+    passages: LocalizationPassage[],
+    context: { stage: string; goal: string },
+  ) {
+    const response = await this.transport("/api/v1/rabbit/localize", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locale: "zh", passages, context }),
+      signal: AbortSignal.timeout(120000),
+    });
+    const value = await response.json();
+    if (!response.ok)
+      throw new ApiError(
+        value.error?.code || "localization_unavailable",
+        value.error?.message || "学术中文转换暂不可用",
+        response.status,
+      );
+    return value as LocalizationResult;
+  }
+  async renameProject(id: string, title: string) {
+    const saved = await this.post<{ id: string; title: string }>(
+      `/projects/${id}/title`,
+      {
+        title,
+      },
+    );
     this.emit({
       projects: {
         ...this.state.projects,
@@ -325,7 +470,9 @@ export class LiveProductStore implements LiveProductPort {
     });
   }
   private projectsPath(offset: number) {
-    const surface = this.projection.surface ? `surface=${this.projection.surface}&` : '';
+    const surface = this.projection.surface
+      ? `surface=${this.projection.surface}&`
+      : "";
     return `/projects?${surface}offset=${offset}&limit=${this.projection.projectLimit}`;
   }
   async projectPage(offset: number) {
@@ -342,15 +489,34 @@ export class LiveProductStore implements LiveProductPort {
       selectedProject: id,
       snapshot: null,
       selectedCandidate: null,
+      candidatePhase: null,
+      transitionPhase: null,
       candidates: emptyPage(),
       error: null,
     });
     const generation = this.generation;
-    const snapshot = await this.api<ProductSnapshot>(`/projects/${id}/workbench`);
+    const snapshot = await this.api<ProductSnapshot>(
+      `/projects/${id}/workbench`,
+    );
     if (generation !== this.generation || this.stopped) return;
-    this.emit({ snapshot, connection: 'connected', error: null });
-    await this.candidatePage(0);
+    this.emit({ snapshot, connection: "connected", error: null });
     this.scheduleRefresh();
+    if (this.projection.surface !== "easy") {
+      await this.candidatePage(0);
+      return;
+    }
+    const phase =
+      snapshot.project.phase === "pilot"
+        ? "pilot"
+        : snapshot.project.phase === "scale"
+          ? "scale"
+          : ["candidates", "handoff"].includes(snapshot.project.phase)
+            ? "candidates"
+            : null;
+    if (phase) {
+      this.emit({ candidatePhase: phase });
+      void this.candidatePage(0, phase).catch(() => undefined);
+    }
   }
   clearProject() {
     this.generation++;
@@ -358,12 +524,14 @@ export class LiveProductStore implements LiveProductPort {
       selectedProject: null,
       snapshot: null,
       selectedCandidate: null,
+      candidatePhase: null,
+      transitionPhase: null,
       candidates: emptyPage(),
       pendingRequest: null,
       error: null,
     });
   }
-  async candidatePage(offset: number) {
+  private async legacyCandidatePage(offset: number) {
     const id = this.state.selectedProject,
       generation = this.generation;
     if (!id || !this.state.snapshot?.candidates.total) {
@@ -371,19 +539,136 @@ export class LiveProductStore implements LiveProductPort {
       return;
     }
     const candidates = await this.api<Page<Candidate>>(
-      `/projects/${id}/candidates?offset=${offset}&limit=20${this.projection.candidateView === 'summary' ? '&view=summary' : ''}`,
+      `/projects/${id}/candidates?offset=${offset}&limit=20${this.projection.candidateView === "summary" ? "&view=summary" : ""}`,
     );
     if (generation !== this.generation || this.stopped) return;
     const prior = this.state.selectedCandidate?.id;
     this.emit({
       candidates,
       selectedCandidate:
-        candidates.items.find((c) => c.id === prior) ?? candidates.items[0] ?? null,
+        candidates.items.find((c) => c.id === prior) ??
+        candidates.items[0] ??
+        null,
     });
+  }
+  async candidatePage(
+    offset: number,
+    phase: "pilot" | "scale" | "candidates" = this.state.candidatePhase ||
+      "candidates",
+  ) {
+    if (this.projection.surface !== "easy")
+      return this.legacyCandidatePage(offset);
+    const id = this.state.selectedProject,
+      generation = this.generation;
+    if (!id) {
+      this.emit({
+        candidates: emptyPage(),
+        candidatePhase: phase,
+        selectedCandidate: null,
+      });
+      return;
+    }
+    const key = `${generation}:${id}:${phase}:${offset}`;
+    this.candidatePageKey = key;
+    this.emit({ candidatePhase: phase });
+    const pending = this.candidatePages.get(key);
+    if (pending) return pending;
+    const request = this.loadCandidatePage(
+      id,
+      generation,
+      offset,
+      phase,
+    ).finally(() => {
+      if (this.candidatePages.get(key) === request)
+        this.candidatePages.delete(key);
+    });
+    this.candidatePages.set(key, request);
+    return request;
+  }
+  private async loadCandidatePage(
+    id: string,
+    generation: number,
+    offset: number,
+    phase: "pilot" | "scale" | "candidates",
+  ) {
+    const candidates = await this.api<Page<Candidate>>(
+      `/projects/${id}/candidates?offset=${offset}&limit=100&view=summary&phase=${phase}`,
+    );
+    if (generation !== this.generation || this.stopped) return;
+    if (this.candidatePageKey !== `${generation}:${id}:${phase}:${offset}`)
+      return;
+    const prior =
+      this.state.candidatePhase === phase
+        ? this.state.selectedCandidate?.id
+        : null;
+    const chosen =
+      candidates.items.find((c) => c.id === prior) ??
+      candidates.items.find((c) => c.native_status === "pass") ??
+      candidates.items[0] ??
+      null;
+    const retained =
+      chosen &&
+      this.state.candidatePhase === phase &&
+      this.state.selectedCandidate?.id === chosen.id &&
+      this.state.selectedCandidate.artifacts.length
+        ? this.state.selectedCandidate
+        : chosen;
+    this.emit({
+      candidates,
+      candidatePhase: phase,
+      selectedCandidate: retained,
+    });
+    if (chosen && !retained?.artifacts.length)
+      void this.loadCandidateDetail(id, generation, chosen.id, phase);
   }
   async selectCandidate(id: string) {
     const candidate = this.state.candidates.items.find((c) => c.id === id);
-    if (candidate) this.emit({ selectedCandidate: candidate });
+    if (this.projection.surface !== "easy") {
+      if (candidate) this.emit({ selectedCandidate: candidate });
+      return;
+    }
+    if (!candidate || !this.state.selectedProject || !this.state.candidatePhase)
+      return;
+    this.emit({ selectedCandidate: candidate });
+    await this.loadCandidateDetail(
+      this.state.selectedProject,
+      this.generation,
+      id,
+      this.state.candidatePhase,
+    );
+  }
+  private async loadCandidateDetail(
+    project: string,
+    generation: number,
+    candidate: string,
+    phase: "pilot" | "scale" | "candidates",
+  ) {
+    const key = `${generation}:${project}:${phase}:${candidate}`;
+    let request = this.candidateDetails.get(key);
+    if (!request) {
+      request = this.api<Page<Candidate>>(
+        `/projects/${project}/candidates/${encodeURIComponent(candidate)}?offset=0&limit=1&view=full&phase=${phase}`,
+      )
+        .then((page) => page.items[0] ?? null)
+        .finally(() => this.candidateDetails.delete(key));
+      this.candidateDetails.set(key, request);
+    }
+    try {
+      const detail = await request;
+      if (
+        detail &&
+        generation === this.generation &&
+        this.state.selectedProject === project &&
+        this.state.candidatePhase === phase &&
+        this.state.selectedCandidate?.id === candidate
+      )
+        this.emit({ selectedCandidate: detail });
+      return detail;
+    } catch {
+      // Candidate detail and the 3D preview are optional secondary data. A
+      // transient failure must not mark the live progress connection as lost.
+      return null;
+    }
   }
   protected async command(path: string, body: Record<string, unknown>) {
     if (this.state.pending) return;
@@ -392,9 +677,12 @@ export class LiveProductStore implements LiveProductPort {
     this.commands.set(signature, request_id);
     this.emit({ pending: true, error: null });
     try {
-      const request = await this.post<RequestState>(path, { ...body, request_id });
+      const request = await this.post<RequestState>(path, {
+        ...body,
+        request_id,
+      });
       this.observeRequest(request);
-      if (path === '/projects') {
+      if (path === "/projects") {
         this.generation++;
         this.projectsAt = 0;
         this.emit({
@@ -402,6 +690,8 @@ export class LiveProductStore implements LiveProductPort {
           snapshot: null,
           candidates: emptyPage(),
           selectedCandidate: null,
+          candidatePhase: null,
+          transitionPhase: null,
         });
       }
     } catch (error) {
@@ -426,12 +716,12 @@ export class LiveProductStore implements LiveProductPort {
     let input_id: string | undefined;
     if (file) {
       const input = await this.api<{ id: string }>(
-        '/inputs?filename=' + encodeURIComponent(file.name),
-        { method: 'POST', body: file },
+        "/inputs?filename=" + encodeURIComponent(file.name),
+        { method: "POST", body: file },
       );
       input_id = input.id;
     }
-    await this.command('/projects', {
+    await this.command("/projects", {
       title,
       goal,
       ...(this.projection.surface ? { surface: this.projection.surface } : {}),
@@ -442,17 +732,24 @@ export class LiveProductStore implements LiveProductPort {
   async decide(input: GateInput) {
     const v = this.state.snapshot;
     if (!v?.decision || !v.capabilities.decide)
-      throw new Error(commonT('Refresh the current Scientist Gate.'));
-    await this.command(`/projects/${v.project.id}/actions`, {
-      ...input,
-      revision: v.revision,
-      card_id: v.decision.id,
-    });
+      throw new Error("Refresh the current Scientist Gate.");
+    const transitionPhase = approvedTransitionPhase(v.decision, input);
+    if (transitionPhase) this.emit({ transitionPhase });
+    try {
+      await this.command(`/projects/${v.project.id}/actions`, {
+        ...input,
+        revision: v.revision,
+        card_id: v.decision.id,
+      });
+    } catch (error) {
+      this.emit({ transitionPhase: null });
+      throw error;
+    }
   }
-  private async act(action: 'resume' | 'message', instruction?: string) {
+  private async act(action: "resume" | "message", instruction?: string) {
     const v = this.state.snapshot;
     if (!v || !v.capabilities[action])
-      throw new Error(commonT('This action is not currently available.'));
+      throw new Error(commonT("This action is not currently available."));
     await this.command(`/projects/${v.project.id}/actions`, {
       revision: v.revision,
       action,
@@ -460,15 +757,15 @@ export class LiveProductStore implements LiveProductPort {
     });
   }
   async resume() {
-    await this.act('resume');
+    await this.act("resume");
   }
   async sendMessage(text: string, phase?: string) {
     const v = this.state.snapshot;
     if (!v || !v.capabilities.message)
-      throw new Error(commonT('Please wait for the current answer.'));
+      throw new Error(commonT("Please wait for the current answer."));
     await this.command(`/projects/${v.project.id}/actions`, {
       revision: v.revision,
-      action: 'message',
+      action: "message",
       instruction: text,
       ...(phase ? { viewed_phase: phase } : {}),
     });
@@ -477,7 +774,10 @@ export class LiveProductStore implements LiveProductPort {
     if (this.state.pending) return;
     this.emit({ pending: true, error: null });
     try {
-      const request = await this.post<RequestState>('/requests/' + id + '/cancel', {});
+      const request = await this.post<RequestState>(
+        "/requests/" + id + "/cancel",
+        {},
+      );
       this.observeRequest(request);
     } catch (error) {
       this.emit({ error: (error as Error).message });
@@ -492,7 +792,10 @@ export class LiveProductStore implements LiveProductPort {
     if (this.state.pending) return;
     this.emit({ pending: true, error: null });
     try {
-      const request = await this.post<RequestState>('/requests/' + id + '/resume', {});
+      const request = await this.post<RequestState>(
+        "/requests/" + id + "/resume",
+        {},
+      );
       this.observeRequest(request);
     } catch (reason) {
       this.emit({ error: (reason as Error).message });
@@ -506,25 +809,26 @@ export class LiveProductStore implements LiveProductPort {
 
   async labOrder() {
     const id = this.state.selectedProject;
-    if (!id) throw new Error(commonT('Select a project first.'));
+    if (!id) throw new Error(commonT("Select a project first."));
     return this.api<ProductLabOrder>(`/projects/${id}/lab-order`);
   }
 
   protected async performLabOrder(
-    action: 'save' | 'quote' | 'submit',
+    action: "save" | "quote" | "submit",
     draft?: ProductLabOrderDraft,
-    acknowledgement?: 'SIMULATED_ORDER_ONLY',
+    acknowledgement?: "SIMULATED_ORDER_ONLY",
   ): Promise<ProductLabOrder> {
     const id = this.state.selectedProject;
-    if (!id) throw new Error(commonT('Select a project first.'));
-    if (this.state.pending) throw new Error(commonT('Please wait for the current request.'));
+    if (!id) throw new Error(commonT("Select a project first."));
+    if (this.state.pending)
+      throw new Error(commonT("Please wait for the current request."));
     // Reserve the mutation before a possible GET, so rapid clicks cannot race.
     this.emit({ pending: true, error: null });
     let signature: string | undefined;
     try {
       const current = this.state.snapshot?.lab_order || (await this.labOrder());
       if (!current.capabilities[action])
-        throw new Error(commonT('Refresh the current simulated order.'));
+        throw new Error(commonT("Refresh the current simulated order."));
       const body = {
         revision: current.revision,
         action,
@@ -534,17 +838,24 @@ export class LiveProductStore implements LiveProductPort {
       signature = JSON.stringify({ project: id, body });
       const request_id = this.labCommands.get(signature) || crypto.randomUUID();
       this.labCommands.set(signature, request_id);
-      const result = await this.post<{ order: ProductLabOrder }>(`/projects/${id}/lab-order`, {
-        request_id,
-        ...body,
-      });
+      const result = await this.post<{ order: ProductLabOrder }>(
+        `/projects/${id}/lab-order`,
+        {
+          request_id,
+          ...body,
+        },
+      );
       this.labCommands.delete(signature);
       if (this.state.snapshot?.project.id === id)
-        this.emit({ snapshot: { ...this.state.snapshot, lab_order: result.order }, error: null });
+        this.emit({
+          snapshot: { ...this.state.snapshot, lab_order: result.order },
+          error: null,
+        });
       return result.order;
     } catch (error) {
       this.emit({ error: (error as Error).message });
-      if (signature && isDefinitiveRejection(error)) this.labCommands.delete(signature);
+      if (signature && isDefinitiveRejection(error))
+        this.labCommands.delete(signature);
       throw error;
     } finally {
       this.emit({ pending: false });

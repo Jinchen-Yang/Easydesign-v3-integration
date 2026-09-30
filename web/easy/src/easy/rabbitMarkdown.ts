@@ -1,8 +1,9 @@
-export type RabbitInlineToken =
-  | { type: 'text'; value: string }
-  | { type: 'strong'; value: string };
+export type RabbitInlineToken = { type: 'text'; value: string } | { type: 'strong'; value: string };
 
-/** Parse Doudou's presentation-only emphasis without interpreting model text as HTML. */
+/**
+ * Parse the small, presentation-only Markdown subset supported by Doudou.
+ * React renders the returned text safely, so model output is never treated as HTML.
+ */
 export function parseRabbitInlineMarkdown(value: string): RabbitInlineToken[] {
   const tokens: RabbitInlineToken[] = [];
   let cursor = 0;

@@ -70,6 +70,10 @@
   padding: 18px;
 }
 
+.easy-live-science .viewer-top {
+  justify-content: flex-end;
+}
+
 .easy-live-gate,
 .easy-live-activity,
 .easy-live-order {
@@ -136,6 +140,56 @@
   line-height: 1.45;
 }
 
+.easy-live-design-plan-summary {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(115, 97, 228, 0.2);
+}
+
+.easy-live-design-plan-summary strong {
+  color: #3f3950;
+  font-size: 14px;
+}
+
+.easy-live-design-plan-summary ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #625c70;
+  font-size: 13px;
+}
+
+.easy-live-design-plan-summary small {
+  color: #6553ce;
+  font-weight: 600;
+}
+
+.easy-live-design-plan-summary .easy-live-explanation {
+  margin: 0;
+}
+
+.easy-live-design-plan-summary .easy-live-explanation > summary {
+  color: #6553ce;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.easy-live-design-plan-summary .easy-live-explanation > p {
+  margin: 8px 0;
+  color: #777381;
+  font-size: 12px;
+}
+
+.easy-live-design-plan-summary .easy-live-explanation pre {
+  max-height: 320px;
+  overflow: auto;
+}
+
 .easy-live-gate details {
   margin: 14px 0;
   color: #6d6877;
@@ -176,10 +230,6 @@
   box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
 }
 
-.easy-live-history-card > p {
-  color: #777381;
-}
-
 .easy-live-history-card dl {
   margin: 18px 0;
 }
@@ -199,6 +249,82 @@
 .easy-live-history-card dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.easy-live-explanation {
+  margin-top: 12px;
+  border-top: 1px solid #eeecf3;
+  color: #554d63;
+}
+
+.easy-live-explanation summary {
+  width: fit-content;
+  padding: 14px 0 4px;
+  cursor: pointer;
+  color: #6756d8;
+  font-weight: 750;
+}
+
+.easy-live-explanation h4 {
+  margin: 12px 0 4px;
+  color: #292532;
+  font-size: 14px;
+}
+
+.easy-live-explanation p {
+  margin: 5px 0;
+  line-height: 1.65;
+}
+
+.easy-live-explanation pre {
+  max-height: 480px;
+  margin: 12px 0 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid #e4e0ee;
+  border-radius: 12px;
+  background: #f8f7fb;
+  color: #302a3b;
+  font:
+    12px/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  white-space: pre;
+}
+
+.easy-live-yaml-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.easy-live-yaml-tabs button {
+  padding: 7px 10px;
+  border: 1px solid #ded9e9;
+  border-radius: 9px;
+  background: white;
+  color: #6f6879;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.easy-live-yaml-tabs button.selected {
+  border-color: #8674ee;
+  background: #f0edff;
+  color: #5d4ed1;
+}
+
+.easy-live-arm-reasons {
+  display: grid;
+  gap: 10px;
+}
+
+.easy-live-arm-reasons article + article {
+  padding-top: 8px;
+  border-top: 1px dashed #e4e0eb;
 }
 
 .easy-execution-progress {
@@ -401,7 +527,19 @@
 }
 
 .easy-live-site-tabs button {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
   padding: 9px;
+}
+
+.easy-live-site-tabs button small {
+  color: #8b8695;
+  font-size: 9px;
+}
+
+.easy-live-site-tabs button.preview-only {
+  border-style: dashed;
 }
 
 .easy-live-site-tabs button.selected,
@@ -413,6 +551,75 @@
 
 .easy-live-candidates {
   margin-top: 18px;
+}
+
+.easy-live-candidate-panel {
+  margin-top: 16px;
+  padding: 22px;
+  border: 1px solid #e2dfeb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 10px 35px rgb(46 35 88 / 5%);
+}
+
+.easy-live-candidate-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.easy-live-candidate-heading span {
+  color: #7361e4;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.easy-live-candidate-heading h3 {
+  margin: 4px 0 0;
+}
+
+.easy-live-candidate-heading b {
+  color: #39866b;
+  font-size: 12px;
+}
+
+.easy-live-candidate-panel .easy-live-candidates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.easy-live-candidate-panel .easy-live-candidates button {
+  min-height: 72px;
+  margin-top: 0;
+  padding: 14px 16px;
+}
+
+.easy-live-candidate-panel .easy-live-candidates strong {
+  font-size: 15px;
+}
+
+.easy-live-filtered-candidates {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #efedf4;
+}
+
+.easy-live-filtered-candidates summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #777381;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.easy-live-empty-candidates {
+  margin: 0;
+  color: #817c89;
+  font-size: 12px;
 }
 
 .easy-live-candidates button {
@@ -524,6 +731,115 @@
   white-space: nowrap;
 }
 
+.easy-history-actions {
+  /* The movable companion intentionally lives above ordinary content. Keep the
+     row controls one layer higher so a bottom-right bunny can never make a
+     user's own project impossible to open or delete on a compact viewport. */
+  position: relative;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.easy-history-opened {
+  min-width: 132px;
+  white-space: nowrap;
+}
+
+.easy-history-opened time {
+  color: #6f6978;
+  font-variant-numeric: tabular-nums;
+}
+
+.easy-delete-project,
+.easy-confirm-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9px;
+  font-weight: 600;
+}
+
+.easy-delete-project {
+  padding: 9px 11px;
+  color: #9a4d5d;
+  border: 1px solid #ead7dc;
+  background: #fff;
+}
+
+.easy-delete-project:hover:not(:disabled) {
+  background: #fff6f7;
+  border-color: #dbaeb8;
+}
+
+.easy-delete-project:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.easy-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(36 26 49 / 24%);
+  backdrop-filter: blur(3px);
+}
+
+.easy-delete-dialog {
+  width: min(460px, 100%);
+  padding: 28px;
+  border: 1px solid #e4dce9;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(42 24 62 / 18%);
+}
+
+.easy-delete-dialog h2 {
+  margin: 0 0 14px;
+  font-size: 22px;
+}
+
+.easy-delete-dialog > strong {
+  display: block;
+  overflow: hidden;
+  color: #322d39;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.easy-delete-dialog p {
+  margin: 14px 0 24px;
+  color: #746e79;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.easy-delete-dialog > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.easy-confirm-delete {
+  padding: 10px 16px;
+  color: #fff;
+  background: #a94e61;
+}
+
+.easy-confirm-delete:hover:not(:disabled) {
+  background: #913f50;
+}
+
+.easy-confirm-delete:disabled {
+  opacity: 0.6;
+}
+
 .easy-history-table td:first-child small {
   margin-top: 4px;
   overflow: hidden;
@@ -577,6 +893,10 @@
   }
 
   .easy-live-order-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .easy-live-candidate-panel .easy-live-candidates {
     grid-template-columns: 1fr;
   }
 

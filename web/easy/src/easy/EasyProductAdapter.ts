@@ -4,6 +4,8 @@ import type {
   LabOrderDraftInput,
   LabOrderView,
   LiveState,
+  LocalizationPassage,
+  LocalizationResult,
   Page,
   ProductSnapshot,
   Project,
@@ -30,7 +32,8 @@ export interface EasyProductPort {
   clearProject(): void;
   projectPage(offset: number): Promise<void>;
   renameProject(id: string, title: string): Promise<void>;
-  candidatePage(offset: number): Promise<void>;
+  deleteProject(id: string): Promise<void>;
+  candidatePage(offset: number, phase?: 'pilot' | 'scale' | 'candidates'): Promise<void>;
   selectCandidate(id: string): Promise<void>;
   createProject(
     title: string,
@@ -44,6 +47,11 @@ export interface EasyProductPort {
     input: EasyInput,
     file?: File | null,
   ): Promise<void>;
+  artifactText(url: string): Promise<string>;
+  localizeScientific(
+    passages: LocalizationPassage[],
+    context: { stage: string; goal: string },
+  ): Promise<LocalizationResult>;
   decide(input: GateInput): Promise<void>;
   resume(): Promise<void>;
   sendMessage(text: string, phase?: string): Promise<void>;
@@ -55,6 +63,27 @@ export interface EasyProductPort {
   submitLabOrder(): Promise<LabOrderView>;
 }
 const emptyPage = <T>(): Page<T> => ({ items: [], total: 0, offset: 0, limit: 20 });
+
+type TransitionPhase = NonNullable<LiveState['transitionPhase']>;
+
+export function approvedTransitionPhase(
+  decision: ProductSnapshot['decision'],
+  input: GateInput,
+): TransitionPhase | null {
+  if (!decision || !['approve', 'override'].includes(input.action)) return null;
+  if (decision.gate === 1) return 'site';
+  if (decision.gate === 2) return 'design';
+  if (decision.gate === 3) return 'pilot';
+  if (decision.gate === 4) {
+    if (input.selected_option_id === 'PROMOTE_TO_SCALE') return 'scale';
+    if (input.selected_option_id === 'REVISE_DESIGN') return 'design';
+    if (input.selected_option_id === 'REVISE_SITE') return 'site';
+    return 'pilot';
+  }
+  if (decision.gate === 5) return 'candidates';
+  return null;
+}
+
 /** Poll serially after a response. A slow Runtime never accumulates overlapping GETs. */
 export class EasyProductAdapter implements EasyProductPort {
   private state: LiveState = {
@@ -62,11 +91,13 @@ export class EasyProductAdapter implements EasyProductPort {
     projects: emptyPage(),
     snapshot: null,
     candidates: emptyPage(),
+    candidatePhase: null,
     selectedCandidate: null,
     selectedProject: null,
     pending: false,
     error: null,
     pendingRequest: null,
+    transitionPhase: null,
   };
   private listeners = new Set<(event: { type: 'snapshot'; snapshot: LiveState }) => void>();
   private timer?: ReturnType<typeof setTimeout>;
@@ -82,6 +113,9 @@ export class EasyProductAdapter implements EasyProductPort {
   private projectsAt = 0;
   private commands = new Map<string, string>();
   private labCommands = new Map<string, string>();
+  private candidatePageKey = '';
+  private candidatePages = new Map<string, Promise<void>>();
+  private candidateDetails = new Map<string, Promise<Candidate | null>>();
   constructor(
     private transport: typeof fetch = (input, init) => fetch(input, init),
     private interval = 2000,
@@ -159,7 +193,10 @@ export class EasyProductAdapter implements EasyProductPort {
     });
   }
   private observeRequest(request: RequestState) {
-    this.emit({ pendingRequest: request });
+    this.emit({
+      pendingRequest: request,
+      ...(['failed'].includes(request.state) ? { transitionPhase: null } : {}),
+    });
     if (['succeeded', 'failed'].includes(request.state)) {
       for (const [signature, id] of this.commands) {
         const { body } = JSON.parse(signature);
@@ -219,24 +256,50 @@ export class EasyProductAdapter implements EasyProductPort {
       }
       const id = this.state.selectedProject;
       if (id) {
+        const previous = this.state.snapshot;
         const snapshot = await this.api<ProductSnapshot>(`/projects/${id}/workbench`);
         if (generation !== this.generation) return;
         const changed =
-          this.state.snapshot?.revision !== snapshot.revision ||
-          this.state.snapshot?.event_cursor !== snapshot.event_cursor;
-        // A scientific approval revision intentionally stays fixed while native
-        // workers update progress, requests and execution permissions.
-        const liveFields = (value: ProductSnapshot | null) =>
-          JSON.stringify([value?.jobs, value?.requests, value?.capabilities, value?.lifecycle]);
+          previous?.revision !== snapshot.revision ||
+          previous?.event_cursor !== snapshot.event_cursor ||
+          previous?.project.phase !== snapshot.project.phase;
+        const transitionFinished = Boolean(
+          this.state.transitionPhase && snapshot.project.phase === this.state.transitionPhase,
+        );
         if (
           changed ||
-          this.state.snapshot?.project.status !== snapshot.project.status ||
-          liveFields(this.state.snapshot) !== liveFields(snapshot) ||
-          this.state.connection !== 'connected' ||
-          this.state.error
+          JSON.stringify(previous?.jobs) !== JSON.stringify(snapshot.jobs) ||
+          JSON.stringify(previous?.requests) !== JSON.stringify(snapshot.requests) ||
+          transitionFinished ||
+          this.state.snapshot?.project.status !== snapshot.project.status
         )
-          this.emit({ snapshot, connection: 'connected', error: null });
-        if (changed) await this.candidatePage(this.state.candidates.offset);
+          this.emit({
+            snapshot,
+            connection: 'connected',
+            error: null,
+            ...(transitionFinished ? { transitionPhase: null } : {}),
+          });
+        else if (this.state.connection !== 'connected' || this.state.error !== null)
+          // A successful manual/automatic refresh is itself authoritative
+          // connection evidence, even when the scientific snapshot is
+          // byte-for-byte unchanged.  Do not leave a stale transport error in
+          // front of an otherwise healthy project.
+          this.emit({ connection: 'connected', error: null });
+        const phaseChanged = previous?.project.phase !== snapshot.project.phase;
+        const executionFinished =
+          previous != null &&
+          ['running', 'incomplete'].includes(previous.project.status) &&
+          !['running', 'incomplete'].includes(snapshot.project.status);
+        // Candidate projection is the heaviest read in the Easy surface. It is
+        // deliberately not part of the progress-poll critical path: every
+        // BoltzGen event must be able to repaint the progress card immediately.
+        // Refresh the list only when its population can have changed, and do so
+        // in the background. Per-candidate structures are hydrated separately.
+        if (
+          changed &&
+          (phaseChanged || executionFinished || this.state.candidates.items.length === 0)
+        )
+          void this.candidatePage(this.state.candidates.offset).catch(() => undefined);
       }
     } catch (error) {
       this.emit({
@@ -268,6 +331,18 @@ export class EasyProductAdapter implements EasyProductPort {
           : this.state.snapshot,
     });
   }
+  async deleteProject(id: string) {
+    await this.api<{ id: string; deleted: boolean; recoverable: boolean }>(`/projects/${id}`, {
+      method: 'DELETE',
+    });
+    if (this.state.selectedProject === id) this.clearProject();
+    this.projectsAt = 0;
+    const projects = await this.api<Page<Project>>(
+      `/projects?surface=easy&offset=${this.state.projects.offset}&limit=5`,
+    );
+    this.projectsAt = Date.now();
+    this.emit({ projects, connection: 'connected', error: null });
+  }
   async projectPage(offset: number) {
     this.emit({
       projects: await this.api<Page<Project>>(`/projects?surface=easy&offset=${offset}&limit=5`),
@@ -280,14 +355,39 @@ export class EasyProductAdapter implements EasyProductPort {
       snapshot: null,
       selectedCandidate: null,
       candidates: emptyPage(),
+      candidatePhase: null,
+      transitionPhase: null,
       error: null,
     });
     const generation = this.generation;
     const snapshot = await this.api<ProductSnapshot>(`/projects/${id}/workbench`);
     if (generation !== this.generation) return;
     this.emit({ snapshot, connection: 'connected', error: null });
-    await this.candidatePage(0);
+    // load() may have scheduled its first idle heartbeat before a deep-linked
+    // project was selected. Recalculate now so a running project starts its
+    // normal live-progress cadence immediately rather than waiting 30 seconds.
     this.scheduleRefresh();
+    const phase =
+      snapshot.project.phase === 'pilot'
+        ? 'pilot'
+        : snapshot.project.phase === 'scale'
+          ? 'scale'
+          : ['candidates', 'handoff'].includes(snapshot.project.phase)
+            ? 'candidates'
+            : null;
+    if (!phase) return;
+    // Reserve the phase before the deferred compact read. EasyLiveApp uses this
+    // marker to avoid launching a duplicate request while the shell is already
+    // visible and the candidate page is still loading.
+    this.emit({ candidatePhase: phase });
+    // The scientific shell is useful before the candidate page and 3D viewer
+    // finish loading. Do not batch the user's Open click behind that heavier read.
+    setTimeout(() => {
+      // Candidate rows and the 3D preview are secondary data. A transient
+      // compact-page failure must not replace a healthy workbench connection
+      // with a red global error; the next phase change/manual refresh retries it.
+      void this.candidatePage(0, phase).catch(() => undefined);
+    }, 0);
   }
   clearProject() {
     this.generation++;
@@ -296,31 +396,136 @@ export class EasyProductAdapter implements EasyProductPort {
       snapshot: null,
       selectedCandidate: null,
       candidates: emptyPage(),
+      candidatePhase: null,
       pendingRequest: null,
+      transitionPhase: null,
       error: null,
     });
   }
-  async candidatePage(offset: number) {
+  async candidatePage(offset: number, phase = this.state.candidatePhase || 'candidates') {
     const id = this.state.selectedProject,
       generation = this.generation;
-    if (!id || !this.state.snapshot?.candidates.total) {
-      this.emit({ candidates: emptyPage(), selectedCandidate: null });
+    if (!id) {
+      this.emit({ candidates: emptyPage(), candidatePhase: phase, selectedCandidate: null });
       return;
     }
+    const key = `${generation}:${id}:${phase}:${offset}`;
+    this.candidatePageKey = key;
+    this.emit({ candidatePhase: phase });
+    const pending = this.candidatePages.get(key);
+    if (pending) return pending;
+    const request = this.loadCandidatePage(id, generation, offset, phase).finally(() => {
+      if (this.candidatePages.get(key) === request) this.candidatePages.delete(key);
+    });
+    this.candidatePages.set(key, request);
+    return request;
+  }
+  private async loadCandidatePage(
+    id: string,
+    generation: number,
+    offset: number,
+    phase: 'pilot' | 'scale' | 'candidates',
+  ) {
     const candidates = await this.api<Page<Candidate>>(
-      `/projects/${id}/candidates?offset=${offset}&limit=20&view=summary`,
+      `/projects/${id}/candidates?offset=${offset}&limit=100&view=summary&phase=${phase}`,
     );
     if (generation !== this.generation) return;
-    const prior = this.state.selectedCandidate?.id;
+    if (this.candidatePageKey !== `${generation}:${id}:${phase}:${offset}`) return;
+    const prior = this.state.candidatePhase === phase ? this.state.selectedCandidate?.id : null;
+    const chosen =
+      candidates.items.find((c) => c.id === prior) ??
+      candidates.items.find((c) => c.native_status === 'pass') ??
+      candidates.items[0] ??
+      null;
+    const retained =
+      chosen &&
+      this.state.candidatePhase === phase &&
+      this.state.selectedCandidate?.id === chosen.id &&
+      this.state.selectedCandidate.artifacts.length
+        ? this.state.selectedCandidate
+        : chosen;
     this.emit({
       candidates,
-      selectedCandidate:
-        candidates.items.find((c) => c.id === prior) ?? candidates.items[0] ?? null,
+      candidatePhase: phase,
+      selectedCandidate: retained,
     });
+    if (chosen && !retained?.artifacts.length)
+      void this.loadCandidateDetail(id, generation, chosen.id, phase);
   }
   async selectCandidate(id: string) {
     const candidate = this.state.candidates.items.find((c) => c.id === id);
-    if (candidate) this.emit({ selectedCandidate: candidate });
+    if (!candidate || !this.state.selectedProject || !this.state.candidatePhase) return;
+    this.emit({ selectedCandidate: candidate });
+    await this.loadCandidateDetail(
+      this.state.selectedProject,
+      this.generation,
+      id,
+      this.state.candidatePhase,
+    );
+  }
+  private async loadCandidateDetail(
+    project: string,
+    generation: number,
+    candidate: string,
+    phase: 'pilot' | 'scale' | 'candidates',
+  ) {
+    const key = `${generation}:${project}:${phase}:${candidate}`;
+    let request = this.candidateDetails.get(key);
+    if (!request) {
+      request = this.api<Page<Candidate>>(
+        `/projects/${project}/candidates/${encodeURIComponent(candidate)}?offset=0&limit=1&view=full&phase=${phase}`,
+      )
+        .then((page) => page.items[0] ?? null)
+        .finally(() => this.candidateDetails.delete(key));
+      this.candidateDetails.set(key, request);
+    }
+    try {
+      const detail = await request;
+      if (
+        detail &&
+        generation === this.generation &&
+        this.state.selectedProject === project &&
+        this.state.candidatePhase === phase &&
+        this.state.selectedCandidate?.id === candidate
+      )
+        this.emit({ selectedCandidate: detail });
+      return detail;
+    } catch {
+      // Candidate detail and the 3D preview are optional secondary data. A
+      // transient failure must not mark the live progress connection as lost.
+      return null;
+    }
+  }
+  async artifactText(url: string) {
+    if (!/^\/api\/v1\/artifacts\/[0-9a-f]{64}$/.test(url))
+      throw new ApiError('invalid_artifact', 'Invalid artifact identity', 400);
+    const response = await this.transport(url, {
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!response.ok)
+      throw new ApiError('artifact_unavailable', 'Design YAML is unavailable', response.status);
+    return response.text();
+  }
+  async localizeScientific(
+    passages: LocalizationPassage[],
+    context: { stage: string; goal: string },
+  ) {
+    const response = await this.transport('/api/rabbit/localize', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locale: 'zh', passages, context }),
+      signal: AbortSignal.timeout(120000),
+    });
+    const value = await response.json();
+    if (!response.ok)
+      throw new ApiError(
+        value.error?.code || 'localization_unavailable',
+        value.error?.message || '学术中文转换暂不可用',
+        response.status,
+      );
+    return value as LocalizationResult;
   }
   private async command(path: string, body: Record<string, unknown>) {
     if (this.state.pending) return;
@@ -338,7 +543,9 @@ export class EasyProductAdapter implements EasyProductPort {
           selectedProject: request.project,
           snapshot: null,
           candidates: emptyPage(),
+          candidatePhase: null,
           selectedCandidate: null,
+          transitionPhase: null,
         });
       }
     } catch (error) {
@@ -416,11 +623,18 @@ export class EasyProductAdapter implements EasyProductPort {
     const v = this.state.snapshot;
     if (!v?.decision || !v.capabilities.decide)
       throw new Error('Refresh the current Scientist Gate.');
-    await this.command(`/projects/${v.project.id}/actions`, {
-      ...input,
-      revision: v.revision,
-      card_id: v.decision.id,
-    });
+    const transitionPhase = approvedTransitionPhase(v.decision, input);
+    if (transitionPhase) this.emit({ transitionPhase });
+    try {
+      await this.command(`/projects/${v.project.id}/actions`, {
+        ...input,
+        revision: v.revision,
+        card_id: v.decision.id,
+      });
+    } catch (error) {
+      this.emit({ transitionPhase: null });
+      throw error;
+    }
   }
   private async act(action: 'resume' | 'message', instruction?: string) {
     const v = this.state.snapshot;

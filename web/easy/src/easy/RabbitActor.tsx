@@ -12,7 +12,8 @@ export const RABBIT_ACTIONS: Record<RabbitStage, string> = {
   Scale: 'Preparing a batch of samples',
   Candidates: 'Celebrating the candidate panel',
 };
-/** The supplied rabbit remains the texture; gestures deform its original artwork. */
+
+/** Keep the transparent supplied mascot while stage-specific props and motion show its task. */
 export function RabbitActor({ stage, active }: { stage: RabbitStage; active: boolean }) {
   return (
     <span className="rabbit-actor" aria-hidden="true" data-stage={stage}>

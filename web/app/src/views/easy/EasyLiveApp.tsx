@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { ui, isEnglish } from "./upstreamLabels";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   Check,
@@ -10,34 +11,86 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
-} from 'lucide-react';
-import { Brand } from '../../components/Brand';
-import { WorkspaceAccessNotice } from '../../components/WorkspaceAccessNotice';
-import { emptyInput, INPUT_TYPES, STEPS, type EasyInput, type InputType } from './contracts';
-import { fileTypes, inputLabel, readInputFile } from './inputs';
-import { productGoal, validateLiveInput } from './live-input';
-import { latestQueueCancellation, projectListStatus } from './queue-presentation';
-import { RabbitMascot } from './RabbitMascot';
-import { EasyStructureViewer } from './EasyStructureViewer';
+  Trash2,
+} from "lucide-react";
+import { Brand } from "../../components/Brand";
+import { WorkspaceAccessNotice } from "../../components/WorkspaceAccessNotice";
+import {
+  emptyInput,
+  INPUT_TYPES,
+  STEPS,
+  type EasyInput,
+  type InputType,
+} from "./contracts";
+import { fileTypes, inputLabel, readInputFile } from "./inputs";
+import { productGoal, validateLiveInput } from "./live-input";
+import {
+  latestQueueCancellation,
+  projectListStatus,
+} from "./queue-presentation";
+import {
+  gateIntro,
+  gateOptionFallback,
+  gateTitle,
+  liveActionName,
+  liveConnectionName,
+  liveStageName,
+  liveStatusName,
+  normalizeLiveScientificChinese,
+} from "./liveChinese";
+import { RabbitMascot } from "./RabbitMascot";
+import {
+  formatProjectOpenTime,
+  loadRecentProjectOpens,
+  rememberProjectOpen,
+} from "./recent-projects";
+import { EasyStructureViewer } from "./EasyStructureViewer";
 import {
   awaitingDecisionRecovery,
+  shouldShowGateRiskDisclosure,
+  summarizeEasyDesignPlan,
   summarizeEasyActivity,
   summarizeGoal,
-} from './live-presentation';
-import type { EasyProductPort } from './EasyProductAdapter';
-import { readProjectRoute, stripLegacySearch, workspaceHref, writeProjectRoute } from './routeParams';
-import { DRAFT_KEYS } from '../../data/draftRecovery';
-import { useInputDraft } from '../../data/useInputDraft';
-import { DraftStatus } from '../../data/DraftStatus';
-import { FileDraftNotice } from '../../data/FileDraftNotice';
-import { scopeProductUrl, surfaceRights } from '../../shared/account-client';
+} from "./live-presentation";
+import type { EasyProductPort } from "./EasyProductAdapter";
+import {
+  readProjectRoute,
+  stripLegacySearch,
+  workspaceHref,
+  writeProjectRoute,
+} from "./routeParams";
+import { DRAFT_KEYS } from "../../data/draftRecovery";
+import { useInputDraft } from "../../data/useInputDraft";
+import { DraftStatus } from "../../data/DraftStatus";
+import { FileDraftNotice } from "../../data/FileDraftNotice";
+import { scopeProductUrl, surfaceRights } from "../../shared/account-client";
 import type {
+  Artifact,
+  Candidate,
   GateInput,
   LabOrderDraftInput,
   LabOrderView,
   LiveState,
+  LocalizationPassage,
+  Project,
   ProductSnapshot,
-} from './product-contracts';
+} from "./product-contracts";
+import {
+  optionIdForSite,
+  siteDisplayRank,
+  siteIdForOption,
+} from "./site-selection";
+
+type CandidatePhase = "pilot" | "scale" | "candidates";
+
+const STAGE_SUMMARY_TITLES = [
+  "目标信息",
+  "位点选择结果",
+  "设计方案",
+  "小规模试运行",
+  "扩大测试",
+  "最终候选",
+];
 
 const PHASE_INDEX: Record<string, number> = {
   target: 0,
@@ -49,9 +102,12 @@ const PHASE_INDEX: Record<string, number> = {
   handoff: 5,
 };
 
-function activeIndex(snapshot: ProductSnapshot | null) {
+function activeIndex(
+  snapshot: ProductSnapshot | null,
+  transitionPhase?: string | null,
+) {
   if (!snapshot) return 0;
-  return PHASE_INDEX[snapshot.project.phase] ?? 0;
+  return PHASE_INDEX[transitionPhase || snapshot.project.phase] ?? 0;
 }
 
 export function canAutoContinue(
@@ -59,163 +115,563 @@ export function canAutoContinue(
   pending: boolean,
   requestState?: string,
 ) {
-  if (!snapshot || !snapshot.capabilities.auto_continue || !snapshot.capabilities.resume)
+  if (
+    !snapshot ||
+    !snapshot.capabilities.auto_continue ||
+    !snapshot.capabilities.resume
+  )
     return false;
   // An incomplete execution may have been recovered by a newer durable worker.
   // Reconciliation only attaches that verified successor receipt; it does not
   // retry scientific compute.  Allow this bounded action to run automatically
   // while keeping all other incomplete states stopped for explicit review.
   const safeStatus =
-    snapshot.project.status === 'available' ||
-    (snapshot.project.status === 'incomplete' &&
-      snapshot.current_action.stage.endsWith('-reconcile'));
-  return !pending && !['running', 'accepted'].includes(requestState || '') && safeStatus;
+    snapshot.project.status === "available" ||
+    (snapshot.project.status === "incomplete" &&
+      snapshot.current_action.stage.endsWith("-reconcile"));
+  return (
+    !pending &&
+    !["running", "accepted"].includes(requestState || "") &&
+    safeStatus
+  );
 }
 
-function stageStatus(snapshot: ProductSnapshot | null, index: number) {
-  if (!snapshot) return 'waiting';
+export function shouldOfferManualResume(
+  snapshot: ProductSnapshot | null,
+  pending: boolean,
+  requestState?: string,
+) {
+  if (!snapshot || !snapshot.capabilities.resume || pending) return false;
+  if (["running", "accepted"].includes(requestState || "")) return false;
+  return ["available", "incomplete"].includes(snapshot.project.status);
+}
+
+export function visibleDesignActionError(
+  actionError: string,
+  _backgroundError: string | null,
+): string | null {
+  const message = actionError.trim();
+  return message || null;
+}
+
+export function isProductExecutionActive(
+  snapshot: ProductSnapshot | null,
+  pending: boolean,
+  requestState?: string,
+) {
+  return Boolean(
+    pending ||
+      ["accepted", "running"].includes(requestState || "") ||
+      snapshot?.project.status === "running" ||
+      snapshot?.project.status === "incomplete",
+  );
+}
+
+function stageStatus(
+  snapshot: ProductSnapshot | null,
+  index: number,
+  transitionPhase?: string | null,
+) {
+  if (!snapshot) return "waiting";
   const phase = STEPS[index].toLowerCase();
+  if (transitionPhase) {
+    const transitionIndex = PHASE_INDEX[transitionPhase] ?? 0;
+    if (index === transitionIndex) return "running";
+    if (index < transitionIndex) return "complete";
+  }
   const row = snapshot.workflow.find((item) => item.id === phase);
-  return row?.status || (index < activeIndex(snapshot) ? 'complete' : 'waiting');
+  return (
+    row?.status || (index < activeIndex(snapshot) ? "complete" : "waiting")
+  );
 }
 
 const PIPELINE_STEPS = [
-  ['boltzgen-initialize', 'Initialize'],
-  ['boltzgen-generate', 'Generate'],
-  ['boltzgen-inverse-fold', 'Inverse fold'],
-  ['boltzgen-refold', 'Refold'],
-  ['boltzgen-analysis', 'Analyze'],
-  ['boltzgen-filter', 'Filter'],
-  ['native-filter', 'Independent prediction / native filter'],
+  ["boltzgen-initialize", "初始化"],
+  ["boltzgen-generate", "生成"],
+  ["boltzgen-inverse-fold", "逆折叠"],
+  ["boltzgen-refold", "重折叠"],
+  ["boltzgen-analysis", "分析"],
+  ["boltzgen-filter", "筛选"],
+  ["native-filter", "独立结构预测 / 原生筛选"],
 ] as const;
 
-function ExecutionProgress({ snapshot }: { snapshot: ProductSnapshot }) {
-  const { t } = useTranslation('easy');
+function ExecutionProgress({
+  snapshot,
+  phase,
+  candidates,
+  candidatePhase,
+}: {
+  snapshot: ProductSnapshot;
+  phase: "pilot" | "scale";
+  candidates: Candidate[];
+  candidatePhase: CandidatePhase | null;
+}) {
+  const { t } = useTranslation("easy");
+  const phaseJobs = snapshot.jobs.filter(
+    (item) => item.phase === phase && item.progress,
+  );
   const job =
-    snapshot.jobs.find((item) => item.phase === snapshot.project.phase && item.progress) ||
-    snapshot.jobs.find((item) => item.progress);
+    phaseJobs.find((item) => ["running", "queued"].includes(item.status)) ??
+    phaseJobs[0];
   const progress = job?.progress;
-  if (!progress) return null;
-  const native = progress.stage_id.startsWith('05-') || progress.stage_id.startsWith('07-');
-  const current = native ? 'native-filter' : progress.substage;
+  const recorded = candidatePhase === phase ? candidates : [];
+  const workflowComplete =
+    snapshot.workflow.find((item) => item.id === phase)?.status === "complete";
+  if (!progress && !recorded.length) return null;
+  const native =
+    progress?.stage_id.startsWith("05-") === true ||
+    progress?.stage_id.startsWith("07-") === true;
+  const current = native ? "native-filter" : progress?.substage;
   const currentIndex = PIPELINE_STEPS.findIndex(([id]) => id === current);
-  const overall = progress.total
-    ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
+  const currentLabel = PIPELINE_STEPS.find(([id]) => id === current)?.[1];
+  const pipelineComplete = workflowComplete && recorded.length > 0;
+  const aggregate = phaseJobs.reduce(
+    (value, item) => ({
+      completed: value.completed + (item.progress?.completed || 0),
+      total: value.total + (item.progress?.total || 0),
+      completedTasks:
+        value.completedTasks + (item.progress?.completed_tasks || 0),
+      totalTasks: value.totalTasks + (item.progress?.total_tasks || 0),
+      runningTasks: value.runningTasks + (item.progress?.running_tasks || 0),
+    }),
+    {
+      completed: 0,
+      total: 0,
+      completedTasks: 0,
+      totalTasks: 0,
+      runningTasks: 0,
+    },
+  );
+  const completed =
+    workflowComplete && recorded.length ? recorded.length : aggregate.completed;
+  const total =
+    workflowComplete && recorded.length ? recorded.length : aggregate.total;
+  const completedTasks =
+    workflowComplete && recorded.length
+      ? new Set(recorded.map((item) => item.arm)).size
+      : aggregate.completedTasks;
+  const totalTasks =
+    workflowComplete && recorded.length
+      ? new Set(recorded.map((item) => item.arm)).size
+      : aggregate.totalTasks;
+  const overall = total
+    ? Math.min(100, Math.round((completed / total) * 100))
     : 0;
   const substage =
-    progress.substage_total && progress.substage_completed !== null
+    progress?.substage_total && progress.substage_completed !== null
       ? `${progress.substage_completed} / ${progress.substage_total}`
       : null;
   return (
-    <section className="easy-execution-progress" aria-label={t('Live execution progress')}>
+    <section
+      className="easy-execution-progress"
+      aria-label={t("Live execution progress")}
+    >
       <div className="easy-execution-title">
         <div>
-          <span>REAL EXECUTION</span>
+          <span>{ui("真实计算")}</span>
           <strong>
-            {native ? t('Independent structure prediction and native filter') : progress.substage_label || 'BoltzGen'}
+            {phase === "pilot" ? ui("小规模试运行") : ui("扩大测试")} ·{" "}
+            {native
+              ? ui("独立结构预测与原生筛选")
+              : currentLabel
+                ? ui(currentLabel)
+                : ui("候选结构计算")}
           </strong>
         </div>
         <b>
-          {progress.total
-            ? t('{{completed}} / {{total}} candidates', {
-                completed: progress.completed,
-                total: progress.total,
-              })
-            : t('Waiting for resources')}
+          {total
+            ? ui("{{v0}} / {{v1}} 条", { v0: completed, v1: total })
+            : ui("等待资源")}
         </b>
       </div>
       <div
         className="easy-progress-track"
         role="progressbar"
         aria-valuemin={0}
-        aria-valuemax={progress.total || 1}
-        aria-valuenow={progress.completed}
+        aria-valuemax={total || 1}
+        aria-valuenow={completed}
       >
         <span style={{ width: `${overall}%` }} />
       </div>
       <div className="easy-pipeline-steps">
         {PIPELINE_STEPS.map(([id, label], stepIndex) => {
-          const done = native || (currentIndex >= 0 && stepIndex < currentIndex);
+          const done =
+            pipelineComplete ||
+            native ||
+            (currentIndex >= 0 && stepIndex < currentIndex);
           const active = id === current;
           return (
-            <div key={id} className={active ? 'active' : done ? 'done' : ''}>
+            <div key={id} className={active ? "active" : done ? "done" : ""}>
               <span>{done ? <Check size={11} /> : stepIndex + 1}</span>
-              <small>{label}</small>
+              <small>{ui(label)}</small>
               {active && substage && <em>{substage}</em>}
             </div>
           );
         })}
       </div>
       <p>
-        {t('{{completed}} / {{total}} strategy tasks complete', {
-          completed: progress.completed_tasks,
-          total: progress.total_tasks,
-        })}
-        {progress.running_tasks ? t(', {{count}} running', { count: progress.running_tasks }) : ''}
+        {completedTasks} / {totalTasks} {ui("个设计策略任务完成")}
+        {aggregate.runningTasks
+          ? ui("，{{v0}} 个正在运行", { v0: aggregate.runningTasks })
+          : ""}
       </p>
+      {phase === "pilot" &&
+        totalTasks > 0 &&
+        snapshot.scientific_context.arms.length > 0 &&
+        totalTasks % snapshot.scientific_context.arms.length === 0 && (
+          <p className="easy-execution-allocation">
+            {snapshot.scientific_context.arms.length} {ui("个设计分支 ×")}{" "}
+            {totalTasks / snapshot.scientific_context.arms.length}{" "}
+            {ui("个 VHH 骨架 =")}
+            {totalTasks}{" "}
+            {ui("个策略任务；当前显示的是经 Gate 3 批准后的实际执行范围。")}
+          </p>
+        )}
     </section>
+  );
+}
+
+function candidateScaffold(candidate: Candidate) {
+  return (
+    candidate.scaffold ||
+    candidate.arm.split("-scaffold-").at(-1) ||
+    ui("未标注")
+  );
+}
+
+function CandidatePanel({
+  phase,
+  candidates,
+  selected,
+  onSelect,
+}: {
+  phase: CandidatePhase;
+  candidates: Candidate[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const passed = candidates.filter(
+    (candidate) => candidate.native_status === "pass",
+  );
+  const notPassed = candidates.filter(
+    (candidate) => candidate.native_status !== "pass",
+  );
+  const card = (
+    candidate: Candidate,
+    rank: number,
+    passedCandidate: boolean,
+  ) => (
+    <button
+      key={candidate.id}
+      className={selected === candidate.id ? "selected" : ""}
+      onClick={() => onSelect(candidate.id)}
+      title={ui("技术 ID：{{v0}}", { v0: candidate.id })}
+    >
+      <span>
+        <strong>
+          {passedCandidate ? `Top ${rank}` : ui("未通过 {{v0}}", { v0: rank })}
+        </strong>
+        <small>
+          {ui("骨架")} {candidateScaffold(candidate).toUpperCase()} ·{" "}
+          {passedCandidate
+            ? ui("已通过")
+            : candidate.native_status === "incomplete"
+              ? ui("未完成")
+              : ui("未通过")}
+        </small>
+      </span>
+      <em>
+        {candidate.panel_role === "primary"
+          ? ui("主候选")
+          : candidate.panel_role === "backup"
+            ? ui("备选")
+            : ""}
+      </em>
+    </button>
+  );
+  return (
+    <section
+      className="easy-live-candidate-panel"
+      aria-label={ui("{{v0}} 候选分子", { v0: phase })}
+    >
+      <div className="easy-live-candidate-heading">
+        <div>
+          <span>
+            {phase === "pilot"
+              ? ui("小规模试运行")
+              : phase === "scale"
+                ? ui("扩大测试")
+                : ui("最终候选组")}
+          </span>
+          <h3>{ui("候选分子")}</h3>
+        </div>
+        <b>
+          {passed.length} {ui("条通过")}
+        </b>
+      </div>
+      <div className="easy-live-candidates">
+        {passed.length ? (
+          passed.map((candidate, index) => card(candidate, index + 1, true))
+        ) : (
+          <p className="easy-live-empty-candidates">
+            {ui("当前阶段尚无通过候选。")}
+          </p>
+        )}
+      </div>
+      {notPassed.length > 0 && (
+        <details className="easy-live-filtered-candidates">
+          <summary>
+            {ui("查看未通过或未完成的候选（")}
+            {notPassed.length}）
+          </summary>
+          <div className="easy-live-candidates">
+            {notPassed.map((candidate, index) =>
+              card(candidate, index + 1, false),
+            )}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function asReadableText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value))
+    return value.map(asReadableText).filter(Boolean).join("；");
+  return "";
+}
+
+export function gateLocalizationText(
+  localized: Record<string, string>,
+  id: string,
+  source: string,
+) {
+  return normalizeLiveScientificChinese(localized[id] || source);
+}
+
+function AcademicChineseDetails({
+  summary,
+  passages,
+  stage,
+  goal,
+  adapter,
+  children,
+}: {
+  summary: string;
+  passages: LocalizationPassage[];
+  stage: string;
+  goal: string;
+  adapter: EasyProductPort;
+  children: (localized: Record<string, string>) => ReactNode;
+}) {
+  const { i18n } = useTranslation("easy");
+  const english = i18n.language.startsWith("en");
+  const [localized, setLocalized] = useState<Record<string, string> | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const sourceKey = JSON.stringify([passages, english]);
+  const activeSource = useRef(sourceKey);
+  useEffect(() => {
+    activeSource.current = sourceKey;
+    setLocalized(null);
+    setLoading(false);
+    setError("");
+  }, [sourceKey]);
+  async function load() {
+    if (english || localized || loading) return;
+    const requestedSource = sourceKey;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await adapter.localizeScientific(passages, {
+        stage,
+        goal,
+      });
+      if (activeSource.current === requestedSource) setLocalized(result.items);
+    } catch (reason) {
+      if (activeSource.current === requestedSource)
+        setError((reason as Error).message);
+    } finally {
+      if (activeSource.current === requestedSource) setLoading(false);
+    }
+  }
+  return (
+    <details
+      className="easy-live-explanation"
+      onToggle={(event) => {
+        if (event.currentTarget.open) void load();
+      }}
+    >
+      <summary>{summary}</summary>
+      {loading && <p>{ui("正在生成忠实保留残基编号与结论强度的学术中文…")}</p>}
+      {error && (
+        <p className="easy-error">
+          {ui("学术中文暂未生成。")}
+          <button onClick={() => void load()}>{ui("重试")}</button>
+        </p>
+      )}
+      {english
+        ? children(
+            Object.fromEntries(passages.map((item) => [item.id, item.text])),
+          )
+        : localized && children(localized)}
+      {!english && localized && (
+        <details className="easy-live-source-audit">
+          <summary>{ui("查看英文原文（审计）")}</summary>
+          {passages.map((passage) => (
+            <p key={passage.id}>{passage.text}</p>
+          ))}
+        </details>
+      )}
+    </details>
+  );
+}
+
+function DesignYamlDisclosure({
+  artifacts,
+  adapter,
+  summary,
+}: {
+  artifacts: Artifact[];
+  adapter: EasyProductPort;
+  summary?: string;
+}) {
+  const [selected, setSelected] = useState(artifacts[0]?.id || "");
+  const [content, setContent] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState("");
+  const [error, setError] = useState("");
+  const artifact =
+    artifacts.find((item) => item.id === selected) || artifacts[0];
+  async function load(item: Artifact) {
+    if (content[item.id] || loading === item.id) return;
+    setLoading(item.id);
+    setError("");
+    try {
+      const text = await adapter.artifactText(item.url);
+      setContent((current) => ({ ...current, [item.id]: text }));
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setLoading("");
+    }
+  }
+  return (
+    <details
+      className="easy-live-explanation"
+      onClick={(event) => event.stopPropagation()}
+      onToggle={(event) => {
+        if (event.currentTarget.open && artifact) void load(artifact);
+      }}
+    >
+      <summary>
+        {summary || ui("查看详细 YAML（{{v0}} 个）", { v0: artifacts.length })}
+      </summary>
+      <p>
+        {ui("以下为可执行的冻结配置；字段名与标识符保留原始语法，不作翻译。")}
+      </p>
+      {artifacts.length > 1 && (
+        <div
+          className="easy-live-yaml-tabs"
+          role="tablist"
+          aria-label="Scaffold YAML"
+        >
+          {artifacts.map((item) => {
+            const [arm, scaffold = item.label] = item.label.split("-scaffold-");
+            const armNumber = arm.match(/^arm-(\d+)$/)?.[1];
+            return (
+              <button
+                key={item.id}
+                className={item.id === artifact?.id ? "selected" : ""}
+                role="tab"
+                aria-selected={item.id === artifact?.id}
+                onClick={() => {
+                  setSelected(item.id);
+                  void load(item);
+                }}
+              >
+                {armNumber ? ui("方案 {{v0}} · ", { v0: armNumber }) : ""}
+                {scaffold.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {loading === artifact?.id && <p>{ui("正在读取已冻结的设计文件…")}</p>}
+      {error && <p className="easy-error">{error}</p>}
+      {artifact && content[artifact.id] && <pre>{content[artifact.id]}</pre>}
+    </details>
   );
 }
 
 function HistoricalStagePanel({
   snapshot,
   stageIndex,
-  onReturn,
+  adapter,
 }: {
   snapshot: ProductSnapshot;
   stageIndex: number;
-  onReturn: () => void;
+  adapter: EasyProductPort;
 }) {
-  const { t } = useTranslation('easy');
   const context = snapshot.scientific_context;
-  const workflow = snapshot.workflow.find((item) => item.id === STEPS[stageIndex].toLowerCase());
   const rows: [string, string | number][] = [];
   if (stageIndex === 0) {
     rows.push(
-      ['Target', context.target_id || 'Verified target'],
-      ['Sequence length', context.sequence_length || '—'],
-      ['Chains', context.chains?.join(', ') || '—'],
-      ['Structure', context.structure?.label || '—'],
+      [ui("靶标"), context.target_id || ui("已验证靶标")],
+      [ui("序列长度"), context.sequence_length || "—"],
+      [ui("目标链"), context.chains?.join(", ") || "—"],
+      [ui("结构"), context.structure?.label || "—"],
     );
   } else if (stageIndex === 1) {
     rows.push(
-      ['Candidate sites', context.sites.length],
-      ['Approved site', context.approved_site?.selected_rank || 'Not recorded'],
+      [ui("候选位点"), context.sites.length],
+      [
+        ui("已批准位点"),
+        context.approved_site?.selected_rank || ui("尚未记录"),
+      ],
     );
     const approved = context.sites.find(
       (site) => site.id === context.approved_site?.selected_candidate_id,
     );
-    if (approved) rows.push(['Hotspots', approved.design_labels.join(', ')]);
+    if (approved)
+      rows.push([ui("热点残基"), approved.design_labels.join(", ")]);
   } else if (stageIndex === 2) {
     rows.push(
-      ['Design arms', context.arms.length],
-      ['Design approval', context.design_approved ? 'Recorded' : 'Not recorded'],
+      [ui("设计分支"), context.arms.length],
+      [ui("设计审批"), context.design_approved ? ui("已记录") : ui("尚未记录")],
     );
   } else if (stageIndex === 3 || stageIndex === 4) {
-    const phase = stageIndex === 3 ? 'pilot' : 'scale';
-    const job = snapshot.jobs.find((item) => item.phase === phase);
-    rows.push(['Execution status', job?.status || 'Complete']);
-    if (job?.progress)
-      rows.push(
-        ['Candidates', `${job.progress.completed} / ${job.progress.total}`],
-        ['Strategy tasks', `${job.progress.completed_tasks} / ${job.progress.total_tasks}`],
-      );
+    const phase = stageIndex === 3 ? "pilot" : "scale";
+    const jobs = snapshot.jobs.filter((item) => item.phase === phase);
+    rows.push([
+      ui("运行状态"),
+      jobs.some((item) => item.status === "running")
+        ? ui("运行中")
+        : ui("已完成"),
+    ]);
   } else {
     rows.push(
-      ['Candidate total', snapshot.candidates.total],
-      ['Native pass', snapshot.candidates.counts.pass || 0],
-      ['Workflow state', snapshot.current_action.stage],
+      [ui("候选总数"), snapshot.candidates.total],
+      [ui("通过原生筛选"), snapshot.candidates.counts.pass || 0],
+      [ui("工作流状态"), liveActionName(snapshot.current_action.stage)],
     );
   }
+  const approvedSite = context.sites.find(
+    (site) => site.id === context.approved_site?.selected_candidate_id,
+  );
+  const designYamls = snapshot.artifacts.filter(
+    (artifact) =>
+      ["yaml", "yml"].includes(artifact.format.toLowerCase()) &&
+      !artifact.label.startsWith("compiled-asset-"),
+  );
   return (
-    <section className="easy-live-history-card" aria-label={`${STEPS[stageIndex]} history`}>
-      <div className="easy-live-kicker">HISTORICAL STAGE · READ ONLY</div>
-      <h3>{t('{{stage}} stage record', { stage: STEPS[stageIndex] })}</h3>
-      <p>
-        {t('{{count}} steps recorded.', {
-          count: workflow?.subtasks?.filter((item) => item.status === 'complete').length || 0,
-        })}
-      </p>
+    <section
+      className="easy-live-history-card"
+      aria-label={ui(STAGE_SUMMARY_TITLES[stageIndex])}
+    >
+      <h3>{ui(STAGE_SUMMARY_TITLES[stageIndex])}</h3>
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>
@@ -224,9 +680,103 @@ function HistoricalStagePanel({
           </div>
         ))}
       </dl>
-      <button className="easy-outline" onClick={onReturn}>
-        {t('Back to current stage')}
-      </button>
+      {stageIndex === 1 &&
+        approvedSite &&
+        (() => {
+          const passages: LocalizationPassage[] = [
+            { id: "site.why", text: approvedSite.why_ranked },
+            ...approvedSite.risks.map((text, index) => ({
+              id: `site.risk.${index}`,
+              text,
+            })),
+            ...approvedSite.uncertainty.map((text, index) => ({
+              id: `site.uncertainty.${index}`,
+              text,
+            })),
+          ].filter((item) => item.text.trim());
+          return (
+            <AcademicChineseDetails
+              summary={ui("为什么选择位点 {{v0}}", { v0: approvedSite.rank })}
+              passages={passages}
+              stage="Site"
+              goal={snapshot.project.goal}
+              adapter={adapter}
+            >
+              {(zh) => (
+                <>
+                  <h4>
+                    {ui("位点")}
+                    {approvedSite.rank}
+                    {ui("（已批准）")}
+                  </h4>
+                  <p>{zh["site.why"]}</p>
+                  {approvedSite.risks.length > 0 && (
+                    <p>
+                      <strong>{ui("主要风险：")}</strong>
+                      {approvedSite.risks
+                        .map((_, index) => zh[`site.risk.${index}`])
+                        .join("；")}
+                    </p>
+                  )}
+                  {approvedSite.uncertainty.length > 0 && (
+                    <p>
+                      <strong>{ui("仍需确认：")}</strong>
+                      {approvedSite.uncertainty
+                        .map((_, index) => zh[`site.uncertainty.${index}`])
+                        .join("；")}
+                    </p>
+                  )}
+                </>
+              )}
+            </AcademicChineseDetails>
+          );
+        })()}
+      {stageIndex === 2 &&
+        context.arms.length > 0 &&
+        (() => {
+          const passages = context.arms.flatMap((arm, index) => {
+            const title =
+              asReadableText(arm.name) ||
+              asReadableText(arm.arm_id) ||
+              ui("设计 {{v0}}", { v0: index + 1 });
+            const rationale =
+              asReadableText(arm.rationale) ||
+              asReadableText(arm.hypothesis) ||
+              asReadableText(arm.expected_result) ||
+              ui("该设计遵循已批准位点与冻结的设计约束。");
+            return [
+              { id: `design.${index}.title`, text: title },
+              { id: `design.${index}.rationale`, text: rationale },
+            ];
+          });
+          return (
+            <AcademicChineseDetails
+              summary={ui("为什么采用这个设计方案")}
+              passages={passages}
+              stage="Design"
+              goal={snapshot.project.goal}
+              adapter={adapter}
+            >
+              {(zh) => (
+                <div className="easy-live-arm-reasons">
+                  {context.arms.map((arm, index) => {
+                    return (
+                      <article
+                        key={asReadableText(arm.arm_id) || `design-${index}`}
+                      >
+                        <h4>{zh[`design.${index}.title`]}</h4>
+                        <p>{zh[`design.${index}.rationale`]}</p>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </AcademicChineseDetails>
+          );
+        })()}
+      {stageIndex === 2 && designYamls.length > 0 && (
+        <DesignYamlDisclosure artifacts={designYamls} adapter={adapter} />
+      )}
     </section>
   );
 }
@@ -234,39 +784,122 @@ function HistoricalStagePanel({
 function GatePanel({
   snapshot,
   busy,
+  connection,
   onDecide,
   canDecide = true,
+  selectedOptionId,
+  onSelectedOptionChange,
+  adapter,
 }: {
   snapshot: ProductSnapshot;
   busy: boolean;
+  connection: LiveState["connection"];
   onDecide: (input: GateInput) => Promise<void>;
   canDecide?: boolean;
+  selectedOptionId?: string;
+  onSelectedOptionChange?: (optionId: string) => void;
+  adapter: EasyProductPort;
 }) {
   const decision = snapshot.decision!;
-  const { t } = useTranslation('easy');
-  const [selected, setSelected] = useState(decision.default_option_id);
+  const { t } = useTranslation("easy");
+  const [localSelected, setLocalSelected] = useState(
+    decision.default_option_id,
+  );
   const [showRevise, setShowRevise] = useState(false);
-  const [instruction, setInstruction] = useState('');
-  const [error, setError] = useState('');
+  const [instruction, setInstruction] = useState("");
+  const [error, setError] = useState("");
   useEffect(() => {
-    setSelected(decision.default_option_id);
+    setLocalSelected(decision.default_option_id);
     setShowRevise(false);
-    setInstruction('');
-    setError('');
+    setInstruction("");
+    setError("");
   }, [decision.id, decision.default_option_id]);
+  const selected = decision.options.some(
+    (item) => item.option_id === selectedOptionId,
+  )
+    ? selectedOptionId!
+    : localSelected;
+  function selectOption(optionId: string) {
+    setLocalSelected(optionId);
+    onSelectedOptionChange?.(optionId);
+  }
   const option = decision.options.find((item) => item.option_id === selected);
   const visibleOptions =
     decision.gate === 1
-      ? decision.options.filter((item) => item.option_id === decision.default_option_id)
+      ? decision.options.filter(
+          (item) => item.option_id === decision.default_option_id,
+        )
       : decision.options;
-  const approveAction = option?.actions.includes('approve')
-    ? 'approve'
-    : option?.actions.includes('override')
-      ? 'override'
+  const designPlanSummary = summarizeEasyDesignPlan(snapshot);
+  const designYamls = snapshot.artifacts.filter(
+    (artifact) =>
+      ["yaml", "yml"].includes(artifact.format.toLowerCase()) &&
+      !artifact.label.startsWith("compiled-asset-"),
+  );
+  const showRiskDisclosure = shouldShowGateRiskDisclosure(
+    decision.gate,
+    decision.warnings.length,
+    decision.limitations.length,
+  );
+  const gatePassages: LocalizationPassage[] = showRiskDisclosure
+    ? [
+        ...decision.warnings.map((text, index) => ({
+          id: `gate.warning.${index}`,
+          text,
+        })),
+        ...decision.limitations.map((text, index) => ({
+          id: `gate.limitation.${index}`,
+          text,
+        })),
+      ].filter((item) => item.text.trim())
+    : [];
+  const [gateChinese, setGateChinese] = useState<Record<string, string>>({});
+  const [gateLanguageError, setGateLanguageError] = useState(false);
+  const [gateLocalizationAttempt, setGateLocalizationAttempt] = useState(0);
+  const english = isEnglish();
+  const gateSourceKey = JSON.stringify(gatePassages);
+  useEffect(() => {
+    if (english) {
+      setGateChinese(
+        Object.fromEntries(gatePassages.map((item) => [item.id, item.text])),
+      );
+      return;
+    }
+    if (connection !== "connected" || gatePassages.length === 0) return;
+    let current = true;
+    setGateChinese({});
+    setGateLanguageError(false);
+    void adapter
+      .localizeScientific(gatePassages, {
+        stage: STEPS[activeIndex(snapshot)],
+        goal: snapshot.project.goal,
+      })
+      .then((result) => {
+        if (current) setGateChinese(result.items);
+      })
+      .catch(() => {
+        if (current) setGateLanguageError(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    adapter,
+    connection,
+    decision.id,
+    gateLocalizationAttempt,
+    gateSourceKey,
+    english,
+    snapshot.project.goal,
+  ]);
+  const approveAction = option?.actions.includes("approve")
+    ? "approve"
+    : option?.actions.includes("override")
+      ? "override"
       : null;
   async function submit(input: GateInput) {
     if (!canDecide) return;
-    setError('');
+    setError("");
     try {
       await onDecide(input);
     } catch (reason) {
@@ -274,49 +907,137 @@ function GatePanel({
     }
   }
   return (
-    <section className="easy-live-gate" aria-label={`Gate ${decision.gate}`}>
+    <section
+      className="easy-live-gate"
+      aria-label={ui("第 {{v0}} 关科学家审批", { v0: decision.gate })}
+    >
       <div className="easy-live-kicker">
-        <ShieldCheck size={14} /> SCIENTIST GATE {decision.gate}
+        <ShieldCheck size={14} /> {ui("科学家审批 · 第")}
+        {decision.gate} {ui("关")}
       </div>
-      <h3>{decision.gate === 1 ? t('Confirm the automatically recommended target structure') : decision.question}</h3>
-      <p>{decision.action_summary}</p>
-      <div className="easy-live-options" role="radiogroup" aria-label="Scientific options">
-        {visibleOptions.map((item) => (
-          <label key={item.option_id} className={selected === item.option_id ? 'selected' : ''}>
-            <input
-              type="radio"
-              name="easy-live-option"
-              checked={selected === item.option_id}
-              disabled={!item.eligible || busy}
-              onChange={() => setSelected(item.option_id)}
-            />
-            <span>
-              <strong>
-                {item.rank ? `Site ${item.rank} · ` : ''}
-                {item.label || item.option_id}
-              </strong>
-              <small>{item.description || (item.eligible ? t('Selectable') : t('Blocked'))}</small>
-              {item.design_labels && <em>Hotspot: {item.design_labels.join(', ')}</em>}
-            </span>
-          </label>
-        ))}
+      <h3>{gateTitle(decision.gate)}</h3>
+      <p>{gateIntro(decision.gate)}</p>
+      <div
+        className="easy-live-options"
+        role="radiogroup"
+        aria-label={ui("科学决策选项")}
+      >
+        {visibleOptions.map((item, index) => {
+          const fallback = gateOptionFallback(decision, item, index);
+          return (
+            <label
+              key={item.option_id}
+              className={selected === item.option_id ? "selected" : ""}
+            >
+              <input
+                type="radio"
+                name="easy-live-option"
+                checked={selected === item.option_id}
+                disabled={!item.eligible || busy}
+                onChange={() => selectOption(item.option_id)}
+              />
+              <span>
+                <strong>
+                  {normalizeLiveScientificChinese(fallback.label)}
+                </strong>
+                {fallback.description && (
+                  <small>
+                    {normalizeLiveScientificChinese(fallback.description)}
+                  </small>
+                )}
+                {item.design_labels && (
+                  <em>
+                    {ui("热点残基：")}
+                    {item.design_labels.join(", ")}
+                  </em>
+                )}
+                {designPlanSummary && (
+                  <div
+                    className="easy-live-design-plan-summary"
+                    aria-label={ui("设计方案规模")}
+                  >
+                    <strong>
+                      {ui("针对")}
+                      {designPlanSummary.siteLabel}
+                      {ui("，共设计")}
+                      {designPlanSummary.planCount} {ui("种方案")}
+                    </strong>
+                    <ul>
+                      {designPlanSummary.plans.map((plan) => (
+                        <li key={plan.id}>
+                          {plan.label}：
+                          {plan.scaffoldCount > 0
+                            ? ui("{{v0}} 种 scaffold", {
+                                v0: plan.scaffoldCount,
+                              })
+                            : ui("scaffold 数量待确认")}
+                        </li>
+                      ))}
+                    </ul>
+                    {designPlanSummary.yamlCount > 0 &&
+                      designYamls.length > 0 && (
+                        <DesignYamlDisclosure
+                          artifacts={designYamls}
+                          adapter={adapter}
+                          summary={ui("合计 {{v0}} 个可执行 YAML · 查看详情", {
+                            v0: designPlanSummary.yamlCount,
+                          })}
+                        />
+                      )}
+                  </div>
+                )}
+              </span>
+            </label>
+          );
+        })}
       </div>
-      {(decision.warnings.length > 0 || decision.limitations.length > 0) && (
+      {showRiskDisclosure && (
         <details>
-          <summary>{t('Risks and limitations ({{count}})', { count: decision.warnings.length + decision.limitations.length })}</summary>
+          <summary>
+            {t("Risks and limitations ({{count}})", {
+              count: decision.warnings.length + decision.limitations.length,
+            })}
+          </summary>
           <ul>
-            {[...decision.warnings, ...decision.limitations].map((item, index) => (
-              <li key={index}>{item}</li>
+            {decision.warnings.map((_, index) => (
+              <li key={`warning-${index}`}>
+                {gateLocalizationText(
+                  gateChinese,
+                  `gate.warning.${index}`,
+                  decision.warnings[index],
+                )}
+              </li>
+            ))}
+            {decision.limitations.map((_, index) => (
+              <li key={`limitation-${index}`}>
+                {gateLocalizationText(
+                  gateChinese,
+                  `gate.limitation.${index}`,
+                  decision.limitations[index],
+                )}
+              </li>
             ))}
           </ul>
         </details>
       )}
+      {gateLanguageError && (
+        <p className="easy-error">
+          {ui("学术中文暂未生成；当前显示英文原文。")}
+          <button
+            type="button"
+            disabled={connection !== "connected"}
+            onClick={() => setGateLocalizationAttempt((attempt) => attempt + 1)}
+          >
+            {ui("重试")}
+          </button>
+        </p>
+      )}
       {showRevise && (
         <textarea
-          aria-label="Revision instruction"
+          aria-label={ui("修改意见")}
           value={instruction}
           maxLength={1500}
-          placeholder={t('Describe what you want the science Agent to change')}
+          placeholder={t("Describe what you want the science Agent to change")}
           onChange={(event) => setInstruction(event.target.value)}
         />
       )}
@@ -327,19 +1048,28 @@ function GatePanel({
           disabled={!approveAction || busy || !canDecide}
           onClick={() =>
             void submit({
-              action: approveAction || 'approve',
+              action: approveAction || "approve",
               selected_option_id: selected,
-              ...(approveAction === 'override'
+              ...(approveAction === "override"
                 ? {
-                    reason: 'Scientist explicitly accepts the displayed discouraged option.',
-                    acknowledgement: decision.warnings.join(' ').slice(0, 1500) || 'Acknowledged',
+                    reason:
+                      "Scientist explicitly accepts the displayed discouraged option.",
+                    acknowledgement:
+                      decision.warnings.join(" ").slice(0, 1500) ||
+                      "Acknowledged",
                   }
                 : {}),
             })
           }
         >
-          {busy ? <LoaderCircle className="easy-spin" size={15} /> : <Check size={15} />}
-          {approveAction === 'override' ? t('Confirm and override') : t('Approve and continue')}
+          {busy ? (
+            <LoaderCircle className="easy-spin" size={15} />
+          ) : (
+            <Check size={15} />
+          )}
+          {approveAction === "override"
+            ? t("Confirm and override")
+            : t("Approve and continue")}
           <ArrowRight size={15} />
         </button>
         <button
@@ -347,7 +1077,7 @@ function GatePanel({
           disabled={busy || !canDecide}
           onClick={() => setShowRevise((value) => !value)}
         >
-          {t('Revise')}
+          {t("Revise")}
         </button>
         {showRevise && (
           <button
@@ -355,14 +1085,14 @@ function GatePanel({
             disabled={!instruction.trim() || busy || !canDecide}
             onClick={() =>
               void submit({
-                action: 'revise',
+                action: "revise",
                 selected_option_id: selected,
                 instruction,
                 revision_target: decision.revision_targets[0],
               })
             }
           >
-            {t('Submit revision')}
+            {t("Submit revision")}
           </button>
         )}
       </div>
@@ -379,15 +1109,17 @@ function SimulatedOrder({
   adapter: EasyProductPort;
   onUpdate: (value: LabOrderView) => void;
 }) {
-  const { t } = useTranslation('easy');
-  const [selected, setSelected] = useState(() => order.candidates.map((item) => item.id));
-  const [amount, setAmount] = useState('1 mg per sample');
-  const [format, setFormat] = useState<'VHH' | 'VHH-Fc'>('VHH');
+  const { t } = useTranslation("easy");
+  const [selected, setSelected] = useState(() =>
+    order.candidates.map((item) => item.id),
+  );
+  const [amount, setAmount] = useState("1 mg per sample");
+  const [format, setFormat] = useState<"VHH" | "VHH-Fc">("VHH");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   async function run(operation: () => Promise<LabOrderView>) {
     setBusy(true);
-    setError('');
+    setError("");
     try {
       onUpdate(await operation());
     } catch (reason) {
@@ -397,33 +1129,37 @@ function SimulatedOrder({
     }
   }
   const draft: LabOrderDraftInput = {
-    schema_version: '1',
+    schema_version: "1",
     candidate_ids: selected,
     requirements: {
       format,
       amount,
-      host: 'E. coli',
-      buffer: 'PBS',
-      profile: 'simulation-lab',
-      preferred_date: '',
-      purchase_order: '',
-      sds_purity: '',
-      sec_purity: '',
-      endotoxin: '',
-      concentration: '',
-      notes: 'Easy UI full-flow acceptance; simulation only.',
+      host: "E. coli",
+      buffer: "PBS",
+      profile: "simulation-lab",
+      preferred_date: "",
+      purchase_order: "",
+      sds_purity: "",
+      sec_purity: "",
+      endotoxin: "",
+      concentration: "",
+      notes: "Easy UI full-flow acceptance; simulation only.",
     },
     reviewed: true,
   };
   return (
     <section className="easy-live-order">
       <div className="easy-live-kicker">
-        <FlaskConical size={14} /> GATE 5 · SIMULATED LAB ORDER
+        <FlaskConical size={14} /> {ui("第 5 关 · 模拟实验下单")}
       </div>
-      <h3>{order.receipt ? t('Simulated order receipt generated') : t('Simulated lab order')}</h3>
+      <h3>
+        {order.receipt
+          ? t("Simulated order receipt generated")
+          : t("Simulated lab order")}
+      </h3>
       <p>{order.disclaimer}</p>
       <div className="easy-live-order-candidates">
-        {order.candidates.map((item) => (
+        {order.candidates.map((item, index) => (
           <label key={item.id}>
             <input
               type="checkbox"
@@ -438,9 +1174,10 @@ function SimulatedOrder({
               }
             />
             <span>
-              <strong>{item.id}</strong>
+              <strong>Top {index + 1}</strong>
               <small>
-                {item.selection_class} · {item.sequence_length} aa · {t('Full sequence verified')}
+                {item.selection_class} · {item.sequence_length} aa ·{" "}
+                {t("Full sequence verified")}
               </small>
             </span>
           </label>
@@ -449,17 +1186,19 @@ function SimulatedOrder({
       {!order.receipt && (
         <div className="easy-live-order-fields">
           <label>
-            {t('Construct format')}
+            {t("Construct format")}
             <select
               value={format}
-              onChange={(event) => setFormat(event.target.value as typeof format)}
+              onChange={(event) =>
+                setFormat(event.target.value as typeof format)
+              }
             >
               <option value="VHH">VHH</option>
               <option value="VHH-Fc">VHH-Fc</option>
             </select>
           </label>
           <label>
-            {t('Amount per sample')}
+            {t("Amount per sample")}
             <input
               value={amount}
               maxLength={160}
@@ -470,7 +1209,7 @@ function SimulatedOrder({
       )}
       {order.quote && !order.receipt && (
         <p className="easy-live-quote">
-          {t('Non-binding simulated quote: {{total}} {{currency}}', {
+          {t("Non-binding simulated quote: {{total}} {{currency}}", {
             total: String(order.quote.illustrative_total),
             currency: String(order.quote.currency),
           })}
@@ -479,16 +1218,16 @@ function SimulatedOrder({
       {order.receipt && (
         <dl className="easy-live-receipt">
           <div>
-            <dt>{t('Simulated order')}</dt>
+            <dt>{t("Simulated order")}</dt>
             <dd>{String(order.receipt.order_id)}</dd>
           </div>
           <div>
-            <dt>{t('Status')}</dt>
+            <dt>{t("Status")}</dt>
             <dd>{String(order.receipt.status)}</dd>
           </div>
           <div>
-            <dt>{t('Real external request')}</dt>
-            <dd>{t('Not sent')}</dd>
+            <dt>{t("Real external request")}</dt>
+            <dd>{t("Not sent")}</dd>
           </div>
         </dl>
       )}
@@ -501,7 +1240,7 @@ function SimulatedOrder({
               disabled={!selected.length || !amount.trim() || busy}
               onClick={() => void run(() => adapter.saveLabOrder(draft))}
             >
-              {t('Save simulated order draft')}
+              {t("Save simulated order draft")}
             </button>
           )}
           {order.draft && !order.quote && (
@@ -510,7 +1249,7 @@ function SimulatedOrder({
               disabled={busy}
               onClick={() => void run(() => adapter.quoteLabOrder())}
             >
-              {t('Generate simulated quote')}
+              {t("Generate simulated quote")}
             </button>
           )}
           {order.quote && (
@@ -519,7 +1258,7 @@ function SimulatedOrder({
               disabled={busy}
               onClick={() => void run(() => adapter.submitLabOrder())}
             >
-              {t('Confirm simulation-only and submit')}
+              {t("Confirm simulation-only and submit")}
             </button>
           )}
         </div>
@@ -534,37 +1273,64 @@ export function EasyLiveApp({
   computeAvailable = true,
 }: {
   adapter: EasyProductPort;
-  access?: { id: string; can_edit: boolean; can_execute: boolean; role: string };
+  access?: {
+    id: string;
+    can_edit: boolean;
+    can_execute: boolean;
+    role: string;
+  };
   computeAvailable?: boolean;
 }) {
-  const { t, i18n } = useTranslation('easy');
-  const locale = i18n.language === 'en' ? ('en' as const) : ('zh' as const);
+  const { t, i18n } = useTranslation("easy");
+  const locale = i18n.language === "en" ? ("en" as const) : ("zh" as const);
   const { canExecute } = surfaceRights(access, computeAvailable);
   const [state, setState] = useState<LiveState | null>(null);
   const inputDraft = useInputDraft<EasyInput>(
-    DRAFT_KEYS.scoped(access?.id || 'single-user', 'easy', 'create'), emptyInput,
+    DRAFT_KEYS.scoped(access?.id || "single-user", "easy", "create"),
+    emptyInput,
     {
       valid: (value): value is EasyInput => {
-        if (!value || typeof value !== 'object') return false;
+        if (!value || typeof value !== "object") return false;
         const record = value as EasyInput;
-        return INPUT_TYPES.some((type) => type.id === record.type) &&
-          ['text', 'name', 'goal', 'species'].every((key) => typeof record[key as keyof EasyInput] === 'string') &&
-          (record.file === null || (!!record.file && typeof record.file.name === 'string' && typeof record.file.size === 'number'));
+        return (
+          INPUT_TYPES.some((type) => type.id === record.type) &&
+          ["text", "name", "goal", "species"].every(
+            (key) => typeof record[key as keyof EasyInput] === "string",
+          ) &&
+          (record.file === null ||
+            (!!record.file &&
+              typeof record.file.name === "string" &&
+              typeof record.file.size === "number"))
+        );
       },
       // The selected File and its content are never persisted. A restored file
       // reference requires an explicit selection before any scientific request.
-      serialize: (value) => ({ ...value, text: value.file ? '' : value.text,
-        file: value.file ? { name: value.file.name, size: value.file.size } : null }),
+      serialize: (value) => ({
+        ...value,
+        text: value.file ? "" : value.text,
+        file: value.file
+          ? { name: value.file.name, size: value.file.size }
+          : null,
+      }),
     },
   );
   const { value: input, setValue: setInput } = inputDraft;
   const [file, setFile] = useState<File | null>(null);
   const needsFile = !!input.file && !file;
-  const [token, setToken] = useState('');
-  const [selectedSite, setSelectedSite] = useState<string | undefined>();
+  const [token, setToken] = useState("");
+  const [selectedOptionId, setSelectedOptionId] = useState<
+    string | undefined
+  >();
+  const [previewSiteId, setPreviewSiteId] = useState<string | undefined>();
   const [viewedIndex, setViewedIndex] = useState<number | null>(null);
   const [order, setOrder] = useState<LabOrderView | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [recentProjectOpens, setRecentProjectOpens] = useState(
+    loadRecentProjectOpens,
+  );
   const autoContinuation = useRef<string | null>(null);
   useEffect(() => {
     const unsubscribe = adapter.subscribe((event) => setState(event.snapshot));
@@ -573,9 +1339,11 @@ export function EasyLiveApp({
       stripLegacySearch();
       const requested = readProjectRoute();
       if (requested) {
-        // A shared/deep link must not wait for every historical project card to
-        // project before the requested scientific workspace becomes visible.
-        await Promise.all([adapter.selectProject(requested), adapter.load()]);
+        // Start the polling loop first, then issue exactly one workbench read.
+        // Running both calls concurrently used to make load() observe the newly
+        // selected id and duplicate the cold scientific projection on refresh.
+        await adapter.load();
+        await adapter.selectProject(requested);
       } else {
         const loaded = await adapter.load();
         setState(loaded);
@@ -591,87 +1359,167 @@ export function EasyLiveApp({
     state?.pendingRequest,
     ...(snapshot?.requests || []),
   ]);
-  const queuedRequest = [state?.pendingRequest, ...(snapshot?.requests || [])].find(
+  const queuedRequest = [
+    state?.pendingRequest,
+    ...(snapshot?.requests || []),
+  ].find(
     (request) =>
       request?.project === snapshot?.project.id &&
-      ['accepted', 'running'].includes(request?.state || '') &&
+      ["accepted", "running"].includes(request?.state || "") &&
       request?.result?.queue,
   );
   const currentProject = snapshot?.project.id || readProjectRoute();
-  const professionalUrl = workspaceHref(access?.id ?? '', 'pro', currentProject);
+  const professionalUrl = workspaceHref(
+    access?.id ?? "",
+    "pro",
+    currentProject,
+  );
   const autoContinuationEligible =
     !queueCancelled && canExecute && canAutoContinue(snapshot, false);
   const executionBlocked =
-    snapshot !== null && ['blocked', 'incomplete'].includes(snapshot.project.status);
+    snapshot !== null &&
+    ["blocked", "incomplete"].includes(snapshot.project.status);
   const failedCreate = !snapshot?.capabilities.resume
     ? snapshot?.requests.find(
-        (request) => request.kind === 'create' && ['failed', 'interrupted'].includes(request.state),
+        (request) =>
+          request.kind === "create" &&
+          ["failed", "interrupted"].includes(request.state),
       )
     : undefined;
-  const completed = snapshot?.current_action.stage === 'handoff-complete';
-  const stopped = snapshot?.project.status === 'stopped';
+  const completed = snapshot?.current_action.stage === "handoff-complete";
+  const stopped = snapshot?.project.status === "stopped";
   useEffect(() => {
     if (
       !canExecute || // team members, read-only observers and compute-off surfaces never auto-resume
       !snapshot ||
-      !canAutoContinue(snapshot, Boolean(state?.pending), state?.pendingRequest?.state)
+      !canAutoContinue(
+        snapshot,
+        Boolean(state?.pending),
+        state?.pendingRequest?.state,
+      )
     )
       return;
     const key = `${snapshot.project.id}:${snapshot.revision}:${snapshot.current_action.id}`;
     if (autoContinuation.current === key) return;
     autoContinuation.current = key;
-    void adapter.resume().catch((reason) => setError((reason as Error).message));
-  }, [adapter, canExecute, snapshot, state?.pending, state?.pendingRequest?.state]);
+    void adapter
+      .resume()
+      .catch((reason) => setError((reason as Error).message));
+  }, [
+    adapter,
+    canExecute,
+    snapshot,
+    state?.pending,
+    state?.pendingRequest?.state,
+  ]);
   useEffect(() => {
-    const defaultSite = snapshot?.scientific_context.approved_site?.selected_candidate_id;
-    setSelectedSite(defaultSite || snapshot?.decision?.default_option_id || undefined);
+    const defaultSite =
+      snapshot?.scientific_context.approved_site?.selected_candidate_id;
+    const selection =
+      defaultSite || snapshot?.decision?.default_option_id || undefined;
+    const sites = snapshot?.scientific_context.sites || [];
+    setSelectedOptionId(selection);
+    setPreviewSiteId(siteIdForOption(sites, snapshot?.decision, selection));
     setOrder(snapshot?.lab_order || null);
   }, [snapshot?.revision]);
   useEffect(() => {
     setViewedIndex(null);
   }, [snapshot?.project.id]);
+  useEffect(() => {
+    const project = snapshot?.project.id;
+    if (!project) return;
+    setRecentProjectOpens((current) => rememberProjectOpen(current, project));
+  }, [snapshot?.project.id]);
   const issue = validateLiveInput(input);
-  const index = activeIndex(snapshot);
+  const index = activeIndex(snapshot, state?.transitionPhase);
   const shownIndex = viewedIndex ?? index;
-  const active = Boolean(
+  const shownCandidatePhase: CandidatePhase | null =
+    shownIndex === 3
+      ? "pilot"
+      : shownIndex === 4
+        ? "scale"
+        : shownIndex === 5
+          ? "candidates"
+          : null;
+  useEffect(() => {
+    if (
+      !snapshot ||
+      !shownCandidatePhase ||
+      state?.candidatePhase === shownCandidatePhase
+    )
+      return;
+    void adapter
+      .candidatePage(0, shownCandidatePhase)
+      .catch((reason) => setError((reason as Error).message));
+  }, [
+    adapter,
+    shownCandidatePhase,
+    snapshot?.project.id,
+    state?.candidatePhase,
+  ]);
+  const requestInFlight = Boolean(
     state?.pending ||
-      (!queueCancelled &&
-        (snapshot?.project.status === 'running' || snapshot?.project.status === 'incomplete')),
+      ["accepted", "running"].includes(state?.pendingRequest?.state || ""),
+  );
+  const phaseTransition = Boolean(state?.transitionPhase);
+  // Adapter errors describe background polling, connection recovery and deferred
+  // candidate reads.  The connection badge already represents that transient
+  // state.  Only failures caused by an explicit user action belong in the
+  // persistent design-form error slot.
+  const designActionError = visibleDesignActionError(
+    error,
+    state?.error || null,
+  );
+  const active = isProductExecutionActive(
+    snapshot,
+    Boolean(state?.pending),
+    state?.pendingRequest?.state,
   );
   const candidateArtifact = state?.selectedCandidate?.artifacts.find((item) =>
-    ['pdb', 'cif', 'mmcif'].includes(item.format),
+    ["pdb", "cif", "mmcif"].includes(item.format),
+  );
+  const candidateDataReady = Boolean(
+    shownCandidatePhase && state?.candidatePhase === shownCandidatePhase,
   );
   const artifact =
-    (shownIndex >= 3 ? candidateArtifact : null) || snapshot?.scientific_context.structure || null;
-  const roles = shownIndex >= 3 ? state?.selectedCandidate?.structure_roles || {} : {};
+    (candidateDataReady ? candidateArtifact : null) ||
+    snapshot?.scientific_context.structure ||
+    null;
+  const roles = candidateDataReady
+    ? state?.selectedCandidate?.structure_roles || {}
+    : {};
   const technicalActivity = (snapshot?.recent_activity || [])
-    .filter((item) => item.visible !== false && !(completed && item.type === 'gate.awaiting'))
+    .filter(
+      (item) =>
+        item.visible !== false && !(completed && item.type === "gate.awaiting"),
+    )
     .slice(-8)
     .reverse();
   const activity =
     queueCancelled && !snapshot?.decision
       ? [
           {
-            id: 'queue-cancelled',
-            title: t('This request was not executed'),
-            summary: t('Queue cancelled; existing scientific evidence is retained.'),
-            status: 'waiting',
+            id: "queue-cancelled",
+            title: t("This request was not executed"),
+            summary: t(
+              "Queue cancelled; existing scientific evidence is retained.",
+            ),
+            status: "waiting",
           },
         ]
       : snapshot
         ? summarizeEasyActivity(snapshot)
         : [];
   const projects = state?.projects.items || [];
-  const gateOption = snapshot?.decision?.options.find((item) => item.option_id === selectedSite);
-  const visibleSite = gateOption?.rank
-    ? snapshot?.scientific_context.sites.find((site) => site.rank === gateOption.rank)
-    : selectedSite;
-  const visibleSiteId = typeof visibleSite === 'string' ? visibleSite : visibleSite?.id;
-  const candidates = state?.candidates.items || [];
+  const sites = snapshot?.scientific_context.sites || [];
+  const visibleSiteId = sites.some((site) => site.id === previewSiteId)
+    ? previewSiteId
+    : siteIdForOption(sites, snapshot?.decision, selectedOptionId);
+  const candidates = candidateDataReady ? state?.candidates.items || [] : [];
 
   async function start() {
     if (issue || needsFile || !state || !canExecute) return;
-    setError('');
+    setError("");
     try {
       const goal = productGoal(input);
       await adapter.createTypedProject(
@@ -680,7 +1528,7 @@ export function EasyLiveApp({
         input,
         file,
       );
-      inputDraft.complete('submitted', emptyInput());
+      inputDraft.complete("submitted", emptyInput());
       const created = await adapter.load();
       if (created.selectedProject) {
         writeProjectRoute(created.selectedProject);
@@ -694,44 +1542,99 @@ export function EasyLiveApp({
   function newDesign() {
     adapter.clearProject();
     setOrder(null);
-    setSelectedSite(undefined);
+    setSelectedOptionId(undefined);
+    setPreviewSiteId(undefined);
     setViewedIndex(null);
     autoContinuation.current = null;
     writeProjectRoute(null);
-    document.getElementById('design')?.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById("design")?.scrollIntoView({ behavior: "smooth" });
   }
 
   async function openProject(id: string) {
     await adapter.selectProject(id);
     writeProjectRoute(id);
-    document.getElementById('current-design')?.scrollIntoView({ behavior: 'smooth' });
+    document
+      .getElementById("current-design")
+      ?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  async function confirmDelete() {
+    if (
+      !deleteCandidate ||
+      deletingProject ||
+      (access !== undefined && !access.can_edit)
+    )
+      return;
+    const deletedSelected = state?.selectedProject === deleteCandidate.id;
+    setDeletingProject(true);
+    setDeleteError("");
+    try {
+      await adapter.deleteProject(deleteCandidate.id);
+      if (deletedSelected) {
+        setOrder(null);
+        setSelectedOptionId(undefined);
+        setPreviewSiteId(undefined);
+        setViewedIndex(null);
+        autoContinuation.current = null;
+        const params = new URLSearchParams(location.search);
+        params.delete("project");
+        params.delete("token");
+        history.replaceState(
+          {},
+          "",
+          `${location.pathname}${params.size ? `?${params}` : ""}#my-designs`,
+        );
+      }
+      setDeleteCandidate(null);
+    } catch (reason) {
+      setDeleteError(
+        (reason as { code?: string }).code === "project_busy"
+          ? ui("当前设计仍在运行，完成或停止后才能删除。")
+          : ui("删除失败，请稍后重试。"),
+      );
+    } finally {
+      setDeletingProject(false);
+    }
   }
 
   if (!state)
     return (
       <div className="easy-live-loading">
-        <LoaderCircle className="easy-spin" /> {t('Connecting to EasyDesign…')}
+        <LoaderCircle className="easy-spin" /> {t("Connecting to EasyDesign…")}
       </div>
     );
-  if (state.connection === 'access-denied') return <WorkspaceAccessNotice message={state.error} refresh={() => adapter.refresh()}/>;
-  if (state.connection === 'authentication-required')
+  if (state.connection === "access-denied")
+    return (
+      <WorkspaceAccessNotice
+        message={state.error}
+        refresh={() => adapter.refresh()}
+      />
+    );
+  if (state.connection === "authentication-required")
     return access ? (
       <main className="easy-live-login">
         <Brand />
-        <h1>{t('Please sign in again')}</h1>
-        <p>{t('The current account session has expired or been revoked; returning to the account page.')}</p>
+        <h1>{t("Please sign in again")}</h1>
+        <p>
+          {t(
+            "The current account session has expired or been revoked; returning to the account page.",
+          )}
+        </p>
         <a className="easy-primary" href="#/account">
-          {t('Back to account and teams')}
+          {t("Back to account and teams")}
         </a>
         {error && <p className="easy-error">{error}</p>}
       </main>
     ) : (
       <main className="easy-live-login">
         <Brand />
-        <h1>{t('Connect to the local research workspace')}</h1>
+        <h1>{t("Connect to the local research workspace")}</h1>
         <label>
-          Access token
-          <input value={token} onChange={(event) => setToken(event.target.value)} />
+          {ui("访问令牌")}
+          <input
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+          />
         </label>
         <button
           className="easy-primary"
@@ -742,7 +1645,7 @@ export function EasyLiveApp({
               .catch((reason) => setError((reason as Error).message))
           }
         >
-          {t('Connect')} <ArrowRight size={16} />
+          {t("Connect")} <ArrowRight size={16} />
         </button>
         {error && <p className="easy-error">{error}</p>}
       </main>
@@ -751,7 +1654,10 @@ export function EasyLiveApp({
   return (
     <div className="easy-app easy-live-app">
       <header className="easy-header">
-        <a className="easy-brand" href={workspaceHref(access?.id ?? '', 'easy')}>
+        <a
+          className="easy-brand"
+          href={workspaceHref(access?.id ?? "", "easy")}
+        >
           <Brand /> <span className="easy-edition">EASY · LIVE</span>
         </a>
         <nav>
@@ -762,24 +1668,42 @@ export function EasyLiveApp({
               newDesign();
             }}
           >
-            {t('Create new design')}
+            {t("Create new design")}
           </a>
-          {snapshot && <a href="#current-design" onClick={(event) => {
-            event.preventDefault();
-            document.getElementById('current-design')?.scrollIntoView({ behavior: 'smooth' });
-          }}>{t('Current task')}</a>}
-          <a href="#my-designs" onClick={(event) => {
-            event.preventDefault();
-            document.getElementById('my-designs')?.scrollIntoView({ behavior: 'smooth' });
-          }}>{t('My designs')}</a>
+          {snapshot && (
+            <a
+              href="#current-design"
+              onClick={(event) => {
+                event.preventDefault();
+                document
+                  .getElementById("current-design")
+                  ?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              {t("Current task")}
+            </a>
+          )}
+          <a
+            href="#my-designs"
+            onClick={(event) => {
+              event.preventDefault();
+              document
+                .getElementById("my-designs")
+                ?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            {t("My designs")}
+          </a>
         </nav>
         <div className="easy-header-end">
-          <span className={`easy-live-connection ${state.connection}`}>● {state.connection}</span>
+          <span className={`easy-live-connection ${state.connection}`}>
+            ● {liveConnectionName(state.connection)}
+          </span>
           <button className="easy-help" onClick={() => void adapter.refresh()}>
-            <RefreshCw size={14} /> {t('Refresh')}
+            <RefreshCw size={14} /> {t("Refresh")}
           </button>
           <a className="easy-pro-link" href={professionalUrl}>
-            {t('Open the Pro version')}
+            {t("Open the Pro version")}
           </a>
         </div>
       </header>
@@ -787,59 +1711,68 @@ export function EasyLiveApp({
       <main className="easy-main">
         {!canExecute && (
           <p className="account-permission-note">
-            {access?.role === 'observer'
-              ? t('Administrator read-only view: you cannot modify projects of others, approve Gates, or start compute.')
+            {access?.role === "observer"
+              ? t(
+                  "Administrator read-only view: you cannot modify projects of others, approve Gates, or start compute.",
+                )
               : !computeAvailable
-                ? t('This server has no scientific executor connected (account-management mode): browsing and collaborative editing are available; compute start and approval are temporarily unavailable.')
-                : t('Team collaborator: you can view and discuss; scientific approval and compute start are handled by team admins.')}
+                ? t(
+                    "This server has no scientific executor connected (account-management mode): browsing and collaborative editing are available; compute start and approval are temporarily unavailable.",
+                  )
+                : t(
+                    "Team collaborator: you can view and discuss; scientific approval and compute start are handled by team admins.",
+                  )}
           </p>
         )}
         <section className="easy-intro">
           <h1>
-            {t('Start from one sentence')}<span>{t('Real design')}</span>
+            {t("Start from one sentence")}
+            <span>{t("Real design")}</span>
           </h1>
-          <p>{t('Same frozen backend, same Scientist Gates; only the operation is simplified here, never the scientific boundaries.')}</p>
         </section>
         <section className="easy-input-card" id="design">
           <div className="easy-section-top">
             <span className="easy-demo-pill easy-live-pill">
-              <Sparkles size={12} /> LIVE BACKEND
+              <Sparkles size={12} /> {ui("实时后端")}
             </span>
           </div>
           <div className="easy-input-row">
             <label className="easy-type-label">
-              <span>{t('Input type')}</span>
+              <span>{t("Input type")}</span>
               <div className="easy-select-wrap">
                 <select
                   value={input.type}
                   onChange={(event) => {
-                    setInput({ ...emptyInput(), type: event.target.value as InputType });
+                    setInput({
+                      ...emptyInput(),
+                      type: event.target.value as InputType,
+                    });
                     setFile(null);
                   }}
                 >
-                  {INPUT_TYPES.filter((item) => !['pse', 'bundle'].includes(item.id)).map(
-                    (item) => (
-                      <option key={item.id} value={item.id}>
-                        {t(item.label)}
-                      </option>
-                    ),
-                  )}
+                  {INPUT_TYPES.filter(
+                    (item) => !["pse", "bundle"].includes(item.id),
+                  ).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {t(item.label)}
+                    </option>
+                  ))}
                 </select>
                 <ChevronDown size={14} />
               </div>
             </label>
             <div className="easy-input-body">
-              {input.type === 'structure' ? (
+              {input.type === "structure" ? (
                 <label className="easy-live-upload">
                   <FileUp size={20} />
-                  <span>{file?.name || t('Upload PDB / mmCIF')}</span>
+                  <span>{file?.name || t("Upload PDB / mmCIF")}</span>
                   <input
                     type="file"
                     accept={fileTypes.structure}
                     onChange={(event) => {
                       const next = event.target.files?.[0];
                       if (!next) return;
-                      void readInputFile('structure', next)
+                      void readInputFile("structure", next)
                         .then((value) => {
                           setFile(next);
                           setInput((current) => ({ ...current, ...value }));
@@ -848,37 +1781,45 @@ export function EasyLiveApp({
                     }}
                   />
                 </label>
-              ) : input.type === 'description' || input.type === 'sequence' ? (
+              ) : input.type === "description" || input.type === "sequence" ? (
                 <>
                   <textarea
                     rows={3}
                     value={input.text}
                     placeholder={
-                      input.type === 'sequence'
-                        ? '>target\nACDEFGHIKLMNPQRSTVWY'
-                        : t('e.g. Design an extracellular VHH binder that inhibits receptor signaling for human NK2R')
+                      input.type === "sequence"
+                        ? ">target\nACDEFGHIKLMNPQRSTVWY"
+                        : t(
+                            "e.g. Design an extracellular VHH binder that inhibits receptor signaling for human NK2R",
+                          )
                     }
                     onChange={(event) => {
                       setFile(null);
-                      setInput({ ...input, text: event.target.value, file: null });
+                      setInput({
+                        ...input,
+                        text: event.target.value,
+                        file: null,
+                      });
                     }}
                   />
-                  {input.type === 'sequence' && (
+                  {input.type === "sequence" && (
                     <label className="easy-live-upload">
                       <FileUp size={20} />
-                      <span>{file?.name || t('or upload a FASTA file')}</span>
+                      <span>{file?.name || t("or upload a FASTA file")}</span>
                       <input
                         type="file"
                         accept={fileTypes.sequence}
                         onChange={(event) => {
                           const next = event.target.files?.[0];
                           if (!next) return;
-                          void readInputFile('sequence', next)
+                          void readInputFile("sequence", next)
                             .then((value) => {
                               setFile(next);
                               setInput((current) => ({ ...current, ...value }));
                             })
-                            .catch((reason) => setError((reason as Error).message));
+                            .catch((reason) =>
+                              setError((reason as Error).message),
+                            );
                         }}
                       />
                     </label>
@@ -888,14 +1829,18 @@ export function EasyLiveApp({
                 <>
                   <input
                     value={input.text}
-                    placeholder={t('Target name or database ID')}
-                    onChange={(event) => setInput({ ...input, text: event.target.value })}
+                    placeholder={t("Target name or database ID")}
+                    onChange={(event) =>
+                      setInput({ ...input, text: event.target.value })
+                    }
                   />
-                  {input.type === 'protein-name' && (
+                  {input.type === "protein-name" && (
                     <input
                       value={input.species}
-                      placeholder={t('Species, e.g. Homo sapiens')}
-                      onChange={(event) => setInput({ ...input, species: event.target.value })}
+                      placeholder={t("Species, e.g. Homo sapiens")}
+                      onChange={(event) =>
+                        setInput({ ...input, species: event.target.value })
+                      }
                     />
                   )}
                 </>
@@ -906,32 +1851,51 @@ export function EasyLiveApp({
               disabled={state.pending || !!issue || needsFile || !canExecute}
               onClick={() => void start()}
             >
-              {state.pending ? <LoaderCircle className="easy-spin" size={16} /> : t('Start design')}{' '}
+              {state.pending ? (
+                <LoaderCircle className="easy-spin" size={16} />
+              ) : (
+                t("Start design")
+              )}{" "}
               <ArrowRight size={16} />
             </button>
           </div>
           <div className="easy-options">
             <label>
-              {t('Design name')}
+              {t("Design name")}
               <input
                 value={input.name}
-                onChange={(event) => setInput({ ...input, name: event.target.value })}
+                onChange={(event) =>
+                  setInput({ ...input, name: event.target.value })
+                }
               />
             </label>
-            {input.type !== 'description' && (
+            {input.type !== "description" && (
               <label>
-                {t('Design goal')}
+                {t("Design goal")}
                 <input
                   value={input.goal}
-                  onChange={(event) => setInput({ ...input, goal: event.target.value })}
+                  onChange={(event) =>
+                    setInput({ ...input, goal: event.target.value })
+                  }
                 />
               </label>
             )}
           </div>
-          {needsFile && input.file && <FileDraftNotice file={input.file} onRemove={() => setInput((current) => ({ ...current, file: null }))} />}
+          {needsFile && input.file && (
+            <FileDraftNotice
+              file={input.file}
+              onRemove={() =>
+                setInput((current) => ({ ...current, file: null }))
+              }
+            />
+          )}
           <DraftStatus status={inputDraft.status} />
-          {(error || state.error) && <p className="easy-error">{error || state.error}</p>}
-          {issue && Boolean(input.text || input.file) && <p className="easy-validation">{issue}</p>}
+          {designActionError && (
+            <p className="easy-error">{designActionError}</p>
+          )}
+          {issue && Boolean(input.text || input.file) && (
+            <p className="easy-validation">{issue}</p>
+          )}
         </section>
 
         {snapshot && (
@@ -939,59 +1903,90 @@ export function EasyLiveApp({
             <div className="easy-run-heading">
               <div>
                 <span className="easy-kicker">{snapshot.project.title}</span>
-                <h2>{STEPS[shownIndex]}</h2>
+                <h2>{liveStageName(shownIndex)}</h2>
               </div>
-              <span className={`easy-status ${snapshot.project.status}`}>
-                {state.pending || active ? (
+              <span
+                className={`easy-status ${phaseTransition ? "running" : snapshot.project.status}`}
+              >
+                {state.pending || active || phaseTransition ? (
                   <LoaderCircle className="easy-spin" size={12} />
                 ) : (
                   <Check size={12} />
                 )}
-                {queueCancelled && !snapshot.decision ? t('Queue cancelled') : snapshot.project.status}
+                {queueCancelled && !snapshot.decision
+                  ? ui("排队已取消")
+                  : phaseTransition
+                    ? ui("正在准备")
+                    : liveStatusName(snapshot.project.status)}
               </span>
             </div>
             <div className="easy-steps">
               {STEPS.map((step, stepIndex) => (
                 <button
                   key={step}
-                  className={`${stageStatus(snapshot, stepIndex) === 'complete' ? 'done' : ''} ${stepIndex === shownIndex ? 'current' : ''}`}
+                  className={`${stageStatus(snapshot, stepIndex, state.transitionPhase) === "complete" ? "done" : ""} ${stepIndex === shownIndex ? "current" : ""}`}
                   aria-pressed={stepIndex === shownIndex}
-                  disabled={stepIndex > index && stageStatus(snapshot, stepIndex) !== 'complete'}
-                  onClick={() => setViewedIndex(stepIndex === index ? null : stepIndex)}
+                  disabled={
+                    stepIndex > index &&
+                    stageStatus(snapshot, stepIndex, state.transitionPhase) !==
+                      "complete"
+                  }
+                  onClick={() =>
+                    setViewedIndex(stepIndex === index ? null : stepIndex)
+                  }
                 >
                   <span>
-                    {stageStatus(snapshot, stepIndex) === 'complete' ? (
+                    {stageStatus(snapshot, stepIndex, state.transitionPhase) ===
+                    "complete" ? (
                       <Check size={12} />
                     ) : (
                       stepIndex + 1
                     )}
                   </span>
-                  <b>{step}</b>
+                  <b>{liveStageName(step.toLowerCase())}</b>
                 </button>
               ))}
             </div>
             <div className="easy-live-workspace">
               <div className="easy-live-center">
                 {shownIndex !== index ? (
-                  <HistoricalStagePanel
-                    snapshot={snapshot}
-                    stageIndex={shownIndex}
-                    onReturn={() => setViewedIndex(null)}
-                  />
+                  <>
+                    <HistoricalStagePanel
+                      snapshot={snapshot}
+                      stageIndex={shownIndex}
+                      adapter={adapter}
+                    />
+                    {(shownIndex === 3 || shownIndex === 4) && (
+                      <ExecutionProgress
+                        snapshot={snapshot}
+                        phase={shownIndex === 3 ? "pilot" : "scale"}
+                        candidates={candidates}
+                        candidatePhase={state.candidatePhase ?? null}
+                      />
+                    )}
+                  </>
                 ) : stopped ? (
                   <section className="easy-live-progress-card">
                     <ShieldCheck size={22} />
                     <div>
-                      <h3>{t('Research stopped')}</h3>
-                      <p>{t('The Scientist has stopped this research run; scientific evidence is retained and no further compute will be started.')}</p>
+                      <h3>{t("Research stopped")}</h3>
+                      <p>
+                        {t(
+                          "The Scientist has stopped this research run; scientific evidence is retained and no further compute will be started.",
+                        )}
+                      </p>
                     </div>
                   </section>
                 ) : completed ? (
                   <section className="easy-live-progress-card easy-live-complete-card">
                     <Check size={22} />
                     <div>
-                      <h3>{t('Design loop complete')}</h3>
-                      <p>{t('Gate 5 recorded; experiments and real ordering remain unauthorized.')}</p>
+                      <h3>{t("Design loop complete")}</h3>
+                      <p>
+                        {t(
+                          "Gate 5 recorded; experiments and real ordering remain unauthorized.",
+                        )}
+                      </p>
                     </div>
                   </section>
                 ) : queuedRequest?.result?.queue ? (
@@ -999,28 +1994,35 @@ export function EasyLiveApp({
                     <LoaderCircle className="easy-spin" size={22} />
                     <div>
                       <h3>
-                        {queuedRequest.result.queue.state === 'starting'
-                          ? t('Starting executor')
-                          : t('Waiting for execution resources')}
+                        {queuedRequest.result.queue.state === "starting"
+                          ? t("Starting executor")
+                          : t("Waiting for execution resources")}
                       </h3>
                       <p>
                         {queuedRequest.result.queue.position != null
-                          ? t('Queue position: {{position}}.', { position: queuedRequest.result.queue.position })
-                          : ''}
-                        {t('The task is saved; no need to resubmit.')}
+                          ? t("Queue position: {{position}}.", {
+                              position: queuedRequest.result.queue.position,
+                            })
+                          : ""}
+                        {t("The task is saved; no need to resubmit.")}
                       </p>
                     </div>
                     {queuedRequest.result.queue.cancellable && (
                       <button
                         className="easy-primary"
-                        disabled={state.pending || (access !== undefined && !access.can_edit)}
+                        disabled={
+                          state.pending ||
+                          (access !== undefined && !access.can_edit)
+                        }
                         onClick={() =>
                           void adapter
                             .cancelRequest(queuedRequest.id)
-                            .catch((reason) => setError((reason as Error).message))
+                            .catch((reason) =>
+                              setError((reason as Error).message),
+                            )
                         }
                       >
-                        {t('Cancel queueing')}
+                        {t("Cancel queueing")}
                       </button>
                     )}
                   </section>
@@ -1028,8 +2030,12 @@ export function EasyLiveApp({
                   <section className="easy-live-progress-card" role="status">
                     <ShieldCheck size={22} />
                     <div>
-                      <h3>{t('Queue cancelled')}</h3>
-                      <p>{t('This request did not start compute; existing scientific evidence is retained; it will not be re-queued automatically.')}</p>
+                      <h3>{t("Queue cancelled")}</h3>
+                      <p>
+                        {t(
+                          "This request did not start compute; existing scientific evidence is retained; it will not be re-queued automatically.",
+                        )}
+                      </p>
                     </div>
                     {(failedCreate || snapshot.capabilities.resume) && (
                       <button
@@ -1037,47 +2043,93 @@ export function EasyLiveApp({
                         disabled={state.pending || !canExecute}
                         onClick={() =>
                           void (
-                            failedCreate ? adapter.retryRequest(failedCreate.id) : adapter.resume()
-                          ).catch((reason) => setError((reason as Error).message))
+                            failedCreate
+                              ? adapter.retryRequest(failedCreate.id)
+                              : adapter.resume()
+                          ).catch((reason) =>
+                            setError((reason as Error).message),
+                          )
                         }
                       >
-                        {t('Re-queue')}
+                        {t("Re-queue")}
                       </button>
                     )}
                   </section>
-                ) : snapshot.decision ? (
+                ) : phaseTransition && snapshot.decision ? (
+                  <section
+                    className="easy-live-progress-card easy-live-approval-starting"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <LoaderCircle className="easy-spin" size={22} />
+                    <div>
+                      <h3>
+                        {ui("正在进入")}
+                        {liveStageName(shownIndex)}
+                      </h3>
+                      <p>{ui("审批已提交；正在记录授权并准备下一阶段。")}</p>
+                    </div>
+                  </section>
+                ) : snapshot.decision && !active ? (
                   <GatePanel
                     key={snapshot.decision.id}
                     snapshot={snapshot}
-                    busy={
-                      state.pending ||
-                      ['accepted', 'running'].includes(state.pendingRequest?.state || '')
+                    busy={requestInFlight}
+                    connection={state.connection}
+                    adapter={adapter}
+                    selectedOptionId={
+                      snapshot.decision.gate === 2
+                        ? selectedOptionId
+                        : undefined
                     }
-                    canDecide={canExecute && Boolean(snapshot.capabilities.decide)}
+                    onSelectedOptionChange={
+                      snapshot.decision.gate === 2
+                        ? (optionId) => {
+                            setSelectedOptionId(optionId);
+                            const siteId = siteIdForOption(
+                              sites,
+                              snapshot.decision,
+                              optionId,
+                            );
+                            if (siteId) setPreviewSiteId(siteId);
+                          }
+                        : undefined
+                    }
+                    canDecide={
+                      canExecute && Boolean(snapshot.capabilities.decide)
+                    }
                     onDecide={async (value) => {
-                      if (value.selected_option_id) setSelectedSite(value.selected_option_id);
+                      if (value.selected_option_id)
+                        setSelectedOptionId(value.selected_option_id);
                       await adapter.decide(value);
                     }}
                   />
                 ) : awaitingDecisionRecovery(snapshot) ? (
-                  <section className="easy-live-progress-card easy-live-gate-recovery" role="alert">
+                  <section
+                    className="easy-live-progress-card easy-live-gate-recovery"
+                    role="alert"
+                  >
                     <ShieldCheck size={22} />
                     <div>
-                      <h3>{t('Restoring the approval card')}</h3>
-                      <p>{t('The project is waiting for Scientist approval; it will not show as Agent working until the approval options are restored.')}</p>
+                      <h3>{t("Restoring the approval card")}</h3>
+                      <p>
+                        {t(
+                          "The project is waiting for Scientist approval; it will not show as Agent working until the approval options are restored.",
+                        )}
+                      </p>
                     </div>
                     <button
                       className="easy-primary"
                       disabled={state.pending}
                       onClick={() => void adapter.refresh()}
                     >
-                      {t('Refresh approval card')} <RefreshCw size={14} />
+                      {t("Refresh approval card")} <RefreshCw size={14} />
                     </button>
                   </section>
                 ) : snapshot.capabilities.resume || executionBlocked ? (
                   <section
                     className="easy-live-progress-card"
-                    role={executionBlocked ? 'alert' : undefined}
+                    role={executionBlocked ? "alert" : undefined}
                   >
                     {executionBlocked ? (
                       <ShieldCheck size={22} />
@@ -1087,53 +2139,63 @@ export function EasyLiveApp({
                     <div>
                       <h3>
                         {autoContinuationEligible
-                          ? t('Auto-continuing')
+                          ? t("Auto-continuing")
                           : executionBlocked
-                            ? t('Current execution is blocked')
-                            : t('Current step can continue')}
+                            ? t("Current execution is blocked")
+                            : t("Current step can continue")}
                       </h3>
                       <p>
                         {executionBlocked && !autoContinuationEligible
-                          ? t('The current execution is incomplete; evidence and recovery state are retained. Review the technical details before deciding whether to continue.')
-                          : snapshot.current_action.message || snapshot.current_action.stage}
+                          ? t(
+                              "The current execution is incomplete; evidence and recovery state are retained. Review the technical details before deciding whether to continue.",
+                            )
+                          : snapshot.current_action.message ||
+                            snapshot.current_action.stage}
                       </p>
                     </div>
                     {/* Unauthorized roles never auto-continue; keep the explicit
                         disabled control visible instead of hiding it behind
                         capabilities.auto_continue. */}
-                    {snapshot.capabilities.resume && !autoContinuationEligible && (
-                      <button
-                        className="easy-primary"
-                        disabled={state.pending || !canExecute}
-                        onClick={() => {
-                          if (canExecute) {
-                            setError('');
-                            void adapter
-                              .resume()
-                              .catch((reason) => setError((reason as Error).message));
-                          }
-                        }}
-                      >
-                        {t('Continue research')} <ArrowRight size={14} />
-                      </button>
-                    )}
+                    {snapshot.capabilities.resume &&
+                      !autoContinuationEligible && (
+                        <button
+                          className="easy-primary"
+                          disabled={state.pending || !canExecute}
+                          onClick={() => {
+                            if (canExecute) {
+                              setError("");
+                              void adapter
+                                .resume()
+                                .catch((reason) =>
+                                  setError((reason as Error).message),
+                                );
+                            }
+                          }}
+                        >
+                          {t("Continue research")} <ArrowRight size={14} />
+                        </button>
+                      )}
                     {failedCreate && (
                       <button
                         className="easy-primary"
                         disabled={
                           state.pending ||
                           !canExecute ||
-                          ['accepted', 'running'].includes(state.pendingRequest?.state || '')
+                          ["accepted", "running"].includes(
+                            state.pendingRequest?.state || "",
+                          )
                         }
                         onClick={() => {
                           if (!canExecute) return;
-                          setError('');
+                          setError("");
                           void adapter
                             .retryRequest(failedCreate.id)
-                            .catch((reason) => setError((reason as Error).message));
+                            .catch((reason) =>
+                              setError((reason as Error).message),
+                            );
                         }}
                       >
-                        {t('Retry target resolution')} <RefreshCw size={14} />
+                        {t("Retry target resolution")} <RefreshCw size={14} />
                       </button>
                     )}
                   </section>
@@ -1141,106 +2203,183 @@ export function EasyLiveApp({
                   <section className="easy-live-progress-card">
                     <LoaderCircle className="easy-spin" size={22} />
                     <div>
-                      <h3>{t('Agent is working')}</h3>
-                      <p>{snapshot.current_action.stage}</p>
+                      <h3>{ui("设计助手正在工作")}</h3>
+                      <p>{liveActionName(snapshot.current_action.stage)}</p>
                     </div>
                   </section>
                 )}
-                {shownIndex === index && !queueCancelled && (
-                  <ExecutionProgress snapshot={snapshot} />
-                )}
-                {shownIndex === index && (
-                  <section className="easy-live-activity">
-                    <h3>{t('Live activity')}</h3>
-                    {activity.map((item) => (
-                      <article key={item.id}>
-                        <span className={item.status || ''} />
-                        <div>
-                          <strong>{item.title}</strong>
-                          <p>{item.summary}</p>
-                        </div>
-                      </article>
-                    ))}
-                    {technicalActivity.length > 0 && (
-                      <details className="easy-live-technical-details">
-                        <summary>{t('View technical details')}</summary>
-                        {snapshot.decision?.details_url && (
-                          <a
-                            href={
-                              access
-                                ? scopeProductUrl(access.id, snapshot.decision.details_url)
-                                : snapshot.decision.details_url
-                            }
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {t('View review and provenance for the current Gate')}
-                          </a>
-                        )}
-                        <div>
-                          {technicalActivity.map((item) => (
-                            <article key={`technical-${item.id}`}>
-                              <span className={item.status || ''} />
+                {!phaseTransition &&
+                  !queueCancelled &&
+                  shownIndex === index &&
+                  (shownIndex === 3 || shownIndex === 4) && (
+                    <ExecutionProgress
+                      snapshot={snapshot}
+                      phase={shownIndex === 3 ? "pilot" : "scale"}
+                      candidates={candidates}
+                      candidatePhase={state.candidatePhase ?? null}
+                    />
+                  )}
+                {!phaseTransition &&
+                  !queueCancelled &&
+                  shownIndex === index && (
+                    <section className="easy-live-activity">
+                      <h3>{t("Live activity")}</h3>
+                      {activity.map((item) => (
+                        <article key={item.id}>
+                          <span className={item.status || ""} />
+                          <div>
+                            <strong>{item.title}</strong>
+                            <p>{item.summary}</p>
+                          </div>
+                        </article>
+                      ))}
+                      {technicalActivity.length > 0 && (
+                        <AcademicChineseDetails
+                          summary={ui("查看技术详情")}
+                          passages={technicalActivity.flatMap(
+                            (item, itemIndex) => {
+                              const title =
+                                item.title || item.role || item.type;
+                              const body = item.summary || item.text || "";
+                              return [
+                                {
+                                  id: `activity.${itemIndex}.title`,
+                                  text: title,
+                                },
+                                ...(body
+                                  ? [
+                                      {
+                                        id: `activity.${itemIndex}.body`,
+                                        text: body,
+                                      },
+                                    ]
+                                  : []),
+                              ];
+                            },
+                          )}
+                          stage={STEPS[shownIndex]}
+                          goal={snapshot.project.goal}
+                          adapter={adapter}
+                        >
+                          {(zh) => (
+                            <>
+                              {snapshot.decision?.details_url && (
+                                <a
+                                  href={
+                                    access
+                                      ? scopeProductUrl(
+                                          access.id,
+                                          snapshot.decision.details_url,
+                                        )
+                                      : snapshot.decision.details_url
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {ui("查看当前科学审批的来源与审计记录")}
+                                </a>
+                              )}
                               <div>
-                                <strong>{item.title || item.role || item.type}</strong>
-                                <p>{item.summary || item.text}</p>
+                                {technicalActivity.map((item, itemIndex) => (
+                                  <article key={`technical-${item.id}`}>
+                                    <span className={item.status || ""} />
+                                    <div>
+                                      <strong>
+                                        {zh[`activity.${itemIndex}.title`]}
+                                      </strong>
+                                      {(item.summary || item.text) && (
+                                        <p>
+                                          {zh[`activity.${itemIndex}.body`]}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </article>
+                                ))}
                               </div>
-                            </article>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                  </section>
-                )}
+                            </>
+                          )}
+                        </AcademicChineseDetails>
+                      )}
+                    </section>
+                  )}
+                {!phaseTransition &&
+                  shownCandidatePhase &&
+                  state.candidatePhase === shownCandidatePhase && (
+                    <CandidatePanel
+                      phase={shownCandidatePhase}
+                      candidates={candidates}
+                      selected={state.selectedCandidate?.id || null}
+                      onSelect={(id) => void adapter.selectCandidate(id)}
+                    />
+                  )}
               </div>
               <aside className="easy-live-science">
                 <div className="easy-live-kicker">
-                  SCIENTIFIC CONTEXT · {STEPS[shownIndex].toUpperCase()}
+                  {ui("科学信息 ·")}
+                  {ui(STAGE_SUMMARY_TITLES[shownIndex])}
                 </div>
                 <EasyStructureViewer
+                  showArtifactLabel={false}
                   artifact={artifact}
                   roles={roles}
-                  sites={snapshot.scientific_context.sites}
+                  sites={sites}
                   selectedSite={visibleSiteId}
                 />
-                {shownIndex >= 1 && snapshot.scientific_context.sites.length > 0 && (
+                {shownIndex >= 1 && sites.length > 0 && (
                   <div className="easy-live-site-tabs">
-                    {snapshot.scientific_context.sites.map((site) => (
-                      <button
-                        key={site.id}
-                        className={site.id === visibleSiteId ? 'selected' : ''}
-                        onClick={() => setSelectedSite(site.id)}
-                      >
-                        Site {site.rank}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {shownIndex >= 3 && candidates.length > 0 && (
-                  <div className="easy-live-candidates">
-                    <h3>{t('Candidate molecules')}</h3>
-                    {candidates.map((candidate) => (
-                      <button
-                        key={candidate.id}
-                        className={state.selectedCandidate?.id === candidate.id ? 'selected' : ''}
-                        onClick={() => void adapter.selectCandidate(candidate.id)}
-                      >
-                        <span>
-                          <strong>{candidate.id}</strong>
-                          <small>
-                            {candidate.arm} · {candidate.native_status}
-                          </small>
-                        </span>
-                        <em>{candidate.panel_role || ''}</em>
-                      </button>
-                    ))}
+                    {sites.map((site, siteIndex) => {
+                      const displayRank = siteDisplayRank(site, siteIndex);
+                      return (
+                        <button
+                          key={site.id}
+                          className={`${site.id === visibleSiteId ? "selected" : ""}${
+                            site.selectable ? "" : " preview-only"
+                          }`}
+                          aria-label={
+                            site.selectable
+                              ? ui("选择并预览位点 {{v0}}", { v0: displayRank })
+                              : ui("预览位点 {{v0}}，该位点不可批准", {
+                                  v0: displayRank,
+                                })
+                          }
+                          onClick={() => {
+                            setPreviewSiteId(site.id);
+                            if (
+                              shownIndex === index &&
+                              snapshot.decision?.gate === 2 &&
+                              site.selectable
+                            ) {
+                              const optionId = optionIdForSite(
+                                sites,
+                                snapshot.decision,
+                                site.id,
+                              );
+                              if (optionId) setSelectedOptionId(optionId);
+                            }
+                          }}
+                        >
+                          <span>
+                            {ui("位点")}
+                            {displayRank}
+                          </span>
+                          {!site.selectable && <small>{ui("仅供比较")}</small>}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </aside>
             </div>
             {shownIndex === index && order && (
-              <fieldset className="account-readonly-order" disabled={!canExecute}>
-                <SimulatedOrder order={order} adapter={adapter} onUpdate={setOrder} />
+              <fieldset
+                className="account-readonly-order"
+                disabled={!canExecute}
+              >
+                <SimulatedOrder
+                  order={order}
+                  adapter={adapter}
+                  onUpdate={setOrder}
+                />
               </fieldset>
             )}
           </section>
@@ -1249,55 +2388,153 @@ export function EasyLiveApp({
         <section className="easy-history" id="my-designs">
           <div className="easy-history-heading">
             <h2>
-              {t('My designs')} <span>{projects.length}</span>
+              {t("My designs")} <span>{projects.length}</span>
             </h2>
-            <p>{t('Latest 5 active designs')}</p>
+            <p>{t("Latest 5 active designs")}</p>
           </div>
           <div className="easy-history-table">
             <table>
               <thead>
                 <tr>
-                  <th>{t('Design')}</th>
-                  <th>{t('Stage')}</th>
-                  <th>{t('Status')}</th>
+                  <th>{t("Design")}</th>
+                  <th>{t("Stage")}</th>
+                  <th>{t("Status")}</th>
+                  <th>{ui("最近打开")}</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {projects.map((project) => (
-                  <tr key={project.id}>
-                    <td>
-                      <strong>{project.title}</strong>
-                      <small>{summarizeGoal(project.goal)}</small>
-                    </td>
-                    <td>{project.phase}</td>
-                    <td>
-                      {projectListStatus(
-                        project,
-                        state.connection === 'connected' ? snapshot : null,
-                        state.pendingRequest,
-                      )}
-                    </td>
-                    <td>
-                      <button className="easy-outline" onClick={() => void openProject(project.id)}>
-                        {t('Open')}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {projects.map((project) => {
+                  const status = projectListStatus(
+                    project,
+                    state.connection === "connected" ? snapshot : null,
+                    state.pendingRequest,
+                  );
+                  return (
+                    <tr key={project.id}>
+                      <td>
+                        <strong>{project.title}</strong>
+                        <small>{summarizeGoal(project.goal)}</small>
+                      </td>
+                      <td>{liveStageName(project.phase)}</td>
+                      <td>
+                        {status === project.status
+                          ? liveStatusName(status)
+                          : status}
+                      </td>
+                      <td className="easy-history-opened">
+                        {recentProjectOpens[project.id] ? (
+                          <time
+                            dateTime={new Date(
+                              recentProjectOpens[project.id],
+                            ).toISOString()}
+                          >
+                            {formatProjectOpenTime(
+                              recentProjectOpens[project.id],
+                            )}
+                          </time>
+                        ) : (
+                          <span title={ui("本设备尚无打开记录")}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="easy-history-actions">
+                          <button
+                            className="easy-outline"
+                            onClick={() => void openProject(project.id)}
+                          >
+                            {ui("打开")}
+                          </button>
+                          <button
+                            className="easy-delete-project"
+                            disabled={
+                              (access !== undefined && !access.can_edit) ||
+                              ["running", "incomplete"].includes(project.status)
+                            }
+                            title={
+                              ["running", "incomplete"].includes(project.status)
+                                ? ui("正在运行的设计暂不能删除")
+                                : ui("删除 {{v0}}", { v0: project.title })
+                            }
+                            onClick={() => {
+                              setDeleteError("");
+                              setDeleteCandidate(project);
+                            }}
+                          >
+                            <Trash2 size={14} /> {ui("删除")}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </section>
       </main>
+      {deleteCandidate && (
+        <div className="easy-delete-backdrop" role="presentation">
+          <section
+            className="easy-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="easy-delete-title"
+          >
+            <h2 id="easy-delete-title">{ui("确认删除这个设计？")}</h2>
+            <strong>{deleteCandidate.title}</strong>
+            <p>
+              {ui(
+                "删除后，它将立即从“我的设计”中移除。底层科学运行记录与证据仍保留，可由管理员恢复。",
+              )}
+            </p>
+            {deleteError && <p className="easy-error">{deleteError}</p>}
+            <div>
+              <button
+                className="easy-outline"
+                disabled={deletingProject}
+                onClick={() => {
+                  setDeleteError("");
+                  setDeleteCandidate(null);
+                }}
+              >
+                {ui("取消")}
+              </button>
+              <button
+                className="easy-confirm-delete"
+                disabled={deletingProject}
+                onClick={() => void confirmDelete()}
+              >
+                <Trash2 size={15} />{" "}
+                {deletingProject ? ui("正在删除…") : ui("确认删除")}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <RabbitMascot
         locale={locale}
-        mood={state.pending || active ? 'running' : snapshot ? 'complete' : 'idle'}
-        stage={(snapshot ? STEPS[index] : 'Idle') as (typeof STEPS)[number] | 'Idle'}
+        mood={
+          state.pending || (active && shownIndex === index)
+            ? "running"
+            : snapshot
+              ? "complete"
+              : "idle"
+        }
+        stage={
+          (snapshot ? STEPS[shownIndex] : "Idle") as
+            | (typeof STEPS)[number]
+            | "Idle"
+        }
         chatContext={{
-          stage: snapshot ? STEPS[index] : 'Idle',
-          status: active ? 'running' : snapshot ? 'complete' : 'idle',
-          goal: snapshot?.project.goal.slice(0, 1200) || '',
+          stage: snapshot ? STEPS[shownIndex] : "Idle",
+          status:
+            active && shownIndex === index
+              ? "running"
+              : snapshot
+                ? "complete"
+                : "idle",
+          goal: snapshot?.project.goal.slice(0, 1200) || "",
         }}
       />
     </div>

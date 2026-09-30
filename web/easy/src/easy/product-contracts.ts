@@ -84,7 +84,7 @@ export interface Decision {
 }
 export interface Site {
   id: string;
-  rank: string;
+  rank: string | null;
   name: string;
   selectable: boolean;
   design_labels: number[];
@@ -231,11 +231,23 @@ export interface LiveState {
   projects: Page<Project>;
   snapshot: ProductSnapshot | null;
   candidates: Page<Candidate>;
+  candidatePhase: 'pilot' | 'scale' | 'candidates' | null;
   selectedCandidate: Candidate | null;
   selectedProject: string | null;
   pending: boolean;
   error: string | null;
   pendingRequest: RequestState | null;
+  /** Temporary presentation phase while an accepted Gate transition is processed. */
+  transitionPhase?: 'target' | 'site' | 'design' | 'pilot' | 'scale' | 'candidates' | null;
+}
+export interface LocalizationPassage {
+  id: string;
+  text: string;
+}
+export interface LocalizationResult {
+  locale: 'zh-CN';
+  items: Record<string, string>;
+  source_sha256: string;
 }
 export interface GateInput {
   action: GateAction;

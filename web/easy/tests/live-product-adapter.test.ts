@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EasyProductAdapter } from '../src/easy/EasyProductAdapter';
-import { emptyInput } from '../src/easy/contracts';
+import { approvedTransitionPhase, EasyProductAdapter } from '../src/easy/EasyProductAdapter';
+import { emptyInput, type EasyInput } from '../src/easy/contracts';
 import type { LabOrderView, ProductSnapshot } from '../src/easy/product-contracts';
 
 const project = {
@@ -115,16 +115,27 @@ describe('Easy live adapter preserves Product API authority', () => {
     const { adapter, fetcher } = fixture(async (path, body) => {
       expect(path).toBe('/api/v1/requests/queued-id/cancel');
       expect(body).toEqual({});
-      return Response.json({ id: 'queued-id', project: project.id, state: 'failed', result: { code: 'queue_cancelled' }, created: 1, updated: 2 });
+      return Response.json({
+        id: 'queued-id',
+        project: project.id,
+        state: 'failed',
+        result: { code: 'queue_cancelled' },
+        created: 1,
+        updated: 2,
+      });
     });
     let observed = await adapter.load();
-    adapter.subscribe(event => { observed = event.snapshot; });
+    adapter.subscribe((event) => {
+      observed = event.snapshot;
+    });
     await adapter.selectProject(project.id);
     const before = fetcher.mock.calls.length;
     await adapter.cancelRequest('queued-id');
     expect(observed.pendingRequest?.result?.code).toBe('queue_cancelled');
     expect(observed.pending).toBe(false);
-    expect(fetcher.mock.calls.slice(before).some(([url]) => String(url).endsWith('/workbench'))).toBe(true);
+    expect(
+      fetcher.mock.calls.slice(before).some(([url]) => String(url).endsWith('/workbench')),
+    ).toBe(true);
   });
   it('keeps a request started in another tab on the active cadence', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
@@ -415,13 +426,101 @@ describe('Easy live adapter preserves Product API authority', () => {
     adapters.push(adapter);
     await adapter.load();
     expect(calls[0].path).toContain('/projects?surface=easy&offset=0&limit=5');
-    await adapter.createProject('Easy design', 'Design an extracellular VHH.');
+    await adapter.createTypedProject('Easy design', 'Design an extracellular VHH.', {
+      ...emptyInput(),
+      text: 'Design an extracellular VHH.',
+    });
     expect(calls.find((call) => call.body?.title === 'Easy design')?.body).toMatchObject({
       title: 'Easy design',
       goal: 'Design an extracellular VHH.',
       surface: 'easy',
+      target_input: {
+        kind: 'description',
+        description: 'Design an extracellular VHH.',
+      },
     });
   });
+
+  it.each([
+    [
+      'description',
+      { text: 'Design an extracellular VHH binder.' },
+      { kind: 'description', description: 'Design an extracellular VHH binder.' },
+    ],
+    [
+      'protein-name',
+      { text: 'TACR2', species: 'Homo sapiens' },
+      { kind: 'protein-name', name: 'TACR2', organism: 'Homo sapiens' },
+    ],
+    ['uniprot', { text: 'p21452' }, { kind: 'uniprot', accession: 'P21452' }],
+    ['pdb-id', { text: '9w1j' }, { kind: 'pdb-id', pdb_id: '9W1J' }],
+  ] as const)(
+    'binds the %s intake to the canonical typed target input',
+    async (type, changes, expected) => {
+      const bodies: Record<string, unknown>[] = [];
+      const { adapter } = fixture(async (_path, body) => {
+        bodies.push(body);
+        return Response.json({ id: 'request', project: project.id, state: 'succeeded' });
+      });
+      await adapter.load();
+      await adapter.createTypedProject(`${type} design`, 'Design an extracellular VHH.', {
+        ...emptyInput(),
+        type,
+        ...changes,
+      } as EasyInput);
+      expect(bodies.find((body) => body.title === `${type} design`)?.target_input).toEqual(
+        expected,
+      );
+    },
+  );
+
+  it.each([
+    [
+      'structure',
+      new File(['ATOM      1  N   ALA A   1'], 'target.pdb'),
+      { kind: 'structure', artifact_id: 'f'.repeat(64) },
+    ],
+    ['sequence', null, { kind: 'sequence', artifact_id: 'f'.repeat(64) }],
+  ] as const)(
+    'uploads and binds the %s intake by immutable artifact id',
+    async (type, file, expected) => {
+      const calls: { path: string; body: unknown }[] = [];
+      const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        const path = String(url);
+        calls.push({ path, body: init?.body });
+        if (path.includes('/inputs?')) return Response.json({ id: 'f'.repeat(64) });
+        if (init?.method === 'POST')
+          return Response.json({ id: 'request', project: project.id, state: 'succeeded' });
+        if (path.endsWith('/workbench')) return Response.json(snapshot());
+        if (path.includes('/projects?'))
+          return Response.json({ total: 1, offset: 0, limit: 5, items: [project] });
+        return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+      });
+      const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+      adapters.push(adapter);
+      await adapter.load();
+      await adapter.createTypedProject(
+        `${type} design`,
+        'Design an extracellular VHH.',
+        {
+          ...emptyInput(),
+          type,
+          text: type === 'sequence' ? 'ACDEFGHIKLMNPQRSTVWY' : '',
+          file: file ? { name: file.name, size: file.size } : null,
+        },
+        file,
+      );
+      const create = calls.find((call) => call.path.endsWith('/projects'));
+      expect(create?.body && JSON.parse(String(create.body))).toMatchObject({
+        target_input: expected,
+      });
+      const upload = calls.find((call) => call.path.includes('/inputs?'));
+      expect(upload?.path).toContain(
+        type === 'structure' ? 'filename=target.pdb' : 'filename=easy-ui-target.fasta',
+      );
+      expect(upload?.body).toBeInstanceOf(Blob);
+    },
+  );
 
   it('submits the exact Gate card and deduplicates simultaneous approval', async () => {
     let resolve!: (response: Response) => void;
@@ -445,6 +544,70 @@ describe('Easy live adapter preserves Product API authority', () => {
     });
     resolve(Response.json({ id: 'accepted', project: project.id, state: 'succeeded' }));
     await first;
+  });
+
+  it('moves Gate 4 presentation to Scale immediately while approval is processed', async () => {
+    let resolve!: (response: Response) => void;
+    const current = snapshot();
+    current.project = { ...project, phase: 'pilot', status: 'awaiting_scientist' };
+    current.decision = {
+      ...current.decision!,
+      gate: 4,
+      type: 'pilot-promotion',
+      default_option_id: 'PROMOTE_TO_SCALE',
+      options: [
+        {
+          option_id: 'PROMOTE_TO_SCALE',
+          eligible: true,
+          actions: ['approve', 'revise', 'reject'],
+        },
+      ],
+    };
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      if (init?.method === 'POST')
+        return new Promise<Response>((done) => {
+          resolve = done;
+        });
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      return Response.json({ total: 0, offset: 0, limit: 100, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    let live = await adapter.load();
+    adapter.subscribe((event) => {
+      live = event.snapshot;
+    });
+    await adapter.selectProject(project.id);
+    const approval = adapter.decide({
+      action: 'approve',
+      selected_option_id: 'PROMOTE_TO_SCALE',
+    });
+    expect(live.transitionPhase).toBe('scale');
+    resolve(Response.json({ id: 'accepted', project: project.id, state: 'succeeded' }));
+    await approval;
+    expect(live.transitionPhase).toBe('scale');
+    current.project = { ...current.project, phase: 'scale', status: 'running' };
+    await adapter.refresh();
+    expect(live.transitionPhase).toBeNull();
+  });
+
+  it('maps non-linear scientist routes without pretending they all enter Scale', () => {
+    const gate4 = { ...snapshot().decision!, gate: 4 };
+    expect(
+      approvedTransitionPhase(gate4, {
+        action: 'approve',
+        selected_option_id: 'REVISE_DESIGN',
+      }),
+    ).toBe('design');
+    expect(
+      approvedTransitionPhase(gate4, {
+        action: 'approve',
+        selected_option_id: 'REVISE_SITE',
+      }),
+    ).toBe('site');
   });
 
   it('uses a fresh idempotency identity for each explicit resume', async () => {
@@ -486,8 +649,44 @@ describe('Easy live adapter preserves Product API authority', () => {
     expect(selected).toBeNull();
   });
 
+  it('deletes an Easy project, clears an open copy and reloads the lightweight list', async () => {
+    let deleted = false;
+    let latest: ReturnType<EasyProductAdapter['load']> extends Promise<infer T> ? T : never;
+    const calls: { path: string; method: string }[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      const method = init?.method || 'GET';
+      calls.push({ path, method });
+      if (method === 'DELETE') {
+        deleted = true;
+        return Response.json({ id: project.id, deleted: true, recoverable: true });
+      }
+      if (path.endsWith('/workbench')) return Response.json(snapshot());
+      if (path.includes('/projects?'))
+        return Response.json({
+          total: deleted ? 0 : 1,
+          offset: 0,
+          limit: 5,
+          items: deleted ? [] : [project],
+        });
+      return Response.json({ total: 0, offset: 0, limit: 100, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    adapter.subscribe((event) => {
+      latest = event.snapshot;
+    });
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await adapter.deleteProject(project.id);
+    expect(calls).toContainEqual({ path: `/api/v1/projects/${project.id}`, method: 'DELETE' });
+    expect(latest!.selectedProject).toBeNull();
+    expect(latest!.projects.items).toEqual([]);
+  });
+
   it('loads the Easy summary candidate view without the unused metric payload', async () => {
     const current = snapshot();
+    current.project = { ...project, phase: 'candidates', status: 'complete' };
     current.candidates.total = 1;
     const paths: string[] = [];
     const fetcher = vi.fn(async (url: string | URL | Request) => {
@@ -502,9 +701,189 @@ describe('Easy live adapter preserves Product API authority', () => {
     adapters.push(adapter);
     await adapter.load();
     await adapter.selectProject(project.id);
-    expect(paths).toContain(
-      '/api/v1/projects/native-project/candidates?offset=0&limit=20&view=summary',
+    await vi.waitFor(() =>
+      expect(paths).toContain(
+        '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=candidates',
+      ),
     );
+  });
+
+  it('hydrates only the selected candidate after the compact list is visible', async () => {
+    const current = snapshot();
+    current.project = { ...project, phase: 'candidates', status: 'complete' };
+    current.candidates.total = 1;
+    const paths: string[] = [];
+    const summary = {
+      id: 'candidate-1',
+      arm: 'arm-1-scaffold-7eow',
+      backend_id: null,
+      scaffold: '7eow',
+      native_status: 'pass',
+      evaluable: true,
+      competition_eligible: true,
+      independent_prediction: 'complete',
+      sequence: null,
+      sequence_sha256: 'b'.repeat(64),
+      metrics: [],
+      artifacts: [],
+      panel_role: 'primary',
+      failure_reason: null,
+      lineage: {},
+      structure_roles: {},
+    };
+    const detail = {
+      ...summary,
+      artifacts: [
+        {
+          id: 'c'.repeat(64),
+          label: 'candidate-1.pdb',
+          url: `/api/v1/artifacts/${'c'.repeat(64)}`,
+          format: 'pdb',
+          sha256: 'c'.repeat(64),
+          size_bytes: 120,
+          role: 'structure',
+          candidate_id: 'candidate-1',
+        },
+      ],
+      structure_roles: { A: 'target', B: 'binder' },
+    };
+    let latest: Awaited<ReturnType<EasyProductAdapter['load']>> | undefined;
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      paths.push(path);
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      if (path.includes('/candidates/candidate-1?'))
+        return Response.json({ total: 1, offset: 0, limit: 1, items: [detail] });
+      return Response.json({ total: 1, offset: 0, limit: 100, items: [summary] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    adapter.subscribe((event) => {
+      latest = event.snapshot;
+    });
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await vi.waitFor(() => expect(latest?.selectedCandidate?.artifacts).toHaveLength(1));
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=candidates',
+    );
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates/candidate-1?offset=0&limit=1&view=full&phase=candidates',
+    );
+  });
+
+  it('never blocks a live progress refresh on a slow candidate projection', async () => {
+    let current = snapshot();
+    current.project = { ...project, phase: 'scale', status: 'running' };
+    let candidateStarted = false;
+    let releaseCandidate: ((response: Response) => void) | undefined;
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      if (path.includes('/candidates?')) {
+        candidateStarted = true;
+        return new Promise<Response>((resolve) => {
+          releaseCandidate = resolve;
+        });
+      }
+      return Response.json({ total: 0, offset: 0, limit: 1, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await vi.waitFor(() => expect(candidateStarted).toBe(true));
+    current = {
+      ...current,
+      revision: 'b'.repeat(64),
+      event_cursor: current.event_cursor + 1,
+    };
+    const outcome = await Promise.race([
+      adapter.refresh().then(() => 'refreshed'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('blocked'), 100)),
+    ]);
+    expect(outcome).toBe('refreshed');
+    releaseCandidate?.(
+      Response.json({ total: 0, offset: 0, limit: 100, items: [], revision: current.revision }),
+    );
+  });
+
+  it('loads a phase-specific candidate population for historical Pilot and Scale views', async () => {
+    const current = snapshot();
+    current.project = { ...project, phase: 'handoff', status: 'complete' };
+    current.candidates.total = 30;
+    const paths: string[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      paths.push(path);
+      if (path.endsWith('/workbench')) return Response.json(current);
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [current.project] });
+      return Response.json({ total: 0, offset: 0, limit: 100, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await adapter.load();
+    await adapter.selectProject(project.id);
+    await adapter.candidatePage(0, 'pilot');
+    await adapter.candidatePage(0, 'scale');
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=pilot',
+    );
+    expect(paths).toContain(
+      '/api/v1/projects/native-project/candidates?offset=0&limit=100&view=summary&phase=scale',
+    );
+  });
+
+  it('reads only declared immutable artifact URLs for the detailed Design YAML', async () => {
+    const token = 'd'.repeat(64);
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      if (String(url) === `/api/v1/artifacts/${token}`)
+        return new Response('schema_version: 1\narms: []\n', {
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      return Response.json({ total: 0, offset: 0, limit: 5, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    await expect(adapter.artifactText(`/api/v1/artifacts/${token}`)).resolves.toContain(
+      'schema_version: 1',
+    );
+    await expect(adapter.artifactText('https://example.com/design.yaml')).rejects.toMatchObject({
+      code: 'invalid_artifact',
+    });
+  });
+
+  it('requests bounded academic Chinese without changing scientific source text', async () => {
+    const calls: { path: string; body: Record<string, unknown> }[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ path: String(url), body: JSON.parse(String(init?.body)) });
+      return Response.json({
+        locale: 'zh-CN',
+        source_sha256: 'e'.repeat(64),
+        items: { 'site.why': 'ECL2 邻近残基 273。' },
+      });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    const passages = [{ id: 'site.why', text: 'ECL2 is near residue 273.' }];
+    const result = await adapter.localizeScientific(passages, {
+      stage: 'Site',
+      goal: 'NK2R VHH',
+    });
+    expect(result.items['site.why']).toContain('273');
+    expect(calls[0]).toEqual({
+      path: '/api/rabbit/localize',
+      body: {
+        locale: 'zh',
+        passages,
+        context: { stage: 'Site', goal: 'NK2R VHH' },
+      },
+    });
   });
 
   it('does not keep two-second polling after a project becomes complete', async () => {
@@ -530,6 +909,36 @@ describe('Easy live adapter preserves Product API authority', () => {
     } finally {
       timers.mockRestore();
     }
+  });
+
+  it('clears a stale transport error after an unchanged snapshot refresh succeeds', async () => {
+    let failWorkbench = false;
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      if (path.endsWith('/workbench')) {
+        if (failWorkbench) throw new TypeError('Temporary connection failure');
+        return Response.json(snapshot());
+      }
+      if (path.includes('/projects?'))
+        return Response.json({ total: 1, offset: 0, limit: 5, items: [project] });
+      return Response.json({ total: 0, offset: 0, limit: 20, items: [] });
+    });
+    const adapter = new EasyProductAdapter(fetcher as typeof fetch, 1_000_000);
+    adapters.push(adapter);
+    let current = await adapter.load();
+    adapter.subscribe((event) => {
+      current = event.snapshot;
+    });
+    await adapter.selectProject(project.id);
+    failWorkbench = true;
+    await adapter.refresh();
+    expect(current.connection).toBe('reconnecting');
+    expect(current.error).toContain('Temporary connection failure');
+
+    failWorkbench = false;
+    await adapter.refresh();
+    expect(current.connection).toBe('connected');
+    expect(current.error).toBeNull();
   });
 
   it('binds simulated-order commands to the current server revision', async () => {

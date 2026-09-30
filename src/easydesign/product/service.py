@@ -182,6 +182,10 @@ class ProductService:
 
         if cached.get("project", {}).get("status") not in {"running", "incomplete"}:
             return None
+        # Queued project creation has only a product journal, not a native
+        # scientific session yet. Rebuild its inexpensive bootstrap projection.
+        if not (self.context.projects_root / project / "PROJECT.yaml").is_file():
+            return None
         journal = self.journal()
         try:
             registered = journal.project(project, include_deleted=True)

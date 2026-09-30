@@ -1970,6 +1970,19 @@ def test_running_snapshot_refreshes_jobs_without_reprojecting_scientific_history
 
     monkeypatch.setattr(service.gateway, "session", unchanged_session)
 
+    # A queue position may advance without changing the request's state/version.
+    receipt = {"id": "queue-progress-check", "state": "accepted", "updated": 1.0,
+               "result": {"queue": {"position": 5}}}
+    baseline["requests"] = [{**receipt, "result": {"queue": {"position": 8}}}]
+    journal = service.journal()
+    try:
+        journal.reserve("target-test", {"request_id": receipt["id"]})
+        journal.register_project("target-test", request_id=receipt["id"], title="Synthetic",
+            goal="Synthetic queue projection", thread="thread", input_id=None, surface="easy")
+    finally:
+        journal.close()
+    monkeypatch.setattr(service, "_request_with_journal", lambda *_args: receipt)
+
     def must_not_reproject(*_args, **_kwargs):
         raise AssertionError("unchanged live event cursor must use the lightweight job path")
 
@@ -1977,6 +1990,18 @@ def test_running_snapshot_refreshes_jobs_without_reprojecting_scientific_history
     refreshed = service.snapshot("target-test")
     assert refreshed["event_cursor"] == baseline["event_cursor"]
     assert refreshed["project"]["status"] == "running"
+    assert refreshed["requests"][0]["result"]["queue"]["position"] == 5
+
+    # Another request/process can hide a project after this read was cached.
+    journal = service.journal()
+    try:
+        with journal.db:
+            journal.db.execute("UPDATE product_projects SET deleted_at=42 WHERE id='target-test'")
+    finally:
+        journal.close()
+    with pytest.raises(ProductError) as hidden:
+        service.snapshot("target-test")
+    assert hidden.value.status == 404
 
     service._invalidate_projection_cache("target-test")
     assert "target-test" not in service._live_snapshots

@@ -11,7 +11,9 @@ import pytest
 from easydesign.core import ArtifactRef
 from easydesign.product.account_server import MultiUserServer
 from easydesign.product.accounts import AccountStore
+from easydesign.product.contracts import ProductError
 from easydesign.product.domain import NativeGateway
+from easydesign.product.service import ProductService
 from easydesign.product.tenancy import MultiUserRuntime
 from easydesign.workspace_context import WorkspaceContext
 
@@ -55,6 +57,43 @@ def client(server, username: str | None = None):
             assert result.status_code == 200
             value.headers["X-CSRF-Token"] = result.json()["csrf_token"]
         yield value
+
+
+def test_live_projection_reuses_reads_without_reusing_scoped_authority(product, monkeypatch):
+    server, accounts, admin, users, _context = product
+    alice, bob = users
+    builds = []
+    refreshes = []
+
+    def build(service, project, _journal):
+        builds.append(service.actor)
+        value = {"project": {"id": project, "status": "running"}, "owner": service.actor}
+        service._live_cache.remember(project, value)
+        return value
+
+    def refresh(service, project, cached):
+        refreshes.append((service.actor, project))
+        return {**cached, "refreshed": True}
+
+    monkeypatch.setattr(ProductService, "_snapshot_from_journal", build)
+    monkeypatch.setattr(ProductService, "_refresh_live_snapshot", refresh)
+    with server.runtime.bind(alice, alice.id) as first:
+        first.snapshot("same-project-id")
+        # A command's temporary admission cannot survive into another request.
+        first._current_admission = object()
+    with server.runtime.bind(alice, alice.id) as second:
+        assert second is not first
+        assert second._current_admission is None
+        assert second.snapshot("same-project-id")["refreshed"] is True
+    assert len(builds) == 1 and len(refreshes) == 1
+    with server.runtime.bind(bob, bob.id) as other:
+        assert other.snapshot("same-project-id")["owner"] == "account:" + bob.id
+    with server.runtime.bind(admin, alice.id) as observer:
+        assert observer.snapshot("same-project-id")["owner"] == "account:" + admin.id
+    assert len(builds) == 3
+    accounts.update_user(admin, alice.id, status="suspended")
+    with pytest.raises(ProductError), server.runtime.bind(alice, alice.id):
+        pytest.fail("A cached projection must not bypass live account authorization")
 
 
 def test_account_api_requires_individual_sessions_and_disables_workspace_token(product):

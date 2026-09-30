@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import fcntl
 import re
+import threading
+from collections import OrderedDict
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,7 +21,7 @@ from .domain import NativeGateway
 from .journal import RequestJournal
 from .lab_order import LabOrderCommand
 from .resource_control import Admission, ResourceLedger, contract_digest
-from .service import ProductService, upload_identity
+from .service import LiveProjectionCache, ProductService, upload_identity
 
 # The Gate-4 promotion option identity checked by the native authority builder.
 PROMOTE_TO_SCALE_OPTION = "PROMOTE_TO_SCALE"
@@ -167,12 +169,16 @@ class ScopedProductService(ProductService):
         user: AccountUser,
         scope_id: str,
         launcher: Callable[[Admission, ScopedProductService], None] | None,
+        live_cache: LiveProjectionCache | None = None,
     ) -> None:
         self.accounts, self.resources = accounts, resources
         self.user, self.scope_id = user, scope_id
         self.admission_launcher = launcher
         self._current_admission: Admission | None = None
-        super().__init__(gateway, actor="account:" + user.id, launcher=self._launch_admission)
+        super().__init__(
+            gateway, actor="account:" + user.id, launcher=self._launch_admission,
+            live_cache=live_cache,
+        )
         self.catalog = ScopedCatalog(self.catalog, lambda: self.access())
 
     def access(self, *, edit: bool = False, execute: bool = False) -> ScopeAccess:
@@ -479,10 +485,20 @@ class MultiUserRuntime:
         self.context, self.accounts, self.gateway_factory = context, accounts, gateway_factory
         self.resources = ResourceLedger(accounts, max_active_admissions=max_active_admissions)
         self.launcher = launcher
+        self._projection_lock = threading.Lock()
+        self._live_projections: OrderedDict[tuple[str, str], LiveProjectionCache] = OrderedDict()
 
     @contextmanager
     def bind(self, user: AccountUser, scope_id: str) -> Iterator[ScopedProductService]:
         access = self.accounts.scope(user, scope_id)
+        # Retain only revalidated live read projections across HTTP requests.
+        # Each request still gets its own service, actor and admission state.
+        key = (user.id, scope_id)
+        with self._projection_lock:
+            cache = self._live_projections.pop(key, None) or LiveProjectionCache()
+            self._live_projections[key] = cache
+            while len(self._live_projections) > 32:
+                self._live_projections.popitem(last=False)
         context = self.context.with_execution_scope(
             ExecutionScope(
                 scope_id=access.id,
@@ -499,5 +515,6 @@ class MultiUserRuntime:
                 user=user,
                 scope_id=scope_id,
                 launcher=self.launcher,
+                live_cache=cache,
             )
             yield service

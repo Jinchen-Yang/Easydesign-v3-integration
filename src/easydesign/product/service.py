@@ -118,6 +118,21 @@ def _seed_thread(store: SessionStore, thread: str, mark: str, goal: str) -> None
             raise
 
 
+class LiveProjectionCache:
+    """Bounded read projections; never retain actor authority or command state."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.snapshots: dict[str, dict[str, Any]] = {}
+
+    def remember(self, project: str, value: dict[str, Any]) -> None:
+        with self.lock:
+            self.snapshots.pop(project, None)
+            self.snapshots[project] = deepcopy(value)
+            while len(self.snapshots) > 16:
+                self.snapshots.pop(next(iter(self.snapshots)))
+
+
 class ProductService:
     def __init__(
         self,
@@ -126,6 +141,7 @@ class ProductService:
         actor: str = "local-scientist",
         launcher: Callable[[str], None] | None = None,
         stage_budgets: dict[str, int | None] | None = None,
+        live_cache: LiveProjectionCache | None = None,
     ) -> None:
         self.gateway, self.context, self.actor = gateway, gateway.context, actor
         # Stage budgets captured by the controller at command authorization; the
@@ -139,9 +155,10 @@ class ProductService:
         self.root.mkdir(parents=True, exist_ok=True)
         self.catalog = ArtifactCatalog(self.context.root, self.root / "artifacts")
         self.launcher = launcher or self.launch
-        self._cache_lock = threading.Lock()
+        self._live_cache = live_cache or LiveProjectionCache()
+        self._cache_lock = self._live_cache.lock
         self._stable_snapshots: dict[str, dict[str, Any]] = {}
-        self._live_snapshots: dict[str, dict[str, Any]] = {}
+        self._live_snapshots = self._live_cache.snapshots
         self._compact_candidate_pages: dict[
             tuple[str, int, int, str | None, str | None], dict[str, Any]
         ] = {}
@@ -167,6 +184,9 @@ class ProductService:
             return None
         journal = self.journal()
         try:
+            registered = journal.project(project, include_deleted=True)
+            if registered is not None and registered.get("deleted_at") is not None:
+                return None
             requests = [
                 self._request_with_journal(row["id"], journal)
                 for row in journal.for_project(project)
@@ -185,6 +205,9 @@ class ProductService:
             jobs = job_views(session, bool(cached["project"].get("validation_only")))
         value = deepcopy(cached)
         value["jobs"] = jobs
+        # Queue position/admission receipts can change without a scientific event
+        # or journal state transition. Always publish their freshly read values.
+        value["requests"] = requests
         # Keep the human-readable task ledger aligned with the authoritative
         # controller receipts while the scientific event cursor is unchanged.
         by_task = {str(task.get("task_id")): task for task in value.get("tasks", [])}
@@ -687,8 +710,7 @@ class ProductService:
         if live is not None:
             refreshed = self._refresh_live_snapshot(project, live)
             if refreshed is not None:
-                with self._cache_lock:
-                    self._live_snapshots[project] = deepcopy(refreshed)
+                self._live_cache.remember(project, refreshed)
                 return refreshed
         with self._cache_lock:
             cached = self._stable_snapshots.get(project)
@@ -779,8 +801,7 @@ class ProductService:
             with self._cache_lock:
                 self._stable_snapshots[project] = deepcopy(value)
         elif value["project"]["status"] in {"running", "incomplete"}:
-            with self._cache_lock:
-                self._live_snapshots[project] = deepcopy(value)
+            self._live_cache.remember(project, value)
         return value
 
     def candidates(
